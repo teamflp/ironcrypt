@@ -1,3 +1,4 @@
 /target
-/src/handle_error.rs
 /.idea
+/private_key.pem
+/public_key.pem
