@@ -1,60 +1,52 @@
+use clap::{Parser, Subcommand};
 use ironcrypt::{generate_rsa_keys, save_keys_to_files};
 
-/// Fonction principale qui génère des clés RSA et les sauvegarde dans des fichiers PEM.
-///
-/// Cette fonction génère une paire de clés RSA (privée et publique) à l'aide de la fonction
-/// `generate_rsa_keys`, puis les sauvegarde dans des fichiers PEM spécifiés à l'aide de
-/// `save_keys_to_files`.
-///
-/// # Chemins des fichiers de clés
-///
-/// - `private_key_path` : Le chemin où la clé privée sera sauvegardée (exemple : "private_key.pem").
-/// - `public_key_path` : Le chemin où la clé publique sera sauvegardée (exemple : "public_key.pem").
-///
-/// # Comportement
-///
-/// - En cas de succès, les fichiers de clés sont créés et un message de confirmation est affiché.
-/// - En cas d'erreur, un message d'erreur est affiché indiquant la raison de l'échec.
-///
-/// # Exemple
-///
-/// ```rust
-/// fn main() {
-///     let (private_key, public_key) = generate_rsa_keys();
-///     let private_key_path = "private_key.pem";
-///     let public_key_path = "public_key.pem";
-///
-///     match save_keys_to_files(&private_key, &public_key, private_key_path, public_key_path) {
-///         Ok(_) => {
-///             println!("Les clés RSA ont été générées et sauvegardées avec succès.");
-///             println!("Clé privée : {}", private_key_path);
-///             println!("Clé publique : {}", public_key_path);
-///         }
-///         Err(e) => println!("Erreur : {}", e),
-///     }
-/// }
-/// ```
-///
-/// Dans cet exemple, la fonction génère une clé privée et une clé publique, puis les sauvegarde
-/// dans les fichiers "private_key.pem" et "public_key.pem".
-///
-/// # Remarques
-///
-/// - Assurez-vous que les chemins des fichiers sont accessibles en écriture pour que les clés
-///   puissent être sauvegardées correctement.
-/// - Cette fonction est souvent utilisée lors de la configuration initiale d'un système nécessitant
-///   une cryptographie RSA pour le chiffrement ou la signature numérique.
-fn main() {
-    let (private_key, public_key) = generate_rsa_keys();
-    let private_key_path = "private_key.pem";
-    let public_key_path = "public_key.pem";
+/// Command Line Interface (CLI) pour ironcrypt.
+#[derive(Parser)]
+#[command(name = "ironcrypt", about = "Génération et gestion des clés RSA pour IronCrypt.")]
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Commands>,
+}
 
-    match save_keys_to_files(&private_key, &public_key, private_key_path, public_key_path) {
-        Ok(_) => {
-            println!("Les clés RSA ont été générées et sauvegardées avec succès.");
-            println!("Clé privée : {}", private_key_path);
-            println!("Clé publique : {}", public_key_path);
+#[derive(Subcommand)]
+enum Commands {
+    /// Génère une paire de clés RSA.
+    #[command(alias = "g")]
+    Generate {
+        /// Chemin de sauvegarde pour la clé privée.
+        #[arg(short = 'p', long, default_value = "private_key.pem")]
+        private_key_path: String,
+
+        /// Chemin de sauvegarde pour la clé publique.
+        #[arg(short = 'k', long, default_value = "public_key.pem")]
+        public_key_path: String,
+    },
+}
+
+fn main() {
+    let args = Cli::parse();
+
+    match args.command {
+        Some(Commands::Generate {
+                 private_key_path,
+                 public_key_path,
+             }) => {
+            // Génère les clés RSA.
+            let (private_key, public_key) = generate_rsa_keys();
+
+            // Sauvegarde les clés dans les fichiers spécifiés.
+            match save_keys_to_files(&private_key, &public_key, &private_key_path, &public_key_path) {
+                Ok(_) => {
+                    println!("Les clés RSA ont été générées et sauvegardées avec succès.");
+                    println!("Clé privée : {}", private_key_path);
+                    println!("Clé publique : {}", public_key_path);
+                }
+                Err(e) => eprintln!("Erreur lors de la sauvegarde des clés : {}", e),
+            }
         }
-        Err(e) => println!("Erreur : {}", e),
+        None => {
+            eprintln!("Aucune commande reconnue. Utilisez --help pour plus d'informations.");
+        }
     }
 }

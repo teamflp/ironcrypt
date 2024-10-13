@@ -49,6 +49,52 @@ ironcrypt = "0.1.0"
 
 ## Utilisation
 
+### Avant toute utilisation générer une paire de clés RSA
+
+**1. Générer des clés RSA**
+
+L'outil `ironcrypt` permet de générer une paire de clés RSA (privée et publique). Vous pouvez utiliser l'outil via Cargo ou directement en appelant le binaire.
+
+#### Commande via Cargo
+
+Pour générer des clés RSA, utilisez la commande suivante :
+
+```bash
+cargo run -- g
+```
+
+Cela générera une paire de clés RSA dans les fichiers suivants par défaut :
+
+- Clé privée : `private_key.pem`
+- Clé publique : `public_key.pem`
+
+2. Personnaliser le chemin des clés
+
+Vous pouvez spécifier les chemins de sortie pour la clé privée et la clé publique en utilisant des arguments avec les options `-p` (pour la clé privée) et `-k` (pour la clé publique). Cette commande vous permet de renommer vous clés. 
+
+Voici comment procéder avec Cargo :
+
+```bash
+cargo run -- g -p my_private_key.pem -k my_public_key.pem
+```
+
+**3. Utilisation des alias**
+
+`ironcrypt` supporte des alias pour simplifier les commandes. Par exemple, au lieu d'utiliser la commande complète pour la génération de clés, vous pouvez utiliser :
+
+```bash
+ironcrypt
+```
+
+**4. Fonctionnalités futures**
+
+L'outil `ironcrypt` est conçu pour être extensible. De futures versions pourraient inclure des fonctionnalités supplémentaires pour le hachage sécurisé des mots de passe, le chiffrement de données sensibles, etc.
+
+### Remarques
+
+- Assurez-vous que le dossier dans lequel vous générez vos clés a les permissions suffisantes pour écrire les fichiers.
+- Les fichiers PEM générés peuvent être utilisés dans des projets nécessitant des clés RSA pour le chiffrement ou la signature numérique.
+
 ### 1. Importation des Fonctions
 
 Pour utiliser les principales fonctionnalités de la bibliothèque, importez-les dans votre code :
@@ -149,6 +195,47 @@ fn main() {
         Err(e) => println!("Erreur lors de la vérification du mot de passe : {:?}", e),
     }
 }
+
+use ironcrypt::{hash_password, is_password_strong, PasswordCriteria};
+
+fn main() {
+  // Définition des critères de robustesse du mot de passe.
+  let criteria = PasswordCriteria {
+    min_length: 8,
+    require_uppercase: true,
+    require_numbers: true,
+    require_special_chars: true,
+    max_length: Some(20),
+    disallowed_patterns: vec!["password".to_string(), "1234".to_string()],
+    special_chars: 1,
+    uppercase: 1,
+    lowercase: 1,
+    digits: 1,
+  };
+
+  // Le mot de passe à hacher.
+  let password = "StrongP@ssw0rd";
+
+  // Vérification si le mot de passe est robuste selon les critères définis.
+  match is_password_strong(password, &criteria) {
+    Ok(_) => {
+      // Si le mot de passe est valide, on peut le hacher.
+      match hash_password(password) {
+        Ok(hashed_password) => {
+          println!("Le mot de passe haché est : {}", hashed_password);
+        }
+        Err(e) => {
+          println!("Erreur lors du hachage du mot de passe : {:?}", e);
+        }
+      }
+    }
+    Err(e) => {
+      println!("Le mot de passe ne respecte pas les critères de robustesse : {}", e);
+    }
+  }
+}
+
+// Résultat : Le mot de passe haché est : $argon2id$v=19$m=19456,t=2,p=1$2hF8WmxsmuCDaytOywqdlg$D9wxeTvYO4xbi4DZW9fU2mbpwMF6X4xVgnQpK0+nOQo
 ```
 
 ## Sécurité et Bonnes Pratiques

@@ -1,4 +1,5 @@
-// handle_errors.rs
+use std::fmt;
+
 #[derive(Debug)]
 pub enum IronCryptError {
     PasswordStrengthError(String),
@@ -9,20 +10,16 @@ pub enum IronCryptError {
     Utf8Error(std::string::FromUtf8Error),
 }
 
-impl From<std::io::Error> for IronCryptError {
-    fn from(err: std::io::Error) -> Self {
-        IronCryptError::IOError(err)
-    }
-}
-
-impl From<std::string::FromUtf8Error> for IronCryptError {
-    fn from(err: std::string::FromUtf8Error) -> Self {
-        IronCryptError::Utf8Error(err)
-    }
-}
-
-impl From<argon2::password_hash::Error> for IronCryptError {
-    fn from(err: argon2::password_hash::Error) -> Self {
-        IronCryptError::HashingError(err)
+// Implémentation du trait `Display` pour `IronCryptError`
+impl fmt::Display for IronCryptError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            IronCryptError::PasswordStrengthError(msg) => write!(f, "Erreur de robustesse du mot de passe: {}", msg),
+            IronCryptError::HashingError(err) => write!(f, "Erreur lors du hachage: {}", err),
+            IronCryptError::EncryptionError(msg) => write!(f, "Erreur de chiffrement: {}", msg),
+            IronCryptError::DecryptionError(msg) => write!(f, "Erreur de déchiffrement: {}", msg),
+            IronCryptError::IOError(err) => write!(f, "Erreur d'entrée/sortie: {}", err),
+            IronCryptError::Utf8Error(err) => write!(f, "Erreur de conversion UTF-8: {}", err),
+        }
     }
 }

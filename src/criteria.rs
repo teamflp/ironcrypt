@@ -1,3 +1,4 @@
+use crate::IronCryptError;
 use serde::{Deserialize, Serialize};
 
 /// Structure pour la configuration des critères de robustesse des mots de passe.
@@ -182,7 +183,7 @@ impl PasswordCriteria {
 ///
 /// # Erreurs
 ///
-/// La fonction renvoie une `Err` avec un message d'erreur si :
+/// La fonction renvoei une `Err` de type `IronCryptError::PasswordStrengthError` avec un message d'erreur détaillé. si :
 ///
 /// - La longueur du mot de passe est inférieure à `min_length`.
 /// - La longueur du mot de passe est supérieure à `max_length` (si spécifié).
@@ -191,41 +192,47 @@ impl PasswordCriteria {
 /// - `require_special_chars` est `true` mais le mot de passe ne contient pas de caractère spécial.
 /// - Le mot de passe contient un motif interdit de `disallowed_patterns`.
 
-pub fn is_password_strong(password: &str, criteria: &PasswordCriteria) -> Result<(), String> {
+pub fn is_password_strong(password: &str, criteria: &PasswordCriteria) -> Result<(), IronCryptError> {
     if password.len() < criteria.min_length {
-        return Err(format!(
+        return Err(IronCryptError::PasswordStrengthError(format!(
             "Le mot de passe doit contenir au moins {} caractères.",
             criteria.min_length
-        ));
+        )));
     }
 
     if let Some(max_length) = criteria.max_length {
         if password.len() > max_length {
-            return Err(format!(
+            return Err(IronCryptError::PasswordStrengthError(format!(
                 "Le mot de passe ne doit pas dépasser {} caractères.",
                 max_length
-            ));
+            )));
         }
     }
 
     if criteria.require_uppercase && !password.chars().any(|c| c.is_uppercase()) {
-        return Err("Le mot de passe doit contenir au moins une lettre majuscule.".to_string());
+        return Err(IronCryptError::PasswordStrengthError(
+            "Le mot de passe doit contenir au moins une lettre majuscule.".to_string(),
+        ));
     }
 
     if criteria.require_numbers && !password.chars().any(|c| c.is_digit(10)) {
-        return Err("Le mot de passe doit contenir au moins un chiffre.".to_string());
+        return Err(IronCryptError::PasswordStrengthError(
+            "Le mot de passe doit contenir au moins un chiffre.".to_string(),
+        ));
     }
 
     if criteria.require_special_chars && !password.chars().any(|c| !c.is_alphanumeric()) {
-        return Err("Le mot de passe doit contenir au moins un caractère spécial.".to_string());
+        return Err(IronCryptError::PasswordStrengthError(
+            "Le mot de passe doit contenir au moins un caractère spécial.".to_string(),
+        ));
     }
 
     for pattern in &criteria.disallowed_patterns {
         if password.contains(pattern) {
-            return Err(format!(
+            return Err(IronCryptError::PasswordStrengthError(format!(
                 "Le mot de passe ne doit pas contenir le motif interdit : '{}'.",
                 pattern
-            ));
+            )));
         }
     }
 

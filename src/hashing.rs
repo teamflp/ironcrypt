@@ -56,4 +56,3 @@ pub fn hash_password(password: &str) -> Result<String, String> {
         .map(|hash| hash.to_string())
         .map_err(|e| format!("Erreur lors du hachage du mot de passe: {:?}", e))
 }
-
