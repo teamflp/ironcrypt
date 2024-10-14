@@ -126,6 +126,19 @@ impl PasswordCriteria {
             digits: Some(1),
         }
     }
+
+    /// Vérifie si un mot de passe répond aux critères de robustesse spécifiés.
+    ///
+    /// # Arguments
+    ///
+    /// * `password` - Le mot de passe à vérifier.
+    ///
+    /// # Retour
+    ///
+    /// Renvoie `Ok(())` si le mot de passe est valide, ou `Err(IronCryptError)` sinon.
+    pub fn validate(&self, password: &str) -> Result<(), IronCryptError> {
+        is_password_strong(password, self)
+    }
 }
 
 /// Vérifie si un mot de passe répond aux critères de robustesse spécifiés.
@@ -237,4 +250,25 @@ pub fn is_password_strong(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_password_criteria_validate_success() {
+        let criteria = PasswordCriteria::default();
+        let password = "StrongP@ssw0rd";
+
+        assert!(criteria.validate(password).is_ok());
+    }
+
+    #[test]
+    fn test_password_criteria_validate_failure() {
+        let criteria = PasswordCriteria::default();
+        let password = "weak";
+
+        assert!(criteria.validate(password).is_err());
+    }
 }
