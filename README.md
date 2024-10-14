@@ -69,7 +69,7 @@ Si vous exécutez la commande `generate` sans spécifier d'options, les clés se
 **Commande :**
 
 ```bash
-cargo run — generate
+cargo run -- generate
 ```
 
 **Exemple de sortie :**
@@ -91,7 +91,7 @@ Cela générera une paire de clés RSA dans les fichiers suivants par défaut :
 
 Vous pouvez spécifier les chemins de sortie pour la clé privée et la clé publique en utilisant les options `-p` (pour la clé privée) et `-k` (pour la clé publique) et `-s` pour la taille de la clé en bits (par defaut 2048). Cette commande vous permet de renommer vous clés et de choisir la taille de la paire de clés.
 
-- `—- generate` : Générer des clés RSA.
+- `-- generate` : Générer des clés RSA.
 - `-p` : Chemin de sauvegarde pour la clé privée (par défaut `private_key.pem`).
 - `-k` : Chemin de sauvegarde pour la clé publique (par défaut `public_key.pem`).
 - `-s` : Taille de la clé en bits (par défaut `2048`).
@@ -176,8 +176,9 @@ Clé publique : ma_cle_publique.pem
 
 Pour voir toutes les options disponibles pour la commande `generate`, vous pouvez utiliser l'option `--help`.
 
-**Commande :**
+**Commande :**\
 ru
+
 ```bash
 cargo run -- generate --help
 ```
@@ -223,26 +224,66 @@ L'outil `ironcrypt` est conçu pour être extensible. De futures versions pourra
 
 **3. Hacher et chiffrer un mot de passe**
 
-Pour hacher et chiffrer un mot de passe, vous pouvez utiliser la sous-commande `encrypt` :
+Pour hacher et chiffrer un mot de passe, vous pouvez utiliser la sous-commande `encrypt`. :
 
 ```bash
-cargo run -- encrypt -w "VotreMotDePasse" -k public_key.pem
+cargo run -- encrypt -w "VotreMotDeP@sse1" -k public_key.pem
 ```
 
 - `encrypt` : Sous-commande pour hacher et chiffrer un mot de passe.
 - `-w` : Le mot de passe à hacher et chiffrer.
 - `-k` : Chemin vers la clé publique pour le chiffrement (par défaut `public_key.pem`).
 
-**4. Utilisation des alias**
-
-`ironcrypt` supporte des alias pour simplifier les commandes. Par exemple, vous pouvez utiliser `g` pour `generate` et `e`pour `encrypt`.
-
-Exemple :
+Résultat : Mot de passe haché et chiffré
 
 ```bash
-cargo run -- g
-cargo run -- e -w "VotreMotDePasse"
+ {
+   "ciphertext":"P2A4hrhIg9E9o+sChKPK3zrwo/49Cutpb0FoxmZSfzs6YmG0wkiToEVy9vKBaxMcYzM7sAWso2977vzgrIReTZfHPMBnsi2yVR6xh7RUIeoNJvx346Ya8ws/GI+HjxTVOXZh2odHPFS7mHUpWASOb7U=",
+   "encrypted_symmetric_key":"j/MMqYqHNEh8+Go1HsjlLWfQlg9/94meH6sNpPcYQt1ZEwA5BoGVaJ1hcOt0A6Sv54dwlG4Yr8WrHUkPR04raw0jFhSNkk7iO5fZJwuA8gvYRLhnAxyW0X/vRJzwUaee4TuDt9r4Zr3DppAl12lW03SkOkuwFokrz8AGg6G1LqnUz0CwgbfmOauM2+O70VDA4cTCb6mH7LmslplS6pUuY5U3M8inWag6Z907Q6yV4HNYdHxAuYHfLK/XxOiHCsH8H8EfWbVt7BU31PC8o2L+MkfTyf6f5t4wvQtAx2BWvMt7zE9JWYVs1aTxsJC4urO4oeer/XddZLym7t6xsNTNoQ==",
+   "nonce":"W7q6TjwB4x0ysavW"
+}
 ```
+
+### **Explication des champs :**
+
+1. `encrypted_symmetric_key` :
+
+   - Il s'agit de la **clé symétrique** utilisée pour chiffrer le hash du mot de passe, **elle-même chiffrée** avec la **clé publique RSA**.
+   - Cette clé est encodée en **base64**.
+   - Seule la **clé privée RSA** correspondante peut déchiffrer cette clé symétrique.
+
+2. `nonce` :
+
+   - C'est le **nonce** (nombre aléatoire) utilisé lors du chiffrement avec AES-GCM.
+   - Il assure que chaque chiffrement est unique, même si le même message est chiffré plusieurs fois.
+   - Encodé en **base64**.
+
+3. `ciphertext` :
+
+   - Il s'agit du **hash du mot de passe chiffré** avec AES-256-GCM en utilisant la clé symétrique générée.
+   - Encodé en **base64**.
+
+## **Utilisation de la commande** `decrypt` **:**
+
+### **1. Utiliser les données chiffrées sous forme de chaîne :**
+
+```bash
+cargo run -- decrypt -w "VotreMotDeP@sse1" -k private_key.pem -d '{"ciphertext":"...","encrypted_symmetric_key":"...","nonce":"..."}'
+```
+
+---
+
+Remplacez `...` par les valeurs réelles des données chiffrées.
+
+### **2. Utiliser un fichier contenant les données chiffrées :**
+
+- Enregistrez les données chiffrées dans un fichier, par exemple `encrypted_data.json`.
+
+- Exécutez la commande :
+
+  ```bash
+  cargo run -- decrypt -w "VotreMotDeP@sse1" -k private_key.pem -f encrypted_data.json
+  ```
 
 ### 1. Importation des Fonctions
 
@@ -379,10 +420,10 @@ fn main() {
         require_numbers: true,
         require_special_chars: true,
         disallowed_patterns: vec!["password".to_string(), "1234".to_string()],
-        special_chars: 1,
-        uppercase: 1,
-        lowercase: 1,
-        digits: 1,
+        special_chars: Some(1),
+        uppercase: Some(1),
+        lowercase: Some(1),
+        digits: Some(1),
     };
 
     // Le mot de passe à hacher.
@@ -414,13 +455,93 @@ fn main() {
 Le mot de passe haché est : $argon2id$v=19$m=19456,t=2,p=1$...
 ```
 
-## Sécurité et Bonnes Pratiques
+La librairie **IronCrypt** présente plusieurs points forts qui en font un outil puissant pour la gestion sécurisée des mots de passe et des données sensibles dans vos applications. Voici les principaux avantages et caractéristiques de cette librairie :
+
+---
+
+## **Sécurité avancée**
+
+### **a. Utilisation d'algorithmes cryptographiques modernes**
+
+- **Hachage avec argon2** : IronCrypt utilise l'algorithme de hachage **Argon2**, considéré comme l'un des plus sécurisés et performants pour le stockage des mots de passe. Il est résistant aux attaques par force brute et par dictionnaire, offrant une protection robuste contre les tentatives de compromission.
+
+- **Chiffrement symétrique avec AES-256-GCM** : Pour le chiffrement des données, IronCrypt utilise l'algorithme **AES-256-GCM**, qui offre à la fois confidentialité et intégrité des données grâce à son mode d'opération authentifié.
+
+- **Chiffrement asymétrique avec RSA** : La librairie implémente le chiffrement asymétrique **RSA** pour sécuriser l'échange et le stockage des clés symétriques. Cela permet une gestion sécurisée des clés dans des environnements distribués.
+
+### **b. Chiffrement hybride**
+
+- **Combinaison des chiffrements symétrique et asymétrique** : En adoptant une approche de chiffrement hybride, IronCrypt bénéficie des avantages des deux méthodes. Le chiffrement symétrique offre des performances élevées pour le traitement de grandes quantités de données, tandis que le chiffrement asymétrique garantit une distribution sécurisée des clés.
+
+## **2. Gestion sécurisée des mots de passe**
+
+### **a. Vérification de la robustesse des mots de passe**
+
+- **Critères personnalisables** : La librairie permet de définir des critères de robustesse pour les mots de passe, tels que la longueur minimale, la présence de majuscules, de chiffres, de caractères spéciaux, etc.
+
+- **Fonction de validation intégrée** : Avant le hachage et le chiffrement, IronCrypt vérifie que le mot de passe respecte les critères définis, renforçant ainsi la sécurité dès la création du mot de passe.
+
+### **b. Stockage sécurisé des mots de passe**
+
+- **Hachage et chiffrement** : Les mots de passe sont d'abord hachés avec Argon2, puis le hash est chiffré avec AES-256-GCM. La clé symétrique utilisée est elle-même chiffrée avec RSA, assurant une protection multi-niveaux.
+
+- **Protection contre les fuites** : En chiffrant le hash du mot de passe, la librairie réduit le risque que des attaquants puissent exploiter des hash compromis pour tenter de récupérer les mots de passe en clair.
+
+## **3. Intégrité et confidentialité des données**
+
+### **a. Authentification intégrée**
+
+- **Mode GCM (Galois/Counter Mode)** : L'utilisation d'AES en mode GCM assure non seulement le chiffrement des données, mais aussi leur intégrité. Toute modification non autorisée des données chiffrées est détectée lors du déchiffrement.
+
+### **b. Gestion sécurisée des clés**
+
+- **Clé Privée RSA Protégée** : La clé privée utilisée pour déchiffrer la clé symétrique est maintenue en sécurité, garantissant que seules les parties autorisées peuvent accéder aux données sensibles.
+
+## **4. Facilité d'intégration et d'utilisation**
+
+### **a. API simples et efficaces**
+
+- **Fonctions Claires** : IronCrypt fournit des fonctions bien définies pour le hachage, le chiffrement, le déchiffrement et la vérification des mots de passe, facilitant leur intégration dans vos applications.
+
+- **Gestion des erreurs** : La librairie offre une gestion des erreurs exhaustive, avec des messages explicites qui aident au débogage tout en évitant de divulguer des informations sensibles.
+
+### **b. Compatibilité avec les standards**
+
+- **Utilisation de Formats Reconnaissables** : Les clés et les données sont manipulées en utilisant des formats standard tels que PEM pour les clés RSA et JSON pour les données sérialisées, facilitant l'interopérabilité avec d'autres systèmes et outils.
+
+## **5. Performance et scalabilité**
+
+### **a. Optimisation des opérations cryptographiques**
+
+- **Chiffrement Symétrique pour les Données** : L'utilisation d'AES pour le chiffrement des données assure des performances élevées, ce qui est crucial pour les applications à grande échelle.
+
+- **Chiffrement Asymétrique Limité aux Clés** : En limitant l'utilisation du chiffrement RSA au chiffrement des clés symétriques, IronCrypt minimise l'impact sur les performances tout en maintenant un haut niveau de sécurité.
+
+## **6. Bonnes pratiques de sécurité intégrées**
+
+### **a. Salage des hashs**
+
+- **Génération de Sels Aléatoires** : Pour chaque mot de passe haché, un sel unique est généré, renforçant la résistance aux attaques pré-calculées comme les tables rainbow.
+
+### **b. Mise à jour et maintenance facilitées**
+
+- **Utilisation de Crates Rust Modernes** : En s'appuyant sur des crates Rust maintenues et sécurisées, IronCrypt bénéficie des mises à jour de sécurité et des améliorations de la communauté.
+
+---
+
+## **Conclusion**
+
+La librairie **IronCrypt** se distingue par son approche robuste et sécurisée de la gestion des mots de passe et du chiffrement des données. En combinant des algorithmes cryptographiques modernes avec des pratiques de sécurité éprouvées, elle offre une solution complète pour protéger les informations sensibles dans vos applications.
+
+Que vous développiez une application nécessitant une gestion sécurisée des mots de passe, ou que vous ayez besoin de chiffrer des données confidentielles, IronCrypt fournit les outils nécessaires pour répondre à ces exigences de manière efficace et sécurisée.
+
+## Sécurité et bonnes pratiques
 
 - **Stockage des Clés** : Gardez la clé privée en sécurité et ne la partagez jamais publiquement. La clé publique peut être partagée pour chiffrer des données.
-- **Mot de passe Robuste** : Encouragez les utilisateurs à choisir des mots de passe longs et complexes pour renforcer la sécurité.
-- **Critères Personnalisés** : Adaptez `PasswordCriteria` selon les besoins spécifiques de votre application pour renforcer les exigences de mot de passe.
-- **Gestion des Erreurs** : Assurez-vous de gérer les erreurs retournées par les fonctions, notamment celles qui retournent un `Result`.
-- **Utilisation de Sources d'Aléa Sécurisées** : Assurez-vous que toutes les fonctions générant des nombres aléatoires utilisent des sources cryptographiquement sécurisées, comme `OsRng`.
+- **Mot de passe robuste** : Encouragez les utilisateurs à choisir des mots de passe longs et complexes pour renforcer la sécurité.
+- **Critères personnalisés** : Adaptez `PasswordCriteria` selon les besoins spécifiques de votre application pour renforcer les exigences de mot de passe.
+- **Gestion des erreurs** : Assurez-vous de gérer les erreurs retournées par les fonctions, notamment celles qui retournent un `Result`.
+- **Utilisation de sources d'aléa sécurisées** : Assurez-vous que toutes les fonctions générant des nombres aléatoires utilisent des sources cryptographiquement sécurisées, comme `OsRng`.
 
 ## Licence
 
