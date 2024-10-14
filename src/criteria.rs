@@ -31,10 +31,10 @@ use serde::{Deserialize, Serialize};
 ///     require_special_chars: true,
 ///     max_length: Some(128),
 ///     disallowed_patterns: vec!["password".to_string(), "1234".to_string()],
-///     special_chars: 2,
-///     uppercase: 1,
-///     lowercase: 1,
-///     digits: 1,
+///     special_chars: Some(2),
+///     uppercase: Some(1),
+///     lowercase: Some(1),
+///     digits: Some(1),
 /// };
 ///
 /// assert_eq!(criteria.min_length, 12);
@@ -57,17 +57,16 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize, Debug)]
 pub struct PasswordCriteria {
     pub min_length: usize,
+    pub max_length: Option<usize>,
     pub require_uppercase: bool,
     pub require_numbers: bool,
     pub require_special_chars: bool,
-    pub max_length: Option<usize>,
     pub disallowed_patterns: Vec<String>,
-    pub special_chars: i32,
-    pub uppercase: i32,
-    pub lowercase: i32,
-    pub digits: i32,
+    pub special_chars: Option<usize>,
+    pub uppercase: Option<usize>,
+    pub lowercase: Option<usize>,
+    pub digits: Option<usize>,
 }
-
 
 impl PasswordCriteria {
     /// Crée une configuration par défaut pour les critères de robustesse des mots de passe.
@@ -116,20 +115,18 @@ impl PasswordCriteria {
     pub fn default() -> Self {
         Self {
             min_length: 12,
+            max_length: Some(128),
             require_uppercase: true,
             require_numbers: true,
             require_special_chars: true,
-            max_length: Some(128),
             disallowed_patterns: vec![],
-            special_chars: 0,
-            uppercase: 0,
-            lowercase: 0,
-            digits: 0,
+            special_chars: Some(1),
+            uppercase: Some(1),
+            lowercase: Some(1),
+            digits: Some(1),
         }
     }
 }
-
-
 
 /// Vérifie si un mot de passe répond aux critères de robustesse spécifiés.
 ///
@@ -166,10 +163,10 @@ impl PasswordCriteria {
 ///     require_numbers: true,
 ///     require_special_chars: true,
 ///     disallowed_patterns: vec!["password".to_string(), "1234".to_string()],
-///     digits: 0,
-///     lowercase: 0,
-///     special_chars: 0,
-///     uppercase: 0,
+///     digits: Some(0),
+///     lowercase: Some(0),
+///     special_chars: Some(0),
+///     uppercase: Some(0),
 /// };
 ///
 /// let password = "StrongP@ssw0rd";
@@ -192,7 +189,10 @@ impl PasswordCriteria {
 /// - `require_special_chars` est `true` mais le mot de passe ne contient pas de caractère spécial.
 /// - Le mot de passe contient un motif interdit de `disallowed_patterns`.
 
-pub fn is_password_strong(password: &str, criteria: &PasswordCriteria) -> Result<(), IronCryptError> {
+pub fn is_password_strong(
+    password: &str,
+    criteria: &PasswordCriteria,
+) -> Result<(), IronCryptError> {
     if password.len() < criteria.min_length {
         return Err(IronCryptError::PasswordStrengthError(format!(
             "Le mot de passe doit contenir au moins {} caractères.",

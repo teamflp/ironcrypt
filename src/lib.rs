@@ -1,8 +1,8 @@
 mod criteria;
 mod encryption;
+mod handle_error;
 mod hashing;
 mod rsa_utils;
-mod handle_error;
 
 // Expose les fonctions et structures de la bibliothèque pour les utiliser dans le binaire.
 //
@@ -61,8 +61,15 @@ mod handle_error;
 //   dans leurs projets.
 // - Les fonctions exposées couvrent les principales fonctionnalités de la bibliothèque, facilitant
 //   la gestion des mots de passe et des clés RSA.
+/*
 pub use criteria::{is_password_strong, PasswordCriteria};
 pub use encryption::{decrypt_and_verify_password, hash_and_encrypt_password_with_criteria};
 pub use hashing::hash_password;
 pub use rsa_utils::{generate_rsa_keys, load_rsa_keys, save_keys_to_files};
 pub use handle_error::IronCryptError;
+*/
+pub use criteria::*;
+pub use encryption::*;
+pub use handle_error::*;
+pub use hashing::*;
+pub use rsa_utils::*;

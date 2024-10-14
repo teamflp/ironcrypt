@@ -11,9 +11,6 @@ license = "MIT"
 documentation = "https://github.com/teamflp/ironcrypt#readme"
 repository = "https://github.com/teamflp/ironcrypt"
 
-[[bin]]
-name = "ironcrypt"
-path = "src/main.rs"
 
 [dependencies]
 serde = { version = "1.0.210", features = ["derive"] }
@@ -22,13 +19,19 @@ base64 = "0.22.1"
 rsa = { version = "0.9.6", features = ["pem"] }
 serde_json = "1.0"
 sha2 = "0.10.6"
-rand = "0.8.5" 
+rand = "0.8.5"
 rand_chacha = "0.3.1"
 rand_core = "0.6.4"
 clap = { version = "4.5.20", features = ["derive"] }
 clap_derive = "4.5.18"
+thiserror = "1.0.64"
+indicatif = "0.17.8"
+aes-gcm = "0.10.3" # Pour le chiffrement symétrique
 
-[workspace]
-members = [
-    "."
-]
+[lib]
+name = "ironcrypt"
+path = "src/lib.rs"
+
+[[bin]]
+name = "ironcrypt-cli"
+path = "src/main.rs"
