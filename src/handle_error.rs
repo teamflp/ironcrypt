@@ -50,6 +50,9 @@ pub enum IronCryptError {
 
     #[error("Erreur de conversion UTF-8: {0}")]
     Utf8Error(#[from] std::string::FromUtf8Error),
+
+    #[error("Mot de passe invalide")]
+    InvalidPassword,
 }
 impl From<argon2::password_hash::Error> for IronCryptError {
     fn from(err: argon2::password_hash::Error) -> Self {

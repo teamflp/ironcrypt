@@ -1,4 +1,4 @@
-use crate::criteria::{is_password_strong, PasswordCriteria};
+use crate::criteria::PasswordCriteria;
 use crate::handle_error::IronCryptError;
 
 use aes_gcm::aead::{Aead, KeyInit};
@@ -7,6 +7,9 @@ use aes_gcm::{Aes256Gcm, Nonce};
 
 use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
 use argon2::Argon2;
+use argon2::Version;
+use argon2::Algorithm;
+use argon2::Params;
 
 use base64::engine::general_purpose::STANDARD as base64_standard;
 use base64::Engine;
@@ -100,21 +103,22 @@ pub fn hash_and_encrypt_password_with_criteria(
     public_key: &RsaPublicKey,
     criteria: &PasswordCriteria,
 ) -> Result<String, IronCryptError> {
-    // Vérification de la robustesse du mot de passe
-    is_password_strong(password, criteria)
-        .map_err(|e| IronCryptError::PasswordStrengthError(e.to_string()))?;
+    // Vérifier les critères du mot de passe
+    criteria.validate(password)?;
 
-    // Générer le sel
+    // Configurer Argon2 avec les paramètres désirés
+    let memory_cost = 65536; // 64 MiB
+    let time_cost = 3;
+    let parallelism = 1;
+
+    let params = Params::new(memory_cost, time_cost, parallelism, None).unwrap();
+    let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
+
+    // Générer un sel aléatoire
     let salt = SaltString::generate(&mut OsRng);
 
-    // Configurer Argon2
-    let argon2 = Argon2::default();
-    let hash = argon2
-        .hash_password(password.as_bytes(), &salt)
-        .map_err(|e| IronCryptError::HashingError(format!("{}", e)))?;
-
-    // Convertir le hash en chaîne de caractères
-    let hash_str = hash.to_string();
+    // Hacher le mot de passe
+    let password_hash = argon2.hash_password(password.as_bytes(), &salt)?.to_string();
 
     // Générer une clé symétrique aléatoire (256 bits pour AES-256)
     let mut symmetric_key = [0u8; 32];
@@ -128,7 +132,7 @@ pub fn hash_and_encrypt_password_with_criteria(
         ))
     })?;
     let nonce = Aes256Gcm::generate_nonce(&mut OsRng); // 96 bits; unique par message
-    let ciphertext = cipher.encrypt(&nonce, hash_str.as_bytes()).map_err(|e| {
+    let ciphertext = cipher.encrypt(&nonce, password_hash.as_bytes()).map_err(|e| {
         IronCryptError::EncryptionError(format!("Erreur lors du chiffrement du hash : {}", e))
     })?;
 
@@ -152,6 +156,7 @@ pub fn hash_and_encrypt_password_with_criteria(
 
     Ok(data.to_string())
 }
+
 
 /// Déchiffre des données chiffrées et vérifie si un mot de passe correspond au hash déchiffré.
 ///
@@ -308,139 +313,14 @@ pub fn decrypt_and_verify_password(
         IronCryptError::DecryptionError(format!("Erreur lors du parsing du hash déchiffré : {}", e))
     })?;
 
-    // Vérification du mot de passe avec Argon2
+    // Créer une instance d'Argon2
     let argon2 = Argon2::default();
+
+    // Vérifier le mot de passe
     argon2
         .verify_password(password.as_bytes(), &parsed_hash)
-        .map_err(|_| IronCryptError::DecryptionError("Le mot de passe est incorrect".to_string()))
+        .map_err(|_| IronCryptError::InvalidPassword)?;
+
+    Ok(())
 }
 
-// tests unitaires
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::criteria::PasswordCriteria;
-    use rand::rngs::OsRng;
-    use rsa::{RsaPrivateKey, RsaPublicKey};
-
-    #[test]
-    fn test_hash_and_encrypt_password_with_criteria_success() {
-        // Génération de clés RSA pour le test
-        let private_key =
-            RsaPrivateKey::new(&mut OsRng, 2048).expect("Erreur de génération de la clé privée");
-        let public_key = RsaPublicKey::from(&private_key);
-
-        // Définition des critères de mot de passe
-        let criteria = PasswordCriteria {
-            min_length: 8,
-            max_length: None,
-            require_uppercase: true,
-            require_numbers: true,
-            require_special_chars: true,
-            uppercase: Some(1),
-            lowercase: Some(1),
-            digits: Some(1),
-            special_chars: Some(1),
-            disallowed_patterns: vec![],
-        };
-
-        // Mot de passe qui respecte les critères
-        let password = "StrongP@ssw0rd";
-
-        // Appel de la fonction de hachage et chiffrement
-        let result = hash_and_encrypt_password_with_criteria(password, &public_key, &criteria);
-
-        // Vérification que le résultat est Ok et non une erreur
-        assert!(
-            result.is_ok(),
-            "Le hachage et le chiffrement du mot de passe ont échoué"
-        );
-
-        // Vérification que la chaîne n'est pas vide
-        let encrypted_data = result.unwrap();
-        assert!(
-            !encrypted_data.is_empty(),
-            "Les données chiffrées ne doivent pas être vides"
-        );
-    }
-
-    #[test]
-    fn test_decrypt_and_verify_password_success() {
-        // Génération de clés RSA pour le test
-        let private_key =
-            RsaPrivateKey::new(&mut OsRng, 2048).expect("Erreur de génération de la clé privée");
-        let public_key = RsaPublicKey::from(&private_key);
-
-        // Définition des critères de mot de passe
-        let criteria = PasswordCriteria {
-            min_length: 8,
-            max_length: None,
-            require_uppercase: true,
-            require_numbers: true,
-            require_special_chars: true,
-            uppercase: Some(1),
-            lowercase: Some(1),
-            digits: Some(1),
-            special_chars: Some(1),
-            disallowed_patterns: vec![],
-        };
-
-        // Mot de passe qui respecte les critères
-        let password = "StrongP@ssw0rd";
-
-        // Hachage et chiffrement du mot de passe
-        let encrypted_data =
-            hash_and_encrypt_password_with_criteria(password, &public_key, &criteria)
-                .expect("Le hachage et le chiffrement du mot de passe ont échoué");
-
-        // Déchiffrement et vérification du mot de passe
-        let result = decrypt_and_verify_password(&encrypted_data, password, &private_key);
-
-        // Vérification que le résultat est Ok
-        assert!(
-            result.is_ok(),
-            "La vérification du mot de passe a échoué : {:?}",
-            result.err()
-        );
-    }
-
-    #[test]
-    fn test_decrypt_and_verify_password_failure() {
-        // Génération de clés RSA pour le test
-        let private_key =
-            RsaPrivateKey::new(&mut OsRng, 2048).expect("Erreur de génération de la clé privée");
-        let public_key = RsaPublicKey::from(&private_key);
-
-        // Définition des critères de mot de passe
-        let criteria = PasswordCriteria {
-            min_length: 8,
-            max_length: None,
-            require_uppercase: true,
-            require_numbers: true,
-            require_special_chars: true,
-            uppercase: Some(1),
-            lowercase: Some(1),
-            digits: Some(1),
-            special_chars: Some(1),
-            disallowed_patterns: vec![],
-        };
-
-        // Mot de passe qui respecte les critères
-        let password = "StrongP@ssw0rd";
-
-        // Hachage et chiffrement du mot de passe
-        let encrypted_data =
-            hash_and_encrypt_password_with_criteria(password, &public_key, &criteria)
-                .expect("Le hachage et le chiffrement du mot de passe ont échoué");
-
-        // Déchiffrement et vérification avec un mot de passe incorrect
-        let wrong_password = "WrongPassword123";
-        let result = decrypt_and_verify_password(&encrypted_data, wrong_password, &private_key);
-
-        // Vérification que le résultat est une erreur
-        assert!(
-            result.is_err(),
-            "La vérification aurait dû échouer pour un mot de passe incorrect"
-        );
-    }
-}

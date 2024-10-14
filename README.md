@@ -330,29 +330,31 @@ save_keys_to_files(&private_key, &public_key, "private_key.pem", "public_key.pem
 
 **Remarque :** `generate_rsa_keys` prend maintenant un argument pour la taille de la clé (en bits) et retourne un `Result`, il faut donc gérer les erreurs.
 
-### 4. Hacher et Chiffrer un Mot de Passe
+### 4. Hacher et chiffrer un mot de passe
 
 Hachez et chiffrez un mot de passe en utilisant les critères définis et la clé publique :
 
 ```rust
-let password = "StrongP@ssw0rd";
-let encrypted_hash = hash_and_encrypt_password_with_criteria(password, &public_key, &criteria)
-    .expect("Erreur lors du hachage et du chiffrement du mot de passe");
+cargo run -- encrypt -w 'VotreMotDeP@sse1' -k public_key.pem > encrypted_data.json
 ```
 
-### 5. Déchiffrer et Vérifier un Mot de Passe
+### 5. Déchiffrer et vérifier un mot de passe
 
 Déchiffrez le hash et vérifiez si un mot de passe correspond :
 
 ```rust
-let result = decrypt_and_verify_password(&encrypted_hash, password, &private_key);
-match result {
-    Ok(_) => println!("Le mot de passe est valide."),
-    Err(e) => println!("Erreur lors de la vérification du mot de passe : {:?}", e),
-}
+cargo run -- decrypt -w 'VotreMotDeP@sse1' -k private_key.pem -f encrypted_data.json
 ```
 
-### 6. Charger les Clés RSA depuis des Fichiers
+### **Résultat Attendu :**
+
+- Si tout fonctionne correctement, vous devriez voir le message :
+
+  ```
+  Le mot de passe est correct.
+  ```
+
+### 6. Charger les clés RSA depuis des fichiers
 
 Si vous avez déjà sauvegardé vos clés RSA, vous pouvez les recharger facilement :
 
@@ -361,7 +363,7 @@ let (private_key, public_key) = load_rsa_keys("private_key.pem", "public_key.pem
     .expect("Erreur lors du chargement des clés RSA");
 ```
 
-## Exemples Complets
+## Exemples complets
 
 Voici un exemple complet de la bibliothèque en action :
 
@@ -406,7 +408,7 @@ fn main() -> Result<(), IronCryptError> {
 // Résultat : Le mot de passe haché est : $argon2id$v=19$m=19456,t=2,p=1$2hF8WmxsmuCDaytOywqdlg$D9wxeTvYO4xbi4DZW9fU2mbpwMF6X4xVgnQpK0+nOQo
 ```
 
-### Exemple de Vérification de Mot de Passe
+### Exemple de vérification de mot de passe
 
 ```rust
 use ironcrypt::{hash_password, is_password_strong, PasswordCriteria};
