@@ -59,9 +59,9 @@ jobs:
     # Pousser l'image Docker vers DockerHub
     - name: Push Docker Image to DockerHub
       if: success()
-      env:
-        DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
-        DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+      # env:
+        #D OCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+        # DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
       run: |
         echo "${DOCKER_PASSWORD}" | docker login -u "${DOCKER_USERNAME}" --password-stdin
         docker tag ironcrypt ${{ secrets.DOCKER_USERNAME }}/ironcrypt:latest
