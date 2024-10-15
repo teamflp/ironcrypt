@@ -1,17 +1,11 @@
 use clap::{Parser, Subcommand};
 use indicatif::{ProgressBar, ProgressStyle};
 use ironcrypt::{
-    generate_rsa_keys,
-    hash_and_encrypt_password_with_criteria,
-    decrypt_and_verify_password,      // <-- Importation de la fonction decrypt
-    load_public_key,
-    load_private_key,                 // <-- Importation de la fonction load_private_key
-    save_keys_to_files,
-    PasswordCriteria,
+    decrypt_and_verify_password, generate_rsa_keys, hash_and_encrypt_password_with_criteria,
+    load_public_key, save_keys_to_files, PasswordCriteria,
 };
 use std::time::Duration;
 
-/// Command Line Interface (CLI) pour IronCrypt.
 #[derive(Parser)]
 #[command(
     name = "ironcrypt",
@@ -26,13 +20,13 @@ struct Cli {
 enum Commands {
     /// Génère une paire de clés RSA.
     Generate {
-        /// Chemin de sauvegarde pour la clé privée.
-        #[arg(short = 'p', long, default_value = "private_key.pem")]
-        private_key_path: String,
+        /// Version de la clé.
+        #[arg(short = 'v', long)]
+        version: String,
 
-        /// Chemin de sauvegarde pour la clé publique.
-        #[arg(short = 'k', long, default_value = "public_key.pem")]
-        public_key_path: String,
+        /// Chemin de sauvegarde pour les clés.
+        #[arg(short = 'd', long, default_value = "keys")]
+        directory: String,
 
         /// Taille de la clé (en bits).
         #[arg(short = 's', long, default_value_t = 2048)]
@@ -44,9 +38,13 @@ enum Commands {
         #[arg(short = 'w', long)]
         password: String,
 
-        /// Chemin vers la clé publique pour le chiffrement.
-        #[arg(short = 'k', long, default_value = "public_key.pem")]
-        public_key_path: String,
+        /// Chemin vers le répertoire des clés publiques.
+        #[arg(short = 'd', long, default_value = "keys")]
+        public_key_directory: String,
+
+        /// Version de la clé publique à utiliser.
+        #[arg(short = 'v', long)]
+        key_version: String,
     },
     /// Déchiffre les données chiffrées et vérifie le mot de passe.
     Decrypt {
@@ -54,9 +52,9 @@ enum Commands {
         #[arg(short = 'w', long)]
         password: String,
 
-        /// Chemin vers la clé privée pour le déchiffrement.
-        #[arg(short = 'k', long, default_value = "private_key.pem")]
-        private_key_path: String,
+        /// Chemin vers le répertoire des clés privées.
+        #[arg(short = 'k', long, default_value = "keys")] // Changé de 'd' à 'k'
+        private_key_directory: String,
 
         /// Données chiffrées à déchiffrer (sous forme de chaîne).
         #[arg(short = 'd', long, conflicts_with = "file")]
@@ -73,10 +71,17 @@ fn main() {
 
     match args.command {
         Commands::Generate {
-            private_key_path,
-            public_key_path,
+            version,
+            directory,
             key_size,
         } => {
+            // Créer le répertoire des clés s'il n'existe pas
+            std::fs::create_dir_all(&directory)
+                .expect("Erreur lors de la création du répertoire des clés");
+
+            let private_key_path = format!("{}/private_key_{}.pem", directory, version);
+            let public_key_path = format!("{}/public_key_{}.pem", directory, version);
+
             // Créer un spinner
             let spinner = ProgressBar::new_spinner();
             spinner.set_style(
@@ -118,59 +123,63 @@ fn main() {
         }
         Commands::Encrypt {
             password,
-            public_key_path,
-        } => match load_public_key(&public_key_path) {
-            Ok(public_key) => {
-                let criteria = PasswordCriteria::default();
-                match hash_and_encrypt_password_with_criteria(&password, &public_key, &criteria) {
-                    Ok(encrypted_hash) => {
-                        println!("Mot de passe haché et chiffré : {}", encrypted_hash);
+            public_key_directory,
+            key_version,
+        } => {
+            let public_key_path =
+                format!("{}/public_key_{}.pem", public_key_directory, key_version);
+            match load_public_key(&public_key_path) {
+                Ok(public_key) => {
+                    let criteria = PasswordCriteria::default();
+                    match hash_and_encrypt_password_with_criteria(
+                        &password,
+                        &public_key,
+                        &criteria,
+                        &key_version,
+                    ) {
+                        Ok(encrypted_hash) => {
+                            println!("Mot de passe haché et chiffré : {}", encrypted_hash);
+                        }
+                        Err(e) => eprintln!("Erreur lors du hachage et du chiffrement : {}", e),
                     }
-                    Err(e) => eprintln!("Erreur lors du hachage et du chiffrement : {}", e),
                 }
+                Err(e) => eprintln!("Erreur lors du chargement de la clé publique : {}", e),
             }
-            Err(e) => eprintln!("Erreur lors du chargement de la clé publique : {}", e),
-        },
+        }
         Commands::Decrypt {
             password,
-            private_key_path,
+            private_key_directory,
             data,
             file,
         } => {
-            // Charger la clé privée
-            match load_private_key(&private_key_path) {
-                Ok(private_key) => {
-                    // Lire les données chiffrées
-                    let encrypted_data = if let Some(data_str) = data {
-                        data_str
-                    } else if let Some(file_path) = file {
-                        // Lire les données depuis le fichier
-                        match std::fs::read_to_string(&file_path) {
-                            Ok(content) => content,
-                            Err(e) => {
-                                eprintln!(
-                                    "Erreur lors de la lecture du fichier de données chiffrées : {}",
-                                    e
-                                );
-                                return;
-                            }
-                        }
-                    } else {
-                        eprintln!("Veuillez fournir les données chiffrées avec --data ou --file.");
-                        return;
-                    };
-
-                    // Déchiffrer et vérifier le mot de passe
-                    match decrypt_and_verify_password(&encrypted_data, &password, &private_key) {
-                        Ok(_) => println!("Le mot de passe est correct."),
-                        Err(e) => eprintln!(
-                            "Le mot de passe est incorrect ou une erreur s'est produite : {}",
+            // Lire les données chiffrées
+            let encrypted_data = if let Some(data_str) = data {
+                data_str
+            } else if let Some(file_path) = file {
+                // Lire les données depuis le fichier
+                match std::fs::read_to_string(&file_path) {
+                    Ok(content) => content,
+                    Err(e) => {
+                        eprintln!(
+                            "Erreur lors de la lecture du fichier de données chiffrées : {}",
                             e
-                        ),
+                        );
+                        return;
                     }
                 }
-                Err(e) => eprintln!("Erreur lors du chargement de la clé privée : {}", e),
+            } else {
+                eprintln!("Veuillez fournir les données chiffrées avec --data ou --file.");
+                return;
+            };
+
+            // Déchiffrer et vérifier le mot de passe
+            match decrypt_and_verify_password(&encrypted_data, &password, &private_key_directory) {
+                Ok(_) => println!("Le mot de passe est correct."),
+                Err(e) => eprintln!(
+                    "Le mot de passe est incorrect ou une erreur s'est produite : {}",
+                    e
+                ),
             }
-        } // Ajoutez d'autres sous-commandes ici si nécessaire.
+        }
     }
 }

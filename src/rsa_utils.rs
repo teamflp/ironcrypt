@@ -2,10 +2,9 @@
 
 use crate::handle_error::IronCryptError;
 use argon2::password_hash::rand_core::OsRng;
-use rsa::pkcs1::{
-    DecodeRsaPrivateKey, DecodeRsaPublicKey, EncodeRsaPrivateKey, EncodeRsaPublicKey,
-};
-use rsa::{RsaPrivateKey, RsaPublicKey}; // Assurez-vous d'importer votre enum d'erreurs
+use rsa::pkcs1::{DecodeRsaPublicKey, EncodeRsaPrivateKey, EncodeRsaPublicKey};
+use rsa::pkcs8::DecodePrivateKey;
+use rsa::{RsaPrivateKey, RsaPublicKey};
 
 /// Génère une paire de clés RSA (privée et publique).
 ///
@@ -46,12 +45,15 @@ pub fn generate_rsa_keys(key_size: u32) -> Result<(RsaPrivateKey, RsaPublicKey),
 ///
 /// Renvoie un `Result` contenant :
 /// - `Ok(RsaPublicKey)` : La clé publique chargée avec succès.
-/// - `Err(String)` : Un message d'erreur si le chargement échoue.
-pub fn load_public_key(public_key_path: &str) -> Result<RsaPublicKey, String> {
-    let public_pem = std::fs::read_to_string(public_key_path)
-        .map_err(|e| format!("Erreur de lecture de la clé publique: {:?}", e))?;
-    RsaPublicKey::from_pkcs1_pem(&public_pem)
-        .map_err(|e| format!("Erreur lors du chargement de la clé publique: {:?}", e))
+/// - `Err(IronCryptError)` : Une erreur si le chargement échoue.
+pub fn load_public_key(public_key_path: &str) -> Result<RsaPublicKey, IronCryptError> {
+    let public_pem = std::fs::read_to_string(public_key_path).map_err(|e| {
+        IronCryptError::KeyLoadingError(format!("Erreur de lecture de la clé publique : {}", e))
+    })?;
+    let public_key = RsaPublicKey::from_pkcs1_pem(&public_pem).map_err(|e| {
+        IronCryptError::KeyLoadingError(format!("Erreur lors du chargement de la clé publique : {}", e))
+    })?;
+    Ok(public_key)
 }
 
 /// Charge la clé privée RSA à partir d'un fichier PEM.
@@ -66,12 +68,15 @@ pub fn load_public_key(public_key_path: &str) -> Result<RsaPublicKey, String> {
 ///
 /// Renvoie un `Result` contenant :
 /// - `Ok(RsaPrivateKey)` : La clé privée chargée avec succès.
-/// - `Err(String)` : Un message d'erreur si le chargement échoue.
-pub fn load_private_key(private_key_path: &str) -> Result<RsaPrivateKey, String> {
-    let private_pem = std::fs::read_to_string(private_key_path)
-        .map_err(|e| format!("Erreur de lecture de la clé privée: {:?}", e))?;
-    RsaPrivateKey::from_pkcs1_pem(&private_pem)
-        .map_err(|e| format!("Erreur lors du chargement de la clé privée: {:?}", e))
+/// - `Err(IronCryptError)` : Une erreur si le chargement échoue.
+pub fn load_private_key(path: &str) -> Result<RsaPrivateKey, IronCryptError> {
+    let pem_data = std::fs::read_to_string(path).map_err(|e| {
+        IronCryptError::KeyLoadingError(format!("Erreur de lecture du fichier : {}", e))
+    })?;
+    let private_key = RsaPrivateKey::from_pkcs8_pem(&pem_data).map_err(|e| {
+        IronCryptError::KeyLoadingError(format!("Erreur de parsing de la clé privée : {}", e))
+    })?;
+    Ok(private_key)
 }
 
 /// Sauvegarde les clés RSA générées dans des fichiers.
@@ -90,24 +95,26 @@ pub fn load_private_key(private_key_path: &str) -> Result<RsaPrivateKey, String>
 ///
 /// Renvoie un `Result` contenant :
 /// - `Ok(())` : Si les clés ont été sauvegardées avec succès.
-/// - `Err(String)` : Un message d'erreur si la sauvegarde échoue.
+/// - `Err(IronCryptError)` : Une erreur si la sauvegarde échoue.
 pub fn save_keys_to_files(
     private_key: &RsaPrivateKey,
     public_key: &RsaPublicKey,
     priv_path: &str,
     pub_path: &str,
-) -> Result<(), String> {
-    let private_pem = private_key
-        .to_pkcs1_pem(Default::default())
-        .map_err(|e| format!("Erreur lors de la conversion de la clé privée : {:?}", e))?;
-    let public_pem = public_key
-        .to_pkcs1_pem(Default::default())
-        .map_err(|e| format!("Erreur lors de la conversion de la clé publique : {:?}", e))?;
+) -> Result<(), IronCryptError> {
+    let private_pem = private_key.to_pkcs1_pem(Default::default()).map_err(|e| {
+        IronCryptError::KeySavingError(format!("Erreur lors de la conversion de la clé privée : {}", e))
+    })?;
+    let public_pem = public_key.to_pkcs1_pem(Default::default()).map_err(|e| {
+        IronCryptError::KeySavingError(format!("Erreur lors de la conversion de la clé publique : {}", e))
+    })?;
 
-    std::fs::write(priv_path, private_pem)
-        .map_err(|e| format!("Erreur lors de l'écriture de la clé privée : {:?}", e))?;
-    std::fs::write(pub_path, public_pem)
-        .map_err(|e| format!("Erreur lors de l'écriture de la clé publique : {:?}", e))?;
+    std::fs::write(priv_path, private_pem).map_err(|e| {
+        IronCryptError::KeySavingError(format!("Erreur lors de l'écriture de la clé privée : {}", e))
+    })?;
+    std::fs::write(pub_path, public_pem).map_err(|e| {
+        IronCryptError::KeySavingError(format!("Erreur lors de l'écriture de la clé publique : {}", e))
+    })?;
 
     Ok(())
 }
@@ -125,11 +132,11 @@ pub fn save_keys_to_files(
 ///
 /// Renvoie un `Result` contenant :
 /// - `Ok((RsaPrivateKey, RsaPublicKey))` : Les clés chargées avec succès.
-/// - `Err(String)` : Un message d'erreur si le chargement échoue.
+/// - `Err(IronCryptError)` : Une erreur si le chargement échoue.
 pub fn load_rsa_keys(
     private_key_path: &str,
     public_key_path: &str,
-) -> Result<(RsaPrivateKey, RsaPublicKey), String> {
+) -> Result<(RsaPrivateKey, RsaPublicKey), IronCryptError> {
     let private_key = load_private_key(private_key_path)?;
     let public_key = load_public_key(public_key_path)?;
     Ok((private_key, public_key))

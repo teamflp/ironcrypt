@@ -1,15 +1,16 @@
 use crate::criteria::PasswordCriteria;
 use crate::handle_error::IronCryptError;
+use crate::load_private_key;
 
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::AeadCore;
 use aes_gcm::{Aes256Gcm, Nonce};
 
 use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
-use argon2::Argon2;
-use argon2::Version;
 use argon2::Algorithm;
+use argon2::Argon2;
 use argon2::Params;
+use argon2::Version;
 
 use base64::engine::general_purpose::STANDARD as base64_standard;
 use base64::Engine;
@@ -17,7 +18,7 @@ use base64::Engine;
 use rand::rngs::OsRng;
 use rand::RngCore;
 
-use rsa::{Oaep, RsaPrivateKey, RsaPublicKey};
+use rsa::{Oaep, RsaPublicKey};
 
 use sha2::Sha256;
 
@@ -102,6 +103,7 @@ pub fn hash_and_encrypt_password_with_criteria(
     password: &str,
     public_key: &RsaPublicKey,
     criteria: &PasswordCriteria,
+    key_version: &str,
 ) -> Result<String, IronCryptError> {
     // Vérifier les critères du mot de passe
     criteria.validate(password)?;
@@ -118,7 +120,9 @@ pub fn hash_and_encrypt_password_with_criteria(
     let salt = SaltString::generate(&mut OsRng);
 
     // Hacher le mot de passe
-    let password_hash = argon2.hash_password(password.as_bytes(), &salt)?.to_string();
+    let password_hash = argon2
+        .hash_password(password.as_bytes(), &salt)?
+        .to_string();
 
     // Générer une clé symétrique aléatoire (256 bits pour AES-256)
     let mut symmetric_key = [0u8; 32];
@@ -132,9 +136,11 @@ pub fn hash_and_encrypt_password_with_criteria(
         ))
     })?;
     let nonce = Aes256Gcm::generate_nonce(&mut OsRng); // 96 bits; unique par message
-    let ciphertext = cipher.encrypt(&nonce, password_hash.as_bytes()).map_err(|e| {
-        IronCryptError::EncryptionError(format!("Erreur lors du chiffrement du hash : {}", e))
-    })?;
+    let ciphertext = cipher
+        .encrypt(&nonce, password_hash.as_bytes())
+        .map_err(|e| {
+            IronCryptError::EncryptionError(format!("Erreur lors du chiffrement du hash : {}", e))
+        })?;
 
     // Chiffrer la clé symétrique avec RSA
     let padding = Oaep::new::<Sha256>();
@@ -147,8 +153,9 @@ pub fn hash_and_encrypt_password_with_criteria(
             ))
         })?;
 
-    // Sérialiser le tout en JSON
+    // Sérialiser le tout en JSON avec la version de la clé
     let data = serde_json::json!({
+        "key_version": key_version,
         "encrypted_symmetric_key": base64_standard.encode(&encrypted_symmetric_key),
         "nonce": base64_standard.encode(&nonce),
         "ciphertext": base64_standard.encode(&ciphertext),
@@ -156,7 +163,6 @@ pub fn hash_and_encrypt_password_with_criteria(
 
     Ok(data.to_string())
 }
-
 
 /// Déchiffre des données chiffrées et vérifie si un mot de passe correspond au hash déchiffré.
 ///
@@ -242,12 +248,23 @@ pub fn hash_and_encrypt_password_with_criteria(
 pub fn decrypt_and_verify_password(
     encrypted_data: &str,
     password: &str,
-    private_key: &RsaPrivateKey,
+    private_key_directory: &str,
 ) -> Result<(), IronCryptError> {
     // Parser les données JSON
     let data: serde_json::Value = serde_json::from_str(encrypted_data).map_err(|e| {
         IronCryptError::DecryptionError(format!("Erreur lors du parsing des données : {}", e))
     })?;
+
+    // Récupérer la version de la clé
+    let key_version = data["key_version"].as_str().ok_or_else(|| {
+        IronCryptError::DecryptionError("Champ 'key_version' manquant".to_string())
+    })?;
+
+    // Construire le chemin vers la clé privée correspondante
+    let private_key_path = format!("{}/private_key_{}.pem", private_key_directory, key_version);
+
+    // Charger la clé privée
+    let private_key = load_private_key(&private_key_path)?;
 
     // Récupérer les champs
     let encrypted_symmetric_key_b64 =
@@ -323,4 +340,3 @@ pub fn decrypt_and_verify_password(
 
     Ok(())
 }
-

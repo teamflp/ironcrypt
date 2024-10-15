@@ -1,5 +1,4 @@
 /target
 /.idea
-private_key.pem
-public_key.pem
+/keys
 procedure.md
