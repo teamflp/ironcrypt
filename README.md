@@ -1,29 +1,50 @@
 # IronCrypt
 
-**IronCrypt** est une librairie de cryptage de mots de passe en Rust, conçue pour offrir un niveau de sécurité élevé grâce à une combinaison d'algorithmes de hachage et de chiffrement. Utilisant **Argon2** pour le hachage sécurisé et le chiffrement **RSA** pour une deuxième couche de protection, IronCrypt est idéal pour les applications nécessitant une sécurité accrue, comme les systèmes de gestion des utilisateurs ou les applications financières.Fonctionnalités
+[[[Installation Button]]](#installation)\
+[[[Usage Button]]](#usage)\
+[[[Contribute Button]]](#contribution)
 
-## Fonctionnalités
+<!-- TOC -->
+* [IronCrypt](#ironcrypt)
+  * [Features](#features)
+  * [Prerequisites](#prerequisites)
+  * [Installation](#installation)
+  * [Usage](#usage)
+    * [Available Commands](#available-commands)
+    * [Generate](#generate)
+      * [Decrypt](#decrypt)
+  * [Examples](#examples)
+    * [Generating RSA Keys](#generating-rsa-keys)
+    * [Encrypting a Password](#encrypting-a-password)
+    * [Decrypting and Verifying a Password](#decrypting-and-verifying-a-password)
+  * [Full Example: Password Encryption and Decryption](#full-example-password-encryption-and-decryption)
+    * [Steps:](#steps)
+  * [Error Handling](#error-handling)
+  * [Security and Best Practices](#security-and-best-practices)
+  * [Contribution](#contribution)
+  * [License](#license)
+<!-- TOC -->
 
-- **Vérification de la robustesse des mots de passe** : Vérifiez si un mot de passe répond à des critères de sécurité (longueur, présence de caractères spéciaux, majuscules, etc.).
-- **Hachage et chiffrement des mots de passe** : Hachez les mots de passe avec Argon2, puis chiffrez-les avec RSA pour un stockage sécurisé.
-- **Déchiffrement et vérification des mots de passe** : Déchiffrez un hash chiffré et vérifiez si le mot de passe fourni correspond au hash.
-- **Gestion des clés RSA** : Génération de paires de clés RSA, et sauvegarde/chargement de clés à partir de fichiers PEM.
+**IronCrypt** is a Command-Line Interface (CLI) tool and Rust library dedicated to the secure encryption of passwords. By combining the **Argon2** hashing algorithm, **AES-256-GCM** encryption, and asymmetric **RSA** encryption, IronCrypt offers a robust solution for managing passwords securely within your applications.
 
-## Prérequis
+## Features
 
-- Rust &gt;= 1.56
-- Bibliothèques Rust supplémentaires :
-  - `argon2`
-  - `rsa`
-  - `base64`
-  - `sha2`
-  - `rand`
-  - `serde` pour la sérialisation des critères de mot de passe
-  - `clap` pour la gestion de la ligne de commande
-  - `thiserror` pour une gestion idiomatique des erreurs
-  - `indicatif` pour les spinners et les barres de progression en CLI
+- **Password Strength Verification**: Ensures that passwords meet stringent security criteria (length, uppercase letters, numbers, special characters, etc.).
+- **Secure Password Hashing**: Utilizes **Argon2** for robust password hashing.
+- **Data Encryption**: Encrypts hashed passwords using **AES-256-GCM** to ensure confidentiality and integrity.
+- **Asymmetric Key Encryption**: Employs **RSA** to encrypt the symmetric key used by AES, enabling secure key management.
+- **Password Decryption and Verification**: Decrypts encrypted data and verifies the authenticity of the provided password.
+- **RSA Key Management**: Generates, saves, and loads RSA key pairs from PEM files.
+- **Intuitive CLI Interface**: Provides user-friendly commands for managing encryption operations and key handling.
 
-Assurez-vous que votre fichier `Cargo.toml` inclut les dépendances nécessaires :
+---
+
+## Prerequisites
+
+- **Rust** &gt;= 1.56
+- **Cargo** (Rust's package manager)
+
+Ensure your `Cargo.toml` includes the necessary dependencies:
 
 ```toml
 [dependencies]
@@ -43,512 +64,281 @@ indicatif = "0.17.2"
 
 ## Installation
 
-Ajoutez `IronCrypt` à votre projet en utilisant `cargo` :
+Add `IronCrypt` to your project using `cargo`:
 
 ```bash
 cargo add ironcrypt
 ```
 
-Ou, ajoutez manuellement cette ligne dans votre fichier `Cargo.toml` :
+Or, manually add the following line to your `Cargo.toml`:
 
 ```toml
 [dependencies]
 ironcrypt = "0.1.0"
 ```
 
-## Utilisation : Génération de paire de clés RSA
+## Usage
 
-### **Utilisation par défaut (sans options)**
+IronCrypt offers a CLI with several commands to manage RSA keys and handle password encryption. Below are the available commands:
 
-Si vous exécutez la commande `generate` sans spécifier d'options, les clés seront générées avec les paramètres par défaut :
+### Available Commands
 
-- **Chemin de la clé privée** : `private_key.pem`
-- **Chemin de la clé publique** : `public_key.pem`
-- **Taille de la clé** : `2048` bits
+| **Command**   | **Description**                                    |
+|---------------|----------------------------------------------------|
+| `generate`    | Generates an RSA key pair (private and public).    |
+| `encrypt`     | Hashes and encrypts a password using a public key. |
+| `decrypt`     | Decrypts encrypted data and verifies a password.   |
 
-**Commande :**
+### Generate
 
-```bash
-cargo run -- generate
-```
+Generates an RSA key pair (private and public).
 
-**Exemple de sortie :**
-
-```bash
-Génération des clés RSA en cours...
-Génération des clés RSA terminée.
-Les clés RSA ont été générées et sauvegardées avec succès.
-Clé privée : private_key.pem
-Clé publique : public_key.pem
-```
-
-Cela générera une paire de clés RSA dans les fichiers suivants par défaut :
-
-- Clé privée : `private_key.pem`
-- Clé publique : `public_key.pem`
-
-### Utilisation avec options
-
-Vous pouvez spécifier les chemins de sortie pour la clé privée et la clé publique en utilisant les options `-p` (pour la clé privée) et `-k` (pour la clé publique) et `-s` pour la taille de la clé en bits (par defaut 2048). Cette commande vous permet de renommer vous clés et de choisir la taille de la paire de clés.
-
-- `-- generate` : Générer des clés RSA.
-- `-p` : Chemin de sauvegarde pour la clé privée (par défaut `private_key.pem`).
-- `-k` : Chemin de sauvegarde pour la clé publique (par défaut `public_key.pem`).
-- `-s` : Taille de la clé en bits (par défaut `2048`).
-
-1. Spécifier le chemin de la clé privée avec `-p`.
-
-Voici comment procéder avec Cargo :
+**Syntax:**
 
 ```bash
-cargo run -- generate -p path/to/ma_cle_privee.pem
+cargo run -- generate -v <version> -d <directory> -s <key_size>
 ```
 
-**Exemple de sortie :**
+| Option        | Short | Description                              | Default |
+|---------------|-------|------------------------------------------|---------|
+| \- -version   | \-v   | Version identifier for the key pair.     | N/A     |
+| \- -directory | \-d   | Directory path where keys will be saved. | key     |
+| \- -key_size  | \-s   | Size of the RSA key in bits.             | 2048    |
+
+**Exemple :**
 
 ```bash
-Génération des clés RSA en cours...
-Génération des clés RSA terminée.
-Les clés RSA ont été générées et sauvegardées avec succès.
-Clé privée : chemin/vers/ma_cle_privee.pem
-Clé publique : public_key.pem
+cargo run -- generate -v v1 -d keys -s 4096
 ```
 
-#### **2. Spécifier le chemin de la clé publique avec** `-k`
+This command generates a 4096-bit RSA key pair labeled with version v1 and saves them in the keys directory.
 
-**Commande :**
+**Encryp**t\
+Hashes and encrypts a password using a public key.
+
+Syntax:
 
 ```bash
-cargo run -- generate -k chemin/vers/ma_cle_publique.pem
+cargo run -- encrypt -w <password> -d <public_key_directory> -v <key_version>
 ```
 
-**Exemple de sortie :**
+| Option                   | Short | Description                                  | Default |
+|--------------------------|-------|----------------------------------------------|---------|
+| `--password`             | `-w`  | The password to hash and encrypt.            | N/A     |
+| `--public_key_directory` | `-d`  | Directory path containing public keys.       | `keys`  |
+| `--key_version`          | `-v`  | Version identifier of the public key to use. | N/A     |
+
+**Example:**
 
 ```bash
-Génération des clés RSA en cours...
-Génération des clés RSA terminée.
-Les clés RSA ont été générées et sauvegardées avec succès.
-Clé privée : private_key.pem
-Clé publique : chemin/vers/ma_cle_publique.pem
+cargo run -- encrypt -w 'YourP@ssw0rd!' -d keys -v v1
 ```
 
-#### **3. Spécifier la taille de la clé avec** `-s` sans chemin
+This command hashes and encrypts the password `YourP@ssw0rd!` using the public key of version `v1` located in the `keys`directory.
 
-**Commande :**
+#### Decrypt
+
+Decrypts encrypted data and verifies a password.
+
+**Syntax:**
 
 ```bash
-cargo run -- generate -s 4096
+cargo run -- decrypt -w <password> -k <private_key_directory> [-d <data> | -f <file>]
 ```
 
-**Exemple de sortie :**
+**Note:** The `-d` (data) and `-f` (file) options are mutually exclusive.
+
+| Option                    | Short | Description                               | Default |
+|---------------------------|-------|-------------------------------------------|---------|
+| `--password`              | `-w`  | The password to verify.                   | N/A     |
+| `--private_key_directory` | `-k`  | Directory path containing private keys.   | `keys`  |
+| `--data`                  | `-d`  | Encrypted data as a direct string input.  | `None`  |
+| `--file`                  | `-f`  | Path to a file containing encrypted data. | `None`  |
+
+**Example with Direct Data Input:**
 
 ```bash
-Génération des clés RSA en cours...
-Génération des clés RSA terminée.
-Les clés RSA ont été générées et sauvegardées avec succès.
-Clé privée : private_key.pem
-Clé publique : public_key.pem
+cargo run -- decrypt -w 'YourP@ssw0rd!' -k keys -d '{"ciphertext":"...","encrypted_symmetric_key":"...","nonce":"..."}'
 ```
 
-*Remarque : La génération d'une clé de 4096 bits peut prendre plus de temps que pour une clé de 2048 bits.*
-
-#### **4. Combiner plusieurs options**
-
-Vous pouvez combiner les options pour personnaliser à la fois les chemins et la taille de la clé.
-
-**Commande :**
+**Example with File:**
 
 ```bash
-cargo run -- generate -p ma_cle_privee.pem -k ma_cle_publique.pem -s 3072
+cargo run -- decrypt -w 'YourP@ssw0rd!' -k keys -f encrypted_data.json
 ```
 
-**Exemple de sortie :**
+This command decrypts the encrypted data using the private key in the `keys` directory and verifies if the provided password matches.
+
+## Examples
+
+### Generating RSA Keys
+
+Generate an RSA key pair with version `v1`, saved in the `keys` directory with a key size of 4096 bits.
 
 ```bash
-Génération des clés RSA en cours...
-Génération des clés RSA terminée.
-Les clés RSA ont été générées et sauvegardées avec succès.
-Clé privée : ma_cle_privee.pem
-Clé publique : ma_cle_publique.pem
+cargo run -- generate -v v1 -d keys -s 4096
 ```
 
-### **Affichage de l'aide et des options disponibles**
-
-Pour voir toutes les options disponibles pour la commande `generate`, vous pouvez utiliser l'option `--help`.
-
-**Commande :**\
-ru
-
-```bash
-cargo run -- generate --help
-```
-
-**Exemple de sortie :**
+**Output:**
 
 ```vbnet
-Génère une paire de clés RSA
-
-Usage: ironcrypt-cli generate [OPTIONS]
-
-Options:
-  -p, --private-key-path <PRIVATE_KEY_PATH>
-          Chemin de sauvegarde pour la clé privée [default: private_key.pem]
-  -k, --public-key-path <PUBLIC_KEY_PATH>
-          Chemin de sauvegarde pour la clé publique [default: public_key.pem]
-  -s, --key-size <KEY_SIZE>
-          Taille de la clé (en bits) [default: 2048]
-  -h, --help
-          Print help
+⠋ Generating RSA keys...
+✔ RSA key generation completed.
+RSA keys have been successfully generated and saved.
+Private Key: keys/private_key_v1.pem
+Public Key: keys/public_key_v1.pem
 ```
 
-### **Conseils**
+### Encrypting a Password
 
-- **Ordre des options** : L'ordre des options n'a pas d'importance. Vous pouvez écrire les options dans l'ordre qui vous convient.
-
-- **Valeurs par défaut** : Si vous n'indiquez pas une option, sa valeur par défaut sera utilisée.
-
-- **Combinaison des options courtes** : Vous pouvez combiner les options courtes si elles n'attendent pas de valeur. Par exemple, si vous aviez des options comme `-v` pour verbose et `-f` pour force, vous pourriez écrire `-vf`. Cependant, dans ce cas, chaque option attend une valeur, donc elles doivent être séparées.
-
-La commande `generate` vous permet de générer des paires de clés RSA avec des paramètres personnalisés selon vos besoins. Utilisez les options `-p`, `-k` et `-s` pour spécifier respectivement le chemin de la clé privée, le chemin de la clé publique et la taille de la clé en bits.
-
-N'hésitez pas à utiliser l'option `--help` pour obtenir des informations détaillées sur les commandes et options disponibles.
-
-**4. Fonctionnalités futures**
-
-L'outil `ironcrypt` est conçu pour être extensible. De futures versions pourraient inclure des fonctionnalités supplémentaires pour le hachage sécurisé des mots de passe, le chiffrement de données sensibles, etc.
-
-### Remarques
-
-- Assurez-vous que le dossier dans lequel vous générez vos clés a les permissions suffisantes pour écrire les fichiers.
-- Les fichiers PEM générés peuvent être utilisés dans des projets nécessitant des clés RSA pour le chiffrement ou la signature numérique.
-
-**3. Hacher et chiffrer un mot de passe**
-
-Pour hacher et chiffrer un mot de passe, vous pouvez utiliser la sous-commande `encrypt`. :
+Hash and encrypt the password `YourP@ssw0rd!` using the public key of version `v1`.
 
 ```bash
-cargo run -- encrypt -w "VotreMotDeP@sse1" -k public_key.pem
+cargo run -- encrypt -w 'YourP@ssw0rd!' -d keys -v v1
 ```
 
-- `encrypt` : Sous-commande pour hacher et chiffrer un mot de passe.
-- `-w` : Le mot de passe à hacher et chiffrer.
-- `-k` : Chemin vers la clé publique pour le chiffrement (par défaut `public_key.pem`).
-
-Résultat : Mot de passe haché et chiffré
+**Output:**
 
 ```bash
- {
-   "ciphertext":"P2A4hrhIg9E9o+sChKPK3zrwo/49Cutpb0FoxmZSfzs6YmG0wkiToEVy9vKBaxMcYzM7sAWso2977vzgrIReTZfHPMBnsi2yVR6xh7RUIeoNJvx346Ya8ws/GI+HjxTVOXZh2odHPFS7mHUpWASOb7U=",
-   "encrypted_symmetric_key":"j/MMqYqHNEh8+Go1HsjlLWfQlg9/94meH6sNpPcYQt1ZEwA5BoGVaJ1hcOt0A6Sv54dwlG4Yr8WrHUkPR04raw0jFhSNkk7iO5fZJwuA8gvYRLhnAxyW0X/vRJzwUaee4TuDt9r4Zr3DppAl12lW03SkOkuwFokrz8AGg6G1LqnUz0CwgbfmOauM2+O70VDA4cTCb6mH7LmslplS6pUuY5U3M8inWag6Z907Q6yV4HNYdHxAuYHfLK/XxOiHCsH8H8EfWbVt7BU31PC8o2L+MkfTyf6f5t4wvQtAx2BWvMt7zE9JWYVs1aTxsJC4urO4oeer/XddZLym7t6xsNTNoQ==",
-   "nonce":"W7q6TjwB4x0ysavW"
-}
+Hashed and encrypted password: {"ciphertext":"P2A4hrhIg9E9o+sChKPK3zrwo/49Cutpb0FoxmZSfzs6YmG0wkiToEVy9vKBaxMcYzM7sAWso2977vzgrIReTZfHPMBnsi2yVR6xh7RUIeoNJvx346Ya8ws/GI+HjxTVOXZh2odHPFS7mHUpWASOb7U=","encrypted_symmetric_key":"j/MMqYqHNEh8+Go1HsjlLWfQlg9/94meH6sNpPcYQt1ZEwA5BoGVaJ1hcOt0A6Sv54dwlG4Yr8WrHUkPR04raw0jFhSNkk7iO5fZJwuA8gvYRLhnAxyW0X/vRJzwUaee4TuDt9r4Zr3DppAl12lW03SkOkuwFokrz8AGg6G1LqnUz0CwgbfmOauM2+O70VDA4cTCb6mH7LmslplS6pUuY5U3M8inWag6Z907Q6yV4HNYdHxAuYHfLK/XxOiHCsH8H8EfWbVt7BU31PC8o2L+MkfTyf6f5t4wvQtAx2BWvMt7zE9JWYVs1aTxsJC4urO4oeer/XddZLym7t6xsNTNoQ==","nonce":"W7q6TjwB4x0ysavW"}
 ```
 
-### **Explication des champs :**
+### Decrypting and Verifying a Password
 
-1. `encrypted_symmetric_key` :
+Decrypt the encrypted data from a file and verify the password.
 
-   - Il s'agit de la **clé symétrique** utilisée pour chiffrer le hash du mot de passe, **elle-même chiffrée** avec la **clé publique RSA**.
-   - Cette clé est encodée en **base64**.
-   - Seule la **clé privée RSA** correspondante peut déchiffrer cette clé symétrique.
+```
+cargo run -- decrypt -w 'YourP@ssw0rd!' -k keys -f encrypted_data.json
+```
 
-2. `nonce` :
-
-   - C'est le **nonce** (nombre aléatoire) utilisé lors du chiffrement avec AES-GCM.
-   - Il assure que chaque chiffrement est unique, même si le même message est chiffré plusieurs fois.
-   - Encodé en **base64**.
-
-3. `ciphertext` :
-
-   - Il s'agit du **hash du mot de passe chiffré** avec AES-256-GCM en utilisant la clé symétrique générée.
-   - Encodé en **base64**.
-
-## **Utilisation de la commande** `decrypt` **:**
-
-### **1. Utiliser les données chiffrées sous forme de chaîne :**
+**Output if the password is correct:**
 
 ```bash
-cargo run -- decrypt -w "VotreMotDeP@sse1" -k private_key.pem -d '{"ciphertext":"...","encrypted_symmetric_key":"...","nonce":"..."}'
+The password is correct.
 ```
 
----
+**Output in case of an error:**
 
-Remplacez `...` par les valeurs réelles des données chiffrées.
-
-### **2. Utiliser un fichier contenant les données chiffrées :**
-
-- Enregistrez les données chiffrées dans un fichier, par exemple `encrypted_data.json`.
-
-- Exécutez la commande :
-
-  ```bash
-  cargo run -- decrypt -w "VotreMotDeP@sse1" -k private_key.pem -f encrypted_data.json
-  ```
-
-### 1. Importation des Fonctions
-
-Pour utiliser les principales fonctionnalités de la bibliothèque, importez-les dans votre code :
-
-```rust
-use ironcrypt::{
-    is_password_strong, PasswordCriteria, hash_and_encrypt_password_with_criteria,
-    decrypt_and_verify_password, generate_rsa_keys, save_keys_to_files, load_rsa_keys,
-};
+```bash
+The password is incorrect or an error occurred: Detailed error message here
 ```
 
-### 2. Définir des Critères de Mot de Passe
+## Full Example: Password Encryption and Decryption
 
-Créez une configuration pour les mots de passe en utilisant la structure `PasswordCriteria` :
+Before using IronCrypt for password encryption and decryption, generate an RSA key pair using:
 
-```rust
-let criteria = PasswordCriteria {
-    min_length: 12,
-    max_length: Some(128),
-    require_uppercase: true,
-    require_numbers: true,
-    require_special_chars: true,
-    disallowed_patterns: vec!["password".to_string(), "1234".to_string()],
-    digits: Some(0),
-    lowercase: Some(0),
-    special_chars: Some(0),
-    uppercase: Some(0),
-};
+```bash
+cargo run -- generate -v v1 -d keys -s 4096
 ```
 
-### 3. Générer des Clés RSA et les Sauvegarder
-
-Générez une paire de clés RSA (privée et publique) :
+Then use the following code to encrypt and verify passwords:
 
 ```rust
-use ironcrypt::IronCryptError;
+use ironcrypt::{hash_and_encrypt_password_with_criteria, decrypt_and_verify_password, load_private_key, load_public_key, PasswordCriteria};
+use std::error::Error;
 
-let (private_key, public_key) = generate_rsa_keys(2048)
-    .expect("Erreur lors de la génération des clés RSA");
-save_keys_to_files(&private_key, &public_key, "private_key.pem", "public_key.pem")
-    .expect("Erreur lors de la sauvegarde des clés");
-```
+fn main() -> Result<(), Box<dyn Error>> {
+    // ------------------------- 1. Encrypt and Store the Password -------------------------
 
-**Remarque :** `generate_rsa_keys` prend maintenant un argument pour la taille de la clé (en bits) et retourne un `Result`, il faut donc gérer les erreurs.
+    let password = "MySuperSecurePassword@2024";
 
-### 4. Hacher et chiffrer un mot de passe
+    let key_version = "v1";
+    let public_key_path = format!("keys/public_key_{}.pem", key_version);
+    let public_key = load_public_key(&public_key_path)?;
 
-Hachez et chiffrez un mot de passe en utilisant les critères définis et la clé publique :
+    let criteria = PasswordCriteria::default();
 
-```rust
-cargo run -- encrypt -w 'VotreMotDeP@sse1' -k public_key.pem > encrypted_data.json
-```
+    let encrypted_data = hash_and_encrypt_password_with_criteria(password, &public_key, &criteria, key_version)?;
 
-### 5. Déchiffrer et vérifier un mot de passe
+    println!("Encrypted and hashed password to store in the database:");
+    println!("{}", encrypted_data);
 
-Déchiffrez le hash et vérifiez si un mot de passe correspond :
+    // --------------------- 2. Decrypt and Verify the Password ---------------------
 
-```rust
-cargo run -- decrypt -w 'VotreMotDeP@sse1' -k private_key.pem -f encrypted_data.json
-```
+    let user_input_password = "MySuperSecurePassword@2024";
 
-### **Résultat Attendu :**
+    let private_key_path = format!("keys/private_key_{}.pem", key_version);
+    let private_key = load_private_key(&private_key_path)?;
 
-- Si tout fonctionne correctement, vous devriez voir le message :
-
-  ```
-  Le mot de passe est correct.
-  ```
-
-### 6. Charger les clés RSA depuis des fichiers
-
-Si vous avez déjà sauvegardé vos clés RSA, vous pouvez les recharger facilement :
-
-```rust
-let (private_key, public_key) = load_rsa_keys("private_key.pem", "public_key.pem")
-    .expect("Erreur lors du chargement des clés RSA");
-```
-
-## Exemples complets
-
-Voici un exemple complet de la bibliothèque en action :
-
-```rust
-use ironcrypt::{
-    is_password_strong, PasswordCriteria, hash_and_encrypt_password_with_criteria,
-    decrypt_and_verify_password, generate_rsa_keys, save_keys_to_files, load_rsa_keys, IronCryptError,
-};
-
-fn main() -> Result<(), IronCryptError> {
-    // Définir les critères de mot de passe
-    let criteria = PasswordCriteria {
-        min_length: 8,
-        max_length: Some(128),
-        require_uppercase: true,
-        require_numbers: true,
-        require_special_chars: true,
-        disallowed_patterns: vec!["password".to_string(), "1234".to_string()],
-        digits: Some(1),
-        lowercase: Some(1),
-        special_chars: Some(1),
-        uppercase: Some(1),
-    };
-
-    // Générer les clés RSA et les sauvegarder dans des fichiers
-    let (private_key, public_key) = generate_rsa_keys(2048)?;
-    save_keys_to_files(&private_key, &public_key, "private_key.pem", "public_key.pem")?;
-
-    // Hachage et chiffrement du mot de passe
-    let password = "StrongP@ssw0rd";
-    let encrypted_hash = hash_and_encrypt_password_with_criteria(password, &public_key, &criteria)?;
-
-    // Déchiffrement et vérification du mot de passe
-    match decrypt_and_verify_password(&encrypted_hash, password, &private_key) {
-        Ok(_) => println!("Le mot de passe est valide."),
-        Err(e) => println!("Erreur lors de la vérification du mot de passe : {:?}", e),
+    match decrypt_and_verify_password(&encrypted_data, user_input_password, "keys") {
+        Ok(_) => println!("Password is correct."),
+        Err(e) => println!("The password is incorrect or an error occurred: {:?}", e),
     }
 
     Ok(())
 }
-
-// Résultat : Le mot de passe haché est : $argon2id$v=19$m=19456,t=2,p=1$2hF8WmxsmuCDaytOywqdlg$D9wxeTvYO4xbi4DZW9fU2mbpwMF6X4xVgnQpK0+nOQo
 ```
 
-### Exemple de vérification de mot de passe
+### Steps:
 
-```rust
-use ironcrypt::{hash_password, is_password_strong, PasswordCriteria};
+1. **Encrypting and Storing the Password:**
 
-fn main() {
-    // Définition des critères de robustesse du mot de passe.
-    let criteria = PasswordCriteria {
-        min_length: 8,
-        max_length: Some(20),
-        require_uppercase: true,
-        require_numbers: true,
-        require_special_chars: true,
-        disallowed_patterns: vec!["password".to_string(), "1234".to_string()],
-        special_chars: Some(1),
-        uppercase: Some(1),
-        lowercase: Some(1),
-        digits: Some(1),
-    };
+   - The password is hashed using **Argon2** and encrypted with **AES-256-GCM**.
+   - The symmetric key used for encryption is encrypted with an **RSA public key**.
+   - The result is serialized into **JSON** and encoded in **base64**, ready to be stored in the database.
 
-    // Le mot de passe à hacher.
-    let password = "StrongP@ssw0rd";
+2. **Decrypting and Verifying the Password:**
 
-    // Vérification si le mot de passe est robuste selon les critères définis.
-    match is_password_strong(password, &criteria) {
-        Ok(_) => {
-            // Si le mot de passe est valide, on peut le hacher.
-            match hash_password(password) {
-                Ok(hashed_password) => {
-                    println!("Le mot de passe haché est : {}", hashed_password);
-                }
-                Err(e) => {
-                    println!("Erreur lors du hachage du mot de passe : {:?}", e);
-                }
-            }
-        }
-        Err(e) => {
-            println!("Le mot de passe ne respecte pas les critères de robustesse : {}", e);
-        }
-    }
-}
-```
+   - The stored data is decrypted using the **RSA private key**, and the password is compared to the decrypted hash.
 
-**Résultat :**
+## Error Handling
 
-```bash
-Le mot de passe haché est : $argon2id$v=19$m=19456,t=2,p=1$...
-```
+IronCrypt utilizes an enumeration `IronCryptError` to consistently and informatively handle various errors that may occur. Below are some common errors and their example messages:
 
-La librairie **IronCrypt** présente plusieurs points forts qui en font un outil puissant pour la gestion sécurisée des mots de passe et des données sensibles dans vos applications. Voici les principaux avantages et caractéristiques de cette librairie :
+| Error | Example Messages |
+| --- | --- |
+| **Key Generation Error** | `Error generating the private key: Detailed error message` |
+| **Key Loading Error** | `Error reading the public key: Detailed error message`<br>`Error loading the private key: Detailed error message` |
+| **Key Saving Error** | `Error converting the private key: Detailed error message`<br>`Error writing the public key: Detailed error message` |
+| **Hashing Error** | `Error hashing: Detailed error message` |
+| **Encryption/Decryption Error** | `Encryption error: Detailed error message`<br>`Decryption error: Detailed error message` |
+| **IO Error** | `I/O error: Detailed error message` |
+| **UTF-8 Conversion Error** | `UTF-8 conversion error: Detailed error message` |
+| **Invalid Password** | `Invalid password` |
 
----
+**Notes:**
 
-## **Sécurité avancée**
+- **Protected RSA Private Key**: Ensure that private keys are stored securely and only accessible to authorized parties.
+- **File Permissions**: Verify that the files containing RSA keys have appropriate permissions to prevent unauthorized access.
 
-### **a. Utilisation d'algorithmes cryptographiques modernes**
+## Security and Best Practices
 
-- **Hachage avec argon2** : IronCrypt utilise l'algorithme de hachage **Argon2**, considéré comme l'un des plus sécurisés et performants pour le stockage des mots de passe. Il est résistant aux attaques par force brute et par dictionnaire, offrant une protection robuste contre les tentatives de compromission.
-
-- **Chiffrement symétrique avec AES-256-GCM** : Pour le chiffrement des données, IronCrypt utilise l'algorithme **AES-256-GCM**, qui offre à la fois confidentialité et intégrité des données grâce à son mode d'opération authentifié.
-
-- **Chiffrement asymétrique avec RSA** : La librairie implémente le chiffrement asymétrique **RSA** pour sécuriser l'échange et le stockage des clés symétriques. Cela permet une gestion sécurisée des clés dans des environnements distribués.
-
-### **b. Chiffrement hybride**
-
-- **Combinaison des chiffrements symétrique et asymétrique** : En adoptant une approche de chiffrement hybride, IronCrypt bénéficie des avantages des deux méthodes. Le chiffrement symétrique offre des performances élevées pour le traitement de grandes quantités de données, tandis que le chiffrement asymétrique garantit une distribution sécurisée des clés.
-
-## **2. Gestion sécurisée des mots de passe**
-
-### **a. Vérification de la robustesse des mots de passe**
-
-- **Critères personnalisables** : La librairie permet de définir des critères de robustesse pour les mots de passe, tels que la longueur minimale, la présence de majuscules, de chiffres, de caractères spéciaux, etc.
-
-- **Fonction de validation intégrée** : Avant le hachage et le chiffrement, IronCrypt vérifie que le mot de passe respecte les critères définis, renforçant ainsi la sécurité dès la création du mot de passe.
-
-### **b. Stockage sécurisé des mots de passe**
-
-- **Hachage et chiffrement** : Les mots de passe sont d'abord hachés avec Argon2, puis le hash est chiffré avec AES-256-GCM. La clé symétrique utilisée est elle-même chiffrée avec RSA, assurant une protection multi-niveaux.
-
-- **Protection contre les fuites** : En chiffrant le hash du mot de passe, la librairie réduit le risque que des attaquants puissent exploiter des hash compromis pour tenter de récupérer les mots de passe en clair.
-
-## **3. Intégrité et confidentialité des données**
-
-### **a. Authentification intégrée**
-
-- **Mode GCM (Galois/Counter Mode)** : L'utilisation d'AES en mode GCM assure non seulement le chiffrement des données, mais aussi leur intégrité. Toute modification non autorisée des données chiffrées est détectée lors du déchiffrement.
-
-### **b. Gestion sécurisée des clés**
-
-- **Clé Privée RSA Protégée** : La clé privée utilisée pour déchiffrer la clé symétrique est maintenue en sécurité, garantissant que seules les parties autorisées peuvent accéder aux données sensibles.
-
-## **4. Facilité d'intégration et d'utilisation**
-
-### **a. API simples et efficaces**
-
-- **Fonctions Claires** : IronCrypt fournit des fonctions bien définies pour le hachage, le chiffrement, le déchiffrement et la vérification des mots de passe, facilitant leur intégration dans vos applications.
-
-- **Gestion des erreurs** : La librairie offre une gestion des erreurs exhaustive, avec des messages explicites qui aident au débogage tout en évitant de divulguer des informations sensibles.
-
-### **b. Compatibilité avec les standards**
-
-- **Utilisation de Formats Reconnaissables** : Les clés et les données sont manipulées en utilisant des formats standard tels que PEM pour les clés RSA et JSON pour les données sérialisées, facilitant l'interopérabilité avec d'autres systèmes et outils.
-
-## **5. Performance et scalabilité**
-
-### **a. Optimisation des opérations cryptographiques**
-
-- **Chiffrement Symétrique pour les Données** : L'utilisation d'AES pour le chiffrement des données assure des performances élevées, ce qui est crucial pour les applications à grande échelle.
-
-- **Chiffrement Asymétrique Limité aux Clés** : En limitant l'utilisation du chiffrement RSA au chiffrement des clés symétriques, IronCrypt minimise l'impact sur les performances tout en maintenant un haut niveau de sécurité.
-
-## **6. Bonnes pratiques de sécurité intégrées**
-
-### **a. Salage des hashs**
-
-- **Génération de Sels Aléatoires** : Pour chaque mot de passe haché, un sel unique est généré, renforçant la résistance aux attaques pré-calculées comme les tables rainbow.
-
-### **b. Mise à jour et maintenance facilitées**
-
-- **Utilisation de Crates Rust Modernes** : En s'appuyant sur des crates Rust maintenues et sécurisées, IronCrypt bénéficie des mises à jour de sécurité et des améliorations de la communauté.
-
----
-
-## **Conclusion**
-
-La librairie **IronCrypt** se distingue par son approche robuste et sécurisée de la gestion des mots de passe et du chiffrement des données. En combinant des algorithmes cryptographiques modernes avec des pratiques de sécurité éprouvées, elle offre une solution complète pour protéger les informations sensibles dans vos applications.
-
-Que vous développiez une application nécessitant une gestion sécurisée des mots de passe, ou que vous ayez besoin de chiffrer des données confidentielles, IronCrypt fournit les outils nécessaires pour répondre à ces exigences de manière efficace et sécurisée.
-
-## Sécurité et bonnes pratiques
-
-- **Stockage des Clés** : Gardez la clé privée en sécurité et ne la partagez jamais publiquement. La clé publique peut être partagée pour chiffrer des données.
-- **Mot de passe robuste** : Encouragez les utilisateurs à choisir des mots de passe longs et complexes pour renforcer la sécurité.
-- **Critères personnalisés** : Adaptez `PasswordCriteria` selon les besoins spécifiques de votre application pour renforcer les exigences de mot de passe.
-- **Gestion des erreurs** : Assurez-vous de gérer les erreurs retournées par les fonctions, notamment celles qui retournent un `Result`.
-- **Utilisation de sources d'aléa sécurisées** : Assurez-vous que toutes les fonctions générant des nombres aléatoires utilisent des sources cryptographiquement sécurisées, comme `OsRng`.
-
-## Licence
-
-`IronCrypt` est distribué sous la licence MIT. Voir le fichier `LICENSE` pour plus de détails.
+- **Key Storage**: Keep the private key secure and never share it publicly. The public key can be shared to encrypt data.
+- **Robust Passwords**: Encourage the use of long and complex passwords to enhance security.
+- **Custom Criteria**: Adapt `PasswordCriteria` according to the specific needs of your application to strengthen password requirements.
+- **Error Management**: Carefully handle errors returned by functions to avoid disclosing sensitive information.
+- **Secure Random Sources**: Use cryptographically secure random number sources, such as `OsRng`, for all operations requiring randomness.
+- **Regular Updates**: Keep your dependencies up to date to benefit from the latest security improvements and bug fixes.
 
 ## Contribution
 
-Les contributions sont les bienvenues ! N'hésitez pas à ouvrir une *issue* ou à soumettre une *pull request* pour proposer des améliorations ou des correctifs.
+Contributions are welcome! To contribute to IronCrypt, follow these steps:
+
+1. **Fork** the repository.
+2. **Create a new branch** for your feature or bugfix.
+3. **Commit** your changes with clear messages.
+4. **Submit a Pull Request** detailing your modifications.
+
+Ensure that your code adheres to Rust's best practices and passes all tests.
+
+---
+
+## License
+
+`IronCrypt` is distributed under the MIT License. See the [LICENSE](LICENSE) file for more details.
+
+---
+
+**Final Notes:**
+
+- **Unique Short Options Usage**: Each short option is unique within each command to avoid conflicts. For example, in the `decrypt` command, `-k` is used for `private_key_directory` and `-d` for `data`.
+- **Mutual Exclusivity**: The `-d` (data) and `-f` (file) options in the `decrypt` command are mutually exclusive, preventing their simultaneous use.
+- **Help Messages**: Use the `--help` option with each command to get detailed information about available options.
+
+```bash
+cargo run -- generate --help
+cargo run -- encrypt --help
+cargo run -- decrypt --help
+```
+
+This will help you better understand the various options and their usage.

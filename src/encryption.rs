@@ -24,80 +24,6 @@ use sha2::Sha256;
 
 use serde_json;
 
-/// Hache un mot de passe et le chiffre après vérification des critères de robustesse.
-///
-/// Cette fonction utilise un chiffrement hybride pour assurer une sécurité optimale :
-/// - **Vérification du mot de passe** : Le mot de passe est vérifié selon les critères de robustesse spécifiés.
-/// - **Hachage** : Le mot de passe est haché en utilisant l'algorithme Argon2.
-/// - **Chiffrement symétrique** : Le hash obtenu est chiffré avec AES-256-GCM en utilisant une clé symétrique générée aléatoirement.
-/// - **Chiffrement de la clé symétrique** : La clé symétrique est chiffrée avec la clé publique RSA en utilisant OAEP avec SHA-256.
-/// - **Sérialisation** : Les données chiffrées (clé symétrique chiffrée, nonce, ciphertext) sont sérialisées en JSON.
-/// - **Encodage** : Le résultat est encodé en base64 pour un stockage sécurisé.
-///
-/// # Arguments
-///
-/// * `password` - Une référence vers la chaîne de caractères représentant le mot de passe à hacher et chiffrer.
-/// * `public_key` - Une référence à la clé publique RSA (`RsaPublicKey`) utilisée pour chiffrer la clé symétrique.
-/// * `criteria` - Une référence à `PasswordCriteria` spécifiant les exigences de robustesse que le mot de passe doit respecter.
-///
-/// # Retour
-///
-/// Renvoie un `Result` contenant :
-/// - `Ok(String)` : Les données chiffrées encodées en base64 si l'opération réussit.
-/// - `Err(IronCryptError)` : Une erreur détaillant la raison de l'échec, par exemple, si le mot de passe
-///   ne respecte pas les critères ou si le hachage/chiffrement échoue.
-///
-/// # Exemple
-///
-/// ```rust
-/// use ironcrypt::{hash_and_encrypt_password_with_criteria, generate_rsa_keys, PasswordCriteria};
-///
-/// let password = "StrongP@ssw0rd";
-/// let criteria = PasswordCriteria::default();
-/// let (_, public_key) = generate_rsa_keys(2048).expect("Erreur lors de la génération des clés RSA");
-///
-/// match hash_and_encrypt_password_with_criteria(password, &public_key, &criteria) {
-///     Ok(encrypted_data) => println!("Données chiffrées : {}", encrypted_data),
-///     Err(e) => println!("Erreur lors du hachage et du chiffrement : {:?}", e),
-/// }
-/// ```
-///
-/// Dans cet exemple, le mot de passe "StrongP@ssw0rd" est haché avec Argon2 et chiffré en utilisant un chiffrement hybride
-/// combinant AES-256-GCM et RSA. Le résultat encodé en base64 est prêt à être stocké en toute sécurité.
-///
-/// # Remarques
-///
-/// - **Génération du sel** : Le sel est généré automatiquement à l'aide de `SaltString::generate` pour garantir que le même mot de passe
-///   ne produira jamais le même hash, améliorant ainsi la sécurité contre les attaques par table de hachage.
-/// - **Clé symétrique** : Une clé symétrique aléatoire est générée pour chaque opération, assurant que chaque chiffrement est unique.
-/// - **Chiffrement hybride** : La clé symétrique est chiffrée avec la clé publique RSA, garantissant que seule la clé privée correspondante
-///   pourra la déchiffrer.
-/// - **Sérialisation des données** : Les données chiffrées sont sérialisées en JSON et encodées en base64 pour faciliter le stockage
-///   et le transfert sécurisé.
-///
-/// # Erreurs
-///
-/// La fonction peut renvoyer une `Err(IronCryptError)` si :
-/// - Le mot de passe ne respecte pas les critères de robustesse spécifiés.
-/// - Une erreur survient lors de la génération du sel ou du hachage avec Argon2.
-/// - Une erreur survient lors de la génération de la clé symétrique.
-/// - Une erreur survient lors du chiffrement du hash avec AES-GCM.
-/// - Une erreur survient lors du chiffrement de la clé symétrique avec la clé publique RSA.
-/// - Une erreur survient lors de la sérialisation ou de l'encodage des données chiffrées.
-///
-/// # Sécurité
-///
-/// - **Confidentialité** : En utilisant un chiffrement hybride, nous assurons que les données sont protégées à la fois par un chiffrement
-///   symétrique et asymétrique.
-/// - **Intégrité** : AES-GCM assure l'intégrité des données chiffrées, détectant toute modification non autorisée.
-/// - **Robustesse** : L'utilisation d'Argon2 pour le hachage rend les mots de passe résistants aux attaques par force brute.
-///
-/// # Notes
-///
-/// - **Stockage sécurisé** : Le résultat encodé en base64 doit être stocké en toute sécurité. Assurez-vous que la clé privée RSA est
-///   protégée et n'est accessible qu'aux parties autorisées.
-/// - **Utilisation future** : Pour vérifier un mot de passe ultérieurement, vous devrez utiliser la fonction
-///   `decrypt_and_verify_password` avec la clé privée correspondante.
 
 pub fn hash_and_encrypt_password_with_criteria(
     password: &str,
@@ -197,13 +123,14 @@ pub fn hash_and_encrypt_password_with_criteria(
 /// let (private_key, public_key) = generate_rsa_keys(2048).expect("Erreur lors de la génération des clés RSA");
 /// let password = "StrongP@ssw0rd";
 /// let criteria = PasswordCriteria::default();
+/// let key_version = "v1";
 ///
 /// // Hachage et chiffrement du mot de passe
-/// let encrypted_data = hash_and_encrypt_password_with_criteria(password, &public_key, &criteria)
+/// let encrypted_data = hash_and_encrypt_password_with_criteria(password, &public_key, &criteria, &key_version)
 ///     .expect("Erreur lors du hachage et du chiffrement");
 ///
 /// // Déchiffrement et vérification du mot de passe
-/// match decrypt_and_verify_password(&encrypted_data, password, &private_key) {
+/// match decrypt_and_verify_password(&encrypted_data, password, &key_version) {
 ///     Ok(_) => println!("Le mot de passe est valide."),
 ///     Err(e) => println!("Erreur lors de la vérification du mot de passe : {:?}", e),
 /// }

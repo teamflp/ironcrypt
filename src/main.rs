@@ -5,6 +5,8 @@ use ironcrypt::{
     load_public_key, save_keys_to_files, PasswordCriteria,
 };
 use std::time::Duration;
+use std::fs::File;
+use std::io::Write;
 
 #[derive(Parser)]
 #[command(
@@ -126,8 +128,7 @@ fn main() {
             public_key_directory,
             key_version,
         } => {
-            let public_key_path =
-                format!("{}/public_key_{}.pem", public_key_directory, key_version);
+            let public_key_path = format!("{}/public_key_{}.pem", public_key_directory, key_version);
             match load_public_key(&public_key_path) {
                 Ok(public_key) => {
                     let criteria = PasswordCriteria::default();
@@ -138,7 +139,20 @@ fn main() {
                         &key_version,
                     ) {
                         Ok(encrypted_hash) => {
-                            println!("Mot de passe haché et chiffré : {}", encrypted_hash);
+                            // Créer le fichier encrypted_data.json et y écrire les données chiffrées
+                            let file_path = "encrypted_data.json";
+                            match File::create(file_path) {
+                                Ok(mut file) => {
+                                    if let Err(e) = file.write_all(encrypted_hash.as_bytes()) {
+                                        eprintln!("Erreur lors de l'écriture dans le fichier : {}", e);
+                                    } else {
+                                        println!("Données chiffrées sauvegardées dans '{}'.", file_path);
+                                    }
+                                }
+                                Err(e) => {
+                                    eprintln!("Erreur lors de la création du fichier : {}", e);
+                                }
+                            }
                         }
                         Err(e) => eprintln!("Erreur lors du hachage et du chiffrement : {}", e),
                     }
