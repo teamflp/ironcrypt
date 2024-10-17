@@ -11,7 +11,6 @@ license = "MIT"
 documentation = "https://github.com/teamflp/ironcrypt#readme"
 repository = "https://github.com/teamflp/ironcrypt"
 
-
 [dependencies]
 serde = { version = "1.0.210", features = ["derive"] }
 argon2 = "0.5.3"
