@@ -1,12 +1,13 @@
 use clap::{Parser, Subcommand};
 use indicatif::{ProgressBar, ProgressStyle};
 use ironcrypt::{
-    decrypt_and_verify_password, generate_rsa_keys, hash_and_encrypt_password_with_criteria,
-    load_public_key, save_keys_to_files, PasswordCriteria,
+    decrypt_and_verify_password, generate_rsa_keys, hash_and_encrypt_password, load_public_key,
+    save_keys_to_files, IronCryptConfig,
 };
-use std::time::Duration;
+
 use std::fs::File;
 use std::io::Write;
+use std::time::Duration;
 
 #[derive(Parser)]
 #[command(
@@ -78,8 +79,10 @@ fn main() {
             key_size,
         } => {
             // Créer le répertoire des clés s'il n'existe pas
-            std::fs::create_dir_all(&directory)
-                .expect("Erreur lors de la création du répertoire des clés");
+            if let Err(e) = std::fs::create_dir_all(&directory) {
+                eprintln!("Erreur lors de la création du répertoire des clés : {}", e);
+                return;
+            }
 
             let private_key_path = format!("{}/private_key_{}.pem", directory, version);
             let public_key_path = format!("{}/public_key_{}.pem", directory, version);
@@ -87,8 +90,7 @@ fn main() {
             // Créer un spinner
             let spinner = ProgressBar::new_spinner();
             spinner.set_style(
-                ProgressStyle::default_spinner()
-                    .template("{spinner} {msg}")
+                ProgressStyle::with_template("{spinner} {msg}")
                     .expect("Erreur de configuration du style du spinner")
                     .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]),
             );
@@ -128,25 +130,30 @@ fn main() {
             public_key_directory,
             key_version,
         } => {
-            let public_key_path = format!("{}/public_key_{}.pem", public_key_directory, key_version);
+            let public_key_path =
+                format!("{}/public_key_{}.pem", public_key_directory, key_version);
             match load_public_key(&public_key_path) {
                 Ok(public_key) => {
-                    let criteria = PasswordCriteria::default();
-                    match hash_and_encrypt_password_with_criteria(
-                        &password,
-                        &public_key,
-                        &criteria,
-                        &key_version,
-                    ) {
+                    // Utiliser la configuration par défaut
+                    let config = IronCryptConfig::default();
+
+                    // Chiffrer le mot de passe
+                    match hash_and_encrypt_password(&password, &public_key, &config, &key_version) {
                         Ok(encrypted_hash) => {
                             // Créer le fichier encrypted_data.json et y écrire les données chiffrées
                             let file_path = "encrypted_data.json";
                             match File::create(file_path) {
                                 Ok(mut file) => {
                                     if let Err(e) = file.write_all(encrypted_hash.as_bytes()) {
-                                        eprintln!("Erreur lors de l'écriture dans le fichier : {}", e);
+                                        eprintln!(
+                                            "Erreur lors de l'écriture dans le fichier : {}",
+                                            e
+                                        );
                                     } else {
-                                        println!("Données chiffrées sauvegardées dans '{}'.", file_path);
+                                        println!(
+                                            "Données chiffrées sauvegardées dans '{}'.",
+                                            file_path
+                                        );
                                     }
                                 }
                                 Err(e) => {

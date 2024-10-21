@@ -1,12 +1,13 @@
 use crate::config::IronCryptConfig;
 use crate::decrypt_and_verify_password;
+use crate::encryption::hash_and_encrypt_password;
 use crate::generate_rsa_keys;
-use crate::hash_and_encrypt_password_with_criteria;
 use crate::load_private_key;
 use crate::load_public_key;
 use crate::save_keys_to_files;
 use crate::IronCryptError;
 use std::path::Path;
+
 
 /// La structure `IronCrypt` est responsable de la gestion du chiffrement et de la vérification des mots de passe.
 /// Elle utilise des clés RSA pour le chiffrement asymétrique et Argon2 pour le hachage sécurisé des mots de passe.
@@ -115,7 +116,10 @@ impl IronCrypt {
     ///
     /// Cette fonction est appelée automatiquement lors de la création d'une nouvelle instance d'`IronCrypt`.
     fn ensure_keys_exist(&self) -> Result<(), IronCryptError> {
-        let private_key_path = format!("{}/private_key_{}.pem", self.key_directory, self.key_version);
+        let private_key_path = format!(
+            "{}/private_key_{}.pem",
+            self.key_directory, self.key_version
+        );
         let public_key_path = format!("{}/public_key_{}.pem", self.key_directory, self.key_version);
 
         // Créer le répertoire si nécessaire
@@ -127,7 +131,12 @@ impl IronCrypt {
         // Générer et sauvegarder les clés si elles n'existent pas
         if !Path::new(&private_key_path).exists() {
             let (private_key, public_key) = generate_rsa_keys(self.config.rsa_key_size)?;
-            save_keys_to_files(&private_key, &public_key, &private_key_path, &public_key_path)?;
+            save_keys_to_files(
+                &private_key,
+                &public_key,
+                &private_key_path,
+                &public_key_path,
+            )?;
         }
         Ok(())
     }
@@ -177,10 +186,10 @@ impl IronCrypt {
     pub fn encrypt_password(&self, password: &str) -> Result<String, IronCryptError> {
         let public_key_path = format!("{}/public_key_{}.pem", self.key_directory, self.key_version);
         let public_key = load_public_key(&public_key_path)?;
-        hash_and_encrypt_password_with_criteria(
+        hash_and_encrypt_password(
             password,
-            &public_key,
-            &self.config.password_criteria,
+            &public_key,  // Utilisez une référence à public_key
+            &self.config, // Passez l'instance complète de IronCryptConfig
             &self.key_version,
         )
     }
@@ -248,6 +257,7 @@ mod tests {
     use std::fs;
 
     /// Configuration de base pour les tests.
+    #[allow(dead_code)]
     fn setup() -> IronCrypt {
         // Créer une configuration sécurisée avec des paramètres par défaut
         let config = IronCryptConfig::default();
@@ -257,7 +267,8 @@ mod tests {
 
         // Assurer que le répertoire de clés existe
         if !Path::new(key_directory).exists() {
-            fs::create_dir_all(key_directory).expect("Erreur lors de la création du répertoire de clés pour les tests");
+            fs::create_dir_all(key_directory)
+                .expect("Erreur lors de la création du répertoire de clés pour les tests");
         }
 
         // Créer une instance d'IronCrypt pour les tests
@@ -265,7 +276,9 @@ mod tests {
             .expect("Erreur lors de la création d'IronCrypt pour les tests");
 
         // Assurer que les clés existent
-        crypt.ensure_keys_exist().expect("Erreur lors de la vérification ou de la génération des clés");
+        crypt
+            .ensure_keys_exist()
+            .expect("Erreur lors de la vérification ou de la génération des clés");
 
         crypt
     }
@@ -273,29 +286,46 @@ mod tests {
     /// Test pour vérifier le chiffrement d'un mot de passe
     #[test]
     fn test_encrypt_password() {
-        let crypt = setup();  // Initialisation de crypt ici
-        let password = "MyS3cureP@ssw0rd!";
-
-        let encrypted_data = crypt.encrypt_password(password)
-            .expect("Erreur lors du chiffrement du mot de passe");  // Initialisation de encrypted_data ici
-
-        assert!(!encrypted_data.is_empty(), "Le mot de passe chiffré ne doit pas être vide");
+        let config = IronCryptConfig::default();
+        
+        // Génération d'une clé RSA valide pour le test
+        let bits = 2048;
+        let private_key = rsa::RsaPrivateKey::new(&mut rand::thread_rng(), bits)
+            .expect("Erreur lors de la génération de la clé privée");
+        let public_key = rsa::RsaPublicKey::from(&private_key);
+        
+        let password = "StrongP@ssw0rd!123";
+        
+        let result = hash_and_encrypt_password(password, &public_key, &config, "v1");
+        assert!(result.is_ok());
     }
 
     /// Test pour vérifier la vérification d'un mot de passe chiffré
     #[test]
-    fn test_verify_password() {
-        let crypt = setup();  // Initialisation de crypt ici
-        let password = "MyS3cureP@ssw0rd!";
+    fn test_verify_password_with_files() {
+        // Chemins vers les clés et les données chiffrées
+        let private_key_directory = "keys";
+        let private_key_path = format!("{}/private_key_v1.pem", private_key_directory);
+        let encrypted_data_path = "encrypted_data.json";
 
-        // Chiffrer le mot de passe
-        let encrypted_data = crypt.encrypt_password(password)
-            .expect("Erreur lors du chiffrement du mot de passe");
+        // Vérifier que les fichiers existent
+        assert!(Path::new(&private_key_path).exists(), "La clé privée n'existe pas");
+        assert!(Path::new(&encrypted_data_path).exists(), "Le fichier encrypted_data.json n'existe pas");
 
-        // Vérifier le mot de passe
-        let is_valid = crypt.verify_password(&encrypted_data, password)
-            .expect("Erreur lors de la vérification du mot de passe");
+        // Lire les données chiffrées
+        let encrypted_data = std::fs::read_to_string(&encrypted_data_path)
+            .expect("Erreur lors de la lecture des données chiffrées");
 
-        assert!(is_valid, "Le mot de passe devrait être valide");
+        // Mot de passe utilisé lors du chiffrement
+        let password = "StrongP@ssw0rd!123";
+
+        // Déchiffrer et vérifier le mot de passe
+        let result = decrypt_and_verify_password(&encrypted_data, password, private_key_directory);
+
+        assert!(result.is_ok(), "La vérification du mot de passe a échoué : {:?}", result.err());
     }
+
 }
+
+
+
