@@ -25,7 +25,10 @@ clap = { version = "4.5.20", features = ["derive"] }
 clap_derive = "4.5.18"
 thiserror = "1.0.64"
 indicatif = "0.17.8"
-aes-gcm = "0.10.3" # Pour le chiffrement symétrique
+aes-gcm = "0.10.3"
+aes = "0.8"
+cipher = "0.4.4" # Pour le chiffrement symétrique
+unicode-general-category = "0.6.0"
 
 [lib]
 name = "ironcrypt"

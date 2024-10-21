@@ -1,5 +1,8 @@
+// criteria.rs
+
 use crate::IronCryptError;
 use serde::{Deserialize, Serialize};
+use unicode_general_category::{get_general_category, GeneralCategory};
 
 /// Structure pour la configuration des critères de robustesse des mots de passe.
 ///
@@ -8,16 +11,13 @@ use serde::{Deserialize, Serialize};
 ///
 /// # Champs
 ///
-/// - `min_length` : La longueur minimale que le mot de passe doit atteindre (en caractères).
-/// - `require_uppercase` : Indique si le mot de passe doit contenir au moins une lettre majuscule.
-/// - `require_numbers` : Indique si le mot de passe doit contenir au moins un chiffre.
-/// - `require_special_chars` : Indique si le mot de passe doit contenir au moins un caractère spécial non alphanumérique.
-/// - `max_length` : Longueur maximale autorisée pour le mot de passe (en caractères). Si `None`, pas de limite de longueur.
-/// - `disallowed_patterns` : Une liste de motifs ou de sous-chaînes que le mot de passe ne doit pas contenir (ex. : "password", "1234").
-/// - `special_chars` : Nombre minimum de caractères spéciaux requis dans le mot de passe. Si `0`, le critère n'est pas appliqué.
-/// - `uppercase` : Nombre minimum de lettres majuscules requises dans le mot de passe. Si `0`, le critère n'est pas appliqué.
-/// - `lowercase` : Nombre minimum de lettres minuscules requises dans le mot de passe. Si `0`, le critère n'est pas appliqué.
-/// - `digits` : Nombre minimum de chiffres requis dans le mot de passe. Si `0`, le critère n'est pas appliqué.
+/// - `min_length` : Longueur minimale du mot de passe (en caractères).
+/// - `max_length` : Longueur maximale autorisée pour le mot de passe (en caractères). Si `None`, pas de limite.
+/// - `disallowed_patterns` : Liste de motifs que le mot de passe ne doit pas contenir.
+/// - `special_chars` : Nombre minimum de caractères spéciaux requis.
+/// - `uppercase` : Nombre minimum de lettres majuscules requises.
+/// - `lowercase` : Nombre minimum de lettres minuscules requises.
+/// - `digits` : Nombre minimum de chiffres requis.
 ///
 /// # Exemple
 ///
@@ -26,28 +26,18 @@ use serde::{Deserialize, Serialize};
 ///
 /// let criteria = PasswordCriteria {
 ///     min_length: 12,
-///     require_uppercase: true,
-///     require_numbers: true,
-///     require_special_chars: true,
 ///     max_length: Some(128),
 ///     disallowed_patterns: vec!["password".to_string(), "1234".to_string()],
-///     special_chars: Some(2),
+///     special_chars: Some(1),
 ///     uppercase: Some(1),
 ///     lowercase: Some(1),
 ///     digits: Some(1),
 /// };
 ///
 /// assert_eq!(criteria.min_length, 12);
-/// assert!(criteria.require_uppercase);
-/// assert!(criteria.require_numbers);
-/// assert!(criteria.require_special_chars);
 /// assert_eq!(criteria.max_length, Some(128));
 /// assert_eq!(criteria.disallowed_patterns.len(), 2);
 /// ```
-///
-/// Dans cet exemple, une configuration personnalisée de `PasswordCriteria` est créée, spécifiant
-/// les exigences minimales pour les mots de passe, y compris la longueur minimale, la présence
-/// de lettres majuscules, de chiffres et de caractères spéciaux.
 ///
 /// # Utilisation
 ///
@@ -58,9 +48,6 @@ use serde::{Deserialize, Serialize};
 pub struct PasswordCriteria {
     pub min_length: usize,
     pub max_length: Option<usize>,
-    pub require_uppercase: bool,
-    pub require_numbers: bool,
-    pub require_special_chars: bool,
     pub disallowed_patterns: Vec<String>,
     pub special_chars: Option<usize>,
     pub uppercase: Option<usize>,
@@ -68,57 +55,11 @@ pub struct PasswordCriteria {
     pub digits: Option<usize>,
 }
 
-impl PasswordCriteria {
-    /// Crée une configuration par défaut pour les critères de robustesse des mots de passe.
-    ///
-    /// Cette méthode renvoie une instance de `PasswordCriteria` avec des paramètres par défaut qui
-    /// garantissent un niveau de sécurité élevé pour les mots de passe.
-    ///
-    /// # Valeurs par défaut
-    ///
-    /// - `min_length`: 12 - Le mot de passe doit contenir au moins 12 caractères.
-    /// - `max_length`: Some(128) - Le mot de passe ne doit pas dépasser 128 caractères.
-    /// - `require_uppercase`: true - Le mot de passe doit contenir au moins une lettre majuscule.
-    /// - `require_numbers`: true - Le mot de passe doit contenir au moins un chiffre.
-    /// - `require_special_chars`: true - Le mot de passe doit contenir au moins un caractère spécial.
-    /// - `disallowed_patterns`: vec![] - Aucun motif interdit par défaut.
-    /// - `special_chars`: 0 - Pas de minimum imposé pour les caractères spéciaux (géré par `require_special_chars`).
-    /// - `uppercase`: 0 - Pas de minimum imposé pour les lettres majuscules (géré par `require_uppercase`).
-    /// - `lowercase`: 0 - Pas de minimum imposé pour les lettres minuscules.
-    /// - `digits`: 0 - Pas de minimum imposé pour les chiffres (géré par `require_numbers`).
-    ///
-    /// # Exemple
-    ///
-    /// ```rust
-    /// use ironcrypt::PasswordCriteria;
-    ///
-    /// let criteria = PasswordCriteria::default();
-    /// assert_eq!(criteria.min_length, 12);
-    /// assert!(criteria.require_uppercase);
-    /// assert!(criteria.require_numbers);
-    /// assert!(criteria.require_special_chars);
-    /// assert_eq!(criteria.max_length, Some(128));
-    /// assert!(criteria.disallowed_patterns.is_empty());
-    /// ```
-    ///
-    /// Dans cet exemple, une configuration par défaut de `PasswordCriteria` est créée et vérifiée pour
-    /// s'assurer que les valeurs par défaut sont bien définies.
-    ///
-    /// # Utilisation
-    ///
-    /// Utilisez cette méthode pour obtenir rapidement une configuration de critères de mot de passe robuste.
-    /// Vous pouvez ensuite modifier les valeurs si nécessaire pour ajuster les exigences à votre contexte.
-    ///
-    /// # Retour
-    ///
-    /// Renvoie une instance de `PasswordCriteria` avec des valeurs par défaut.
-    pub fn default() -> Self {
+impl Default for PasswordCriteria {
+    fn default() -> Self {
         Self {
             min_length: 12,
             max_length: Some(128),
-            require_uppercase: true,
-            require_numbers: true,
-            require_special_chars: true,
             disallowed_patterns: vec![],
             special_chars: Some(1),
             uppercase: Some(1),
@@ -126,7 +67,9 @@ impl PasswordCriteria {
             digits: Some(1),
         }
     }
+}
 
+impl PasswordCriteria {
     /// Vérifie si un mot de passe répond aux critères de robustesse spécifiés.
     ///
     /// # Arguments
@@ -137,120 +80,109 @@ impl PasswordCriteria {
     ///
     /// Renvoie `Ok(())` si le mot de passe est valide, ou `Err(IronCryptError)` sinon.
     pub fn validate(&self, password: &str) -> Result<(), IronCryptError> {
-        is_password_strong(password, self)
+        // Vérification de la longueur minimale
+        if password.len() < self.min_length {
+            return Err(IronCryptError::PasswordStrengthError(
+                GENERIC_PASSWORD_ERROR.to_string(),
+            ));
+        }
+
+        // Vérification de la longueur maximale
+        if let Some(max_length) = self.max_length {
+            if password.len() > max_length {
+                return Err(IronCryptError::PasswordStrengthError(
+                    GENERIC_PASSWORD_ERROR.to_string(),
+                ));
+            }
+        }
+
+        // Vérification des motifs interdits
+        for pattern in &self.disallowed_patterns {
+            if password.contains(pattern) {
+                return Err(IronCryptError::PasswordStrengthError(
+                    GENERIC_PASSWORD_ERROR.to_string(),
+                ));
+            }
+        }
+
+        // Vérification des espaces blancs
+        if password.chars().any(|c| c.is_whitespace()) {
+            return Err(IronCryptError::PasswordStrengthError(
+                GENERIC_PASSWORD_ERROR.to_string(),
+            ));
+        }
+
+        // Initialisation des compteurs
+        let mut uppercase_count = 0;
+        let mut lowercase_count = 0;
+        let mut digit_count = 0;
+        let mut special_char_count = 0;
+
+        // Parcours des caractères du mot de passe
+        for c in password.chars() {
+            match get_general_category(c) {
+                GeneralCategory::UppercaseLetter => uppercase_count += 1,
+                GeneralCategory::LowercaseLetter => lowercase_count += 1,
+                GeneralCategory::DecimalNumber => digit_count += 1,
+                GeneralCategory::OtherPunctuation
+                | GeneralCategory::MathSymbol
+                | GeneralCategory::CurrencySymbol
+                | GeneralCategory::ModifierSymbol
+                | GeneralCategory::OtherSymbol => special_char_count += 1,
+                GeneralCategory::SpaceSeparator
+                | GeneralCategory::LineSeparator
+                | GeneralCategory::ParagraphSeparator => {
+                    return Err(IronCryptError::PasswordStrengthError(
+                        GENERIC_PASSWORD_ERROR.to_string(),
+                    ));
+                }
+                _ => {}
+            }
+        }
+
+        // Vérification du nombre minimum de lettres majuscules
+        if let Some(min_uppercase) = self.uppercase {
+            if uppercase_count < min_uppercase {
+                return Err(IronCryptError::PasswordStrengthError(
+                    GENERIC_PASSWORD_ERROR.to_string(),
+                ));
+            }
+        }
+
+        // Vérification du nombre minimum de lettres minuscules
+        if let Some(min_lowercase) = self.lowercase {
+            if lowercase_count < min_lowercase {
+                return Err(IronCryptError::PasswordStrengthError(
+                    GENERIC_PASSWORD_ERROR.to_string(),
+                ));
+            }
+        }
+
+        // Vérification du nombre minimum de chiffres
+        if let Some(min_digits) = self.digits {
+            if digit_count < min_digits {
+                return Err(IronCryptError::PasswordStrengthError(
+                    GENERIC_PASSWORD_ERROR.to_string(),
+                ));
+            }
+        }
+
+        // Vérification du nombre minimum de caractères spéciaux
+        if let Some(min_special_chars) = self.special_chars {
+            if special_char_count < min_special_chars {
+                return Err(IronCryptError::PasswordStrengthError(
+                    GENERIC_PASSWORD_ERROR.to_string(),
+                ));
+            }
+        }
+
+        Ok(())
     }
 }
 
-/// Vérifie si un mot de passe répond aux critères de robustesse spécifiés.
-///
-/// # Arguments
-///
-/// * `password` - Une référence à une chaîne de caractères représentant le mot de passe à vérifier.
-/// * `criteria` - Une référence à `PasswordCriteria` définissant les exigences minimales pour le mot de passe.
-///
-/// # Critères de Vérification
-///
-/// La fonction vérifie les éléments suivants en fonction des critères définis :
-///
-/// - Longueur minimale : Le mot de passe doit contenir au moins `min_length` caractères.
-/// - Longueur maximale (si spécifiée) : Le mot de passe ne doit pas dépasser `max_length` caractères.
-/// - Présence de lettres majuscules : Si `require_uppercase` est vrai, le mot de passe doit contenir au moins une lettre majuscule.
-/// - Présence de chiffres : Si `require_numbers` est vrai, le mot de passe doit contenir au moins un chiffre.
-/// - Présence de caractères spéciaux : Si `require_special_chars` est vrai, le mot de passe doit contenir au moins un caractère spécial non alphanumérique.
-/// - Absence de motifs interdits : Si `disallowed_patterns` contient des motifs, le mot de passe ne doit pas contenir ces chaînes de caractères.
-///
-/// # Retour
-///
-/// Renvoie `Ok(())` si le mot de passe répond à tous les critères.
-/// Renvoie une `Err` contenant un message d'erreur si le mot de passe ne respecte pas un des critères.
-///
-/// # Exemple
-///
-/// ```rust
-/// use ironcrypt::{is_password_strong, PasswordCriteria};
-///
-/// let criteria = PasswordCriteria {
-///     min_length: 8,
-///     max_length: Some(20),
-///     require_uppercase: true,
-///     require_numbers: true,
-///     require_special_chars: true,
-///     disallowed_patterns: vec!["password".to_string(), "1234".to_string()],
-///     digits: Some(0),
-///     lowercase: Some(0),
-///     special_chars: Some(0),
-///     uppercase: Some(0),
-/// };
-///
-/// let password = "StrongP@ssw0rd";
-/// match is_password_strong(password, &criteria) {
-///     Ok(_) => println!("Le mot de passe est suffisamment robuste."),
-///     Err(e) => println!("Erreur : {}", e),
-/// }
-/// ```
-///
-/// Dans cet exemple, le mot de passe "StrongP@ssw0rd" respecte les critères spécifiés et la fonction retourne `Ok(())`.
-///
-/// # Erreurs
-///
-/// La fonction renvoei une `Err` de type `IronCryptError::PasswordStrengthError` avec un message d'erreur détaillé. si :
-///
-/// - La longueur du mot de passe est inférieure à `min_length`.
-/// - La longueur du mot de passe est supérieure à `max_length` (si spécifié).
-/// - `require_uppercase` est `true` mais le mot de passe ne contient pas de lettre majuscule.
-/// - `require_numbers` est `true` mais le mot de passe ne contient pas de chiffre.
-/// - `require_special_chars` est `true` mais le mot de passe ne contient pas de caractère spécial.
-/// - Le mot de passe contient un motif interdit de `disallowed_patterns`.
-
-pub fn is_password_strong(
-    password: &str,
-    criteria: &PasswordCriteria,
-) -> Result<(), IronCryptError> {
-    if password.len() < criteria.min_length {
-        return Err(IronCryptError::PasswordStrengthError(format!(
-            "Le mot de passe doit contenir au moins {} caractères.",
-            criteria.min_length
-        )));
-    }
-
-    if let Some(max_length) = criteria.max_length {
-        if password.len() > max_length {
-            return Err(IronCryptError::PasswordStrengthError(format!(
-                "Le mot de passe ne doit pas dépasser {} caractères.",
-                max_length
-            )));
-        }
-    }
-
-    if criteria.require_uppercase && !password.chars().any(|c| c.is_uppercase()) {
-        return Err(IronCryptError::PasswordStrengthError(
-            "Le mot de passe doit contenir au moins une lettre majuscule.".to_string(),
-        ));
-    }
-
-    if criteria.require_numbers && !password.chars().any(|c| c.is_digit(10)) {
-        return Err(IronCryptError::PasswordStrengthError(
-            "Le mot de passe doit contenir au moins un chiffre.".to_string(),
-        ));
-    }
-
-    if criteria.require_special_chars && !password.chars().any(|c| !c.is_alphanumeric()) {
-        return Err(IronCryptError::PasswordStrengthError(
-            "Le mot de passe doit contenir au moins un caractère spécial.".to_string(),
-        ));
-    }
-
-    for pattern in &criteria.disallowed_patterns {
-        if password.contains(pattern) {
-            return Err(IronCryptError::PasswordStrengthError(format!(
-                "Le mot de passe ne doit pas contenir le motif interdit : '{}'.",
-                pattern
-            )));
-        }
-    }
-
-    Ok(())
-}
+// Message d'erreur générique
+const GENERIC_PASSWORD_ERROR: &str =
+    "Le mot de passe ne répond pas aux critères de sécurité requis.";
 
 #[cfg(test)]
 mod tests {
@@ -259,7 +191,7 @@ mod tests {
     #[test]
     fn test_password_criteria_validate_success() {
         let criteria = PasswordCriteria::default();
-        let password = "StrongP@ssw0rd";
+        let password = "StrongP@ssw0rd!";
 
         assert!(criteria.validate(password).is_ok());
     }
@@ -269,6 +201,39 @@ mod tests {
         let criteria = PasswordCriteria::default();
         let password = "weak";
 
+        assert!(criteria.validate(password).is_err());
+    }
+
+    #[test]
+    fn test_password_minimum_uppercase() {
+        let criteria = PasswordCriteria::default();
+        let password = "StrongP@ssw0rd!123"; // Assurez-vous que ce mot de passe respecte les critères
+        assert!(criteria.validate(password).is_ok());
+    }
+
+    #[test]
+    fn test_password_insufficient_uppercase() {
+        let criteria = PasswordCriteria {
+            uppercase: Some(3),
+            ..Default::default()
+        };
+        let password = "StrongP@ssw0rd!123";
+
+        assert!(criteria.validate(password).is_err());
+    }
+
+    #[test]
+    fn test_password_with_whitespace() {
+        let criteria = PasswordCriteria::default();
+        let password = "Strong P@ssw0rd!123";
+
+        assert!(criteria.validate(password).is_err());
+    }
+
+    #[test]
+    fn test_password_with_disallowed_pattern() {
+        let criteria = PasswordCriteria::default();
+        let password = "strongpassword!123"; // Assurez-vous que le motif interdit est présent
         assert!(criteria.validate(password).is_err());
     }
 }

@@ -351,9 +351,11 @@ dependencies = [
 name = "ironcrypt"
 version = "0.1.0"
 dependencies = [
+ "aes",
  "aes-gcm",
  "argon2",
  "base64",
+ "cipher",
  "clap",
  "clap_derive",
  "indicatif",
@@ -365,6 +367,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "thiserror",
+ "unicode-general-category",
 ]
 
 [[package]]
@@ -730,6 +733,12 @@ name = "typenum"
 version = "1.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "42ff0bf0c66b8238c6f3b578df37d0b7848e55df8577b3f74f92a69acceeb825"
+
+[[package]]
+name = "unicode-general-category"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2281c8c1d221438e373249e065ca4989c4c36952c211ff21a0ee91c44a3869e7"
 
 [[package]]
 name = "unicode-ident"
