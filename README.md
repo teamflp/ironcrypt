@@ -1,54 +1,60 @@
+
 # IronCrypt
 
-[[[Installation Button]]](#installation)\
-[[[Usage Button]]](#usage)\
-[[[Contribute Button]]](#contribution)
+- [IronCrypt](#ironcrypt)
+  - [Features](#features)
+  - [Prerequisites](#prerequisites)
+  - [Installation](#installation)
+  - [Usage](#usage)
+    - [Available Commands](#available-commands)
+    - [Below is the general structure of each command.](#below-is-the-general-structure-of-each-command)
+    - [Generate](#generate)
+    - [Encrypt](#encrypt)
+      - [Decrypt](#decrypt)
+  - [Examples](#examples)
+    - [Generating RSA Keys](#generating-rsa-keys)
+    - [Encrypting a Password](#encrypting-a-password)
+    - [Decrypting and Verifying a Password](#decrypting-and-verifying-a-password)
+    - [Decrypting and Verifying a Password](#decrypting-and-verifying-a-password-1)
+  - [Full Example: Password Encryption and Decryption](#full-example-password-encryption-and-decryption)
+    - [Steps:](#steps)
+  - [Workflows and Architecture Voici deux diagrammes détaillant :](#workflows-and-architecture-voici-deux-diagrammes-d%C3%A9taillant-)
+    - [A) Encryption/Decryption Workflow Flowchart:](#a-encryptiondecryption-workflow-flowchart)
+  - [Error Handling](#error-handling)
+  - [Encrypting and Decrypting Binary Files](#encrypting-and-decrypting-binary-files)
+    - [Workflow for Binary Files](#workflow-for-binary-files)
+    - [**Encrypt** it:](#encrypt-it)
+  - [Table of Commands and Options](#table-of-commands-and-options)
+  - [Security and Best Practices](#security-and-best-practices)
+  - [Contribution](#contribution)
 
-<!-- TOC -->
-* [IronCrypt](#ironcrypt)
-  * [Features](#features)
-  * [Prerequisites](#prerequisites)
-  * [Installation](#installation)
-  * [Usage](#usage)
-    * [Available Commands](#available-commands)
-    * [Generate](#generate)
-      * [Decrypt](#decrypt)
-  * [Examples](#examples)
-    * [Generating RSA Keys](#generating-rsa-keys)
-    * [Encrypting a Password](#encrypting-a-password)
-    * [Decrypting and Verifying a Password](#decrypting-and-verifying-a-password)
-  * [Full Example: Password Encryption and Decryption](#full-example-password-encryption-and-decryption)
-    * [Steps:](#steps)
-  * [Error Handling](#error-handling)
-  * [Security and Best Practices](#security-and-best-practices)
-  * [Contribution](#contribution)
-  * [License](#license)
-<!-- TOC -->
+**IronCrypt** is a Command-Line Interface (CLI) tool and Rust library dedicated to secure password and data encryption. By combining the **Argon2** hashing algorithm, **AES-256-GCM** encryption, and **RSA** for key management, IronCrypt provides a robust solution to ensure your application’s data confidentiality and password security.
 
-**IronCrypt** is a Command-Line Interface (CLI) tool and Rust library dedicated to the secure encryption of passwords. By combining the **Argon2** hashing algorithm, **AES-256-GCM** encryption, and asymmetric **RSA** encryption, IronCrypt offers a robust solution for managing passwords securely within your applications.
+---
 
 ## Features
 
-- **Password Strength Verification**: Ensures that passwords meet stringent security criteria (length, uppercase letters, numbers, special characters, etc.).
-- **Secure Password Hashing**: Utilizes **Argon2** for robust password hashing.
-- **Data Encryption**: Encrypts hashed passwords using **AES-256-GCM** to ensure confidentiality and integrity.
-- **Asymmetric Key Encryption**: Employs **RSA** to encrypt the symmetric key used by AES, enabling secure key management.
-- **Password Decryption and Verification**: Decrypts encrypted data and verifies the authenticity of the provided password.
-- **RSA Key Management**: Generates, saves, and loads RSA key pairs from PEM files.
-- **Intuitive CLI Interface**: Provides user-friendly commands for managing encryption operations and key handling.
+- **Password Strength Verification**: Enforces robust criteria (length, uppercase letters, numbers, special characters).
+- **Secure Password Hashing**: Uses **Argon2** for hashing to protect against brute-force attacks.
+- **Data Encryption**: Secures hashed passwords with **AES-256-GCM**.
+- **Asymmetric Key Encryption**: Employs **RSA** (OAEP with SHA-256) to securely handle AES keys.
+- **Password Decryption and Verification**: Decrypts stored data and verifies user passwords.
+- **RSA Key Management**: Generates, saves, loads RSA key pairs in PEM format.
+- **Intuitive CLI**: Simple commands to manage RSA keys and encryption.
+- **Flexible Rust API**: Straightforward integration with Rust-based applications (web backends, desktop apps, etc.).
 
 ---
 
 ## Prerequisites
 
-- **Rust** &gt;= 1.56
-- **Cargo** (Rust's package manager)
+- **Rust** ≥ `1.56`
+- **Cargo** (Rust’s package manager)
 
-Ensure your `Cargo.toml` includes the necessary dependencies:
+If you plan to build from source or develop with IronCrypt’s library functions, ensure you have these dependencies in your `Cargo.toml` (versions may vary):
 
 ```toml
 [dependencies]
-serde = { version = "1.0.210", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
 argon2 = "0.5.3"
 base64 = "0.22.1"
 rsa = { version = "0.9.6", features = ["pem"] }
@@ -60,6 +66,7 @@ rand_core = "0.6.4"
 clap = { version = "4.5.20", features = ["derive"] }
 thiserror = "1.0.64"
 indicatif = "0.17.2"
+aes-gcm = "0.10.3"
 ```
 
 ## Installation
@@ -70,28 +77,45 @@ Add `IronCrypt` to your project using `cargo`:
 cargo add ironcrypt
 ```
 
-Or, manually add the following line to your `Cargo.toml`:
+You can add IronCrypt directly to your Rust project by adding the following line to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-ironcrypt = "0.1.0"
+ironcrypt = "0.1..."
 ```
+
+Or install locally from a Git repository:
+
+```rust
+[dependencies]
+ironcrypt = { git = "https://github.com/teamflp/ironcrypt.git" }
+```
+
+Finally, run:
+
+```bash
+cargo build
+```
+
+to compile your project with IronCrypt included.
 
 ## Usage
 
-IronCrypt offers a CLI with several commands to manage RSA keys and handle password encryption. Below are the available commands:
+IronCrypt offers a **Command-Line Interface** with several commands to manage RSA keys and perform password encryption/decryption, **and** also provides a **Rust API** for deeper integration in your applications.
 
 ### Available Commands
 
-| **Command**   | **Description**                                    |
-|---------------|----------------------------------------------------|
-| `generate`    | Generates an RSA key pair (private and public).    |
-| `encrypt`     | Hashes and encrypts a password using a public key. |
-| `decrypt`     | Decrypts encrypted data and verifies a password.   |
+| **Command** | **Description** |
+| --- | --- |
+| `generate` | Generates an RSA key pair (private and public). |
+| `encrypt` | Hashes and encrypts a password using a public key. |
+| `decrypt` | Decrypts encrypted data and verifies a password. |
+
+### Below is the general structure of each command.
 
 ### Generate
 
-Generates an RSA key pair (private and public).
+Generates an RSA key pair. This allows key rotation by storing separate `private_key_vX.pem` and `public_key_vX.pem`files for each version.
 
 **Syntax:**
 
@@ -99,11 +123,11 @@ Generates an RSA key pair (private and public).
 cargo run -- generate -v <version> -d <directory> -s <key_size>
 ```
 
-| Option        | Short | Description                              | Default |
-|---------------|-------|------------------------------------------|---------|
-| \- -version   | \-v   | Version identifier for the key pair.     | N/A     |
-| \- -directory | \-d   | Directory path where keys will be saved. | key     |
-| \- -key_size  | \-s   | Size of the RSA key in bits.             | 2048    |
+| **Option** | **Short** | **Description** | **Default** |
+| --- | --- | --- | --- |
+| `--version` | `-v` | Version identifier for the key pair. | *(required)* |
+| `--directory` | `-d` | Directory path where keys will be saved. | `keys` |
+| `--key_size` | `-s` | Size of the RSA key in bits (2048, 4096...). | `2048` |
 
 **Exemple :**
 
@@ -111,75 +135,85 @@ cargo run -- generate -v <version> -d <directory> -s <key_size>
 cargo run -- generate -v v1 -d keys -s 4096
 ```
 
-This command generates a 4096-bit RSA key pair labeled with version v1 and saves them in the keys directory.
+This command generates a 4096-bit RSA key pair with version v1, placing the files in the `keys` directory:
 
-**Encryp**t\
-Hashes and encrypts a password using a public key.
+- `keys/private_key_v1.pem`
+- `keys/public_key_v1.pem`
 
-Syntax:
+### Encrypt
 
-```bash
-cargo run -- encrypt -w <password> -d <public_key_directory> -v <key_version>
-```
-
-| Option                   | Short | Description                                  | Default |
-|--------------------------|-------|----------------------------------------------|---------|
-| `--password`             | `-w`  | The password to hash and encrypt.            | N/A     |
-| `--public_key_directory` | `-d`  | Directory path containing public keys.       | `keys`  |
-| `--key_version`          | `-v`  | Version identifier of the public key to use. | N/A     |
-
-**Example:**
+Hashes and encrypts a password (Argon2 + AES + RSA). For example:
 
 ```bash
-cargo run -- encrypt -w 'YourP@ssw0rd!' -d keys -v v1
+cargo run -- encrypt 
+    --password "MySecureP@ssw0rd" 
+    --public_key_directory keys 
+    —key_version v1
 ```
 
-This command hashes and encrypts the password `YourP@ssw0rd!` using the public key of version `v1` located in the `keys`directory.
+Or:
+
+```bash
+cargo run -- encrypt -w "Myp@ssword001" -d keys -v v1
+```
+
+**Output**:
+
+```json
+{
+  "key_version":"v1",
+  "encrypted_symmetric_key":"PL0I8E+...",
+  "nonce":"iaDq0gcDYZk=",
+  "ciphertext":"Z7saFqL...Vk="
+}
+```
+
+Copier
 
 #### Decrypt
 
-Decrypts encrypted data and verifies a password.
+*(Note: This heading is maintained from the existing ToC structure, but see below for full command usage.)*
 
-**Syntax:**
+The `decrypt` command decrypts the encrypted data (containing the hashed password) and verifies if the provided password matches. You can supply the encrypted data either directly as a string or via a file.
 
-```bash
-cargo run -- decrypt -w <password> -k <private_key_directory> [-d <data> | -f <file>]
-```
-
-**Note:** The `-d` (data) and `-f` (file) options are mutually exclusive.
-
-| Option                    | Short | Description                               | Default |
-|---------------------------|-------|-------------------------------------------|---------|
-| `--password`              | `-w`  | The password to verify.                   | N/A     |
-| `--private_key_directory` | `-k`  | Directory path containing private keys.   | `keys`  |
-| `--data`                  | `-d`  | Encrypted data as a direct string input.  | `None`  |
-| `--file`                  | `-f`  | Path to a file containing encrypted data. | `None`  |
-
-**Example with Direct Data Input:**
+Decrypts the JSON blob, retrieves the AES key (via RSA private key), decrypts the hashed password, and verifies it:
 
 ```bash
-cargo run -- decrypt -w 'YourP@ssw0rd!' -k keys -d '{"ciphertext":"...","encrypted_symmetric_key":"...","nonce":"..."}'
+cargo run -- decrypt 
+    --password "MySecureP@ssw0rd" 
+    --private_key_directory keys 
+    --data '{"key_version":"v1","encrypted_symmetric_key":"PL0I8E+...","nonce":"iaDq0gcDYZk=","ciphertext":"Z7saFqL..."}'
 ```
 
-**Example with File:**
+Or from a file:
 
 ```bash
-cargo run -- decrypt -w 'YourP@ssw0rd!' -k keys -f encrypted_data.json
+cargo run -- decrypt -w "MySecureP@ssw0rd" -v v1 -k keys -f encrypted_data.json
 ```
 
-This command decrypts the encrypted data using the private key in the `keys` directory and verifies if the provided password matches.
+If the password matches, you’ll see:
+
+```plaintext
+The password is correct.
+```
+
+Otherwise:
+
+```bash
+The password is incorrect or an error occurred...
+```
 
 ## Examples
 
-### Generating RSA Keys
+Below are some quick usage examples covering **key generation**, **password encryption**, and **password decryption**.
 
-Generate an RSA key pair with version `v1`, saved in the `keys` directory with a key size of 4096 bits.
+### Generating RSA Keys
 
 ```bash
 cargo run -- generate -v v1 -d keys -s 4096
 ```
 
-**Output:**
+Output (example):
 
 ```vbnet
 ⠋ Generating RSA keys...
@@ -189,156 +223,629 @@ Private Key: keys/private_key_v1.pem
 Public Key: keys/public_key_v1.pem
 ```
 
-### Encrypting a Password
+### Encrypting a password
 
-Hash and encrypt the password `YourP@ssw0rd!` using the public key of version `v1`.
-
-```bash
-cargo run -- encrypt -w 'YourP@ssw0rd!' -d keys -v v1
-```
-
-**Output:**
+Use the `encrypt` command to hash a password with Argon2, then encrypt it with AES, and finally encrypt the AES key with RSA:
 
 ```bash
-Hashed and encrypted password: {"ciphertext":"P2A4hrhIg9E9o+sChKPK3zrwo/49Cutpb0FoxmZSfzs6YmG0wkiToEVy9vKBaxMcYzM7sAWso2977vzgrIReTZfHPMBnsi2yVR6xh7RUIeoNJvx346Ya8ws/GI+HjxTVOXZh2odHPFS7mHUpWASOb7U=","encrypted_symmetric_key":"j/MMqYqHNEh8+Go1HsjlLWfQlg9/94meH6sNpPcYQt1ZEwA5BoGVaJ1hcOt0A6Sv54dwlG4Yr8WrHUkPR04raw0jFhSNkk7iO5fZJwuA8gvYRLhnAxyW0X/vRJzwUaee4TuDt9r4Zr3DppAl12lW03SkOkuwFokrz8AGg6G1LqnUz0CwgbfmOauM2+O70VDA4cTCb6mH7LmslplS6pUuY5U3M8inWag6Z907Q6yV4HNYdHxAuYHfLK/XxOiHCsH8H8EfWbVt7BU31PC8o2L+MkfTyf6f5t4wvQtAx2BWvMt7zE9JWYVs1aTxsJC4urO4oeer/XddZLym7t6xsNTNoQ==","nonce":"W7q6TjwB4x0ysavW"}
+cargo run -- encrypt 
+    --password "MySecureP@ssw0rd" 
+    --public_key_directory keys 
+    --key_version v1
 ```
 
-### Decrypting and Verifying a Password
-
-Decrypt the encrypted data from a file and verify the password.
-
-```
-cargo run -- decrypt -w 'YourP@ssw0rd!' -k keys -f encrypted_data.json
-```
-
-**Output if the password is correct:**
+Or use :
 
 ```bash
+cargo run -- encrypt -w "Myp@ssword001" -d keys -v v1
+```
+
+### Decrypting and verifying a password
+
+```plaintext
+cargo run -- decrypt 
+    --password "MySecureP@ssw0rd" 
+    --private_key_directory keys 
+    --file /path/to/encrypted_data.json
+```
+
+**Options:**
+
+| **Option** | **Short** | **Description** | **Default** |
+| --- | --- | --- | --- |
+| `--password` | `-w` | The password to hash and encrypt. | *(required)* |
+| `--public_key_directory` | `-d` | Directory path containing the public key file. | `keys` |
+| `--private_key_directory` | `-k` | Directory path containing the private key file. | `keys` |
+| `—-file` | `-f` | File containing the data encrypted (JSON) | `file` |
+| `--key_version` | `-v` | The version identifier of the public key to use. | *(required)* |
+
+**Output (example)**:
+
+```json
+{
+  "key_version":"v1",
+  "encrypted_symmetric_key":"PL0I8E+...",
+  "nonce":"iaDq0gcDYZk=",
+  "ciphertext":"Z7saFqL...Vk="
+}
+```
+
+Store this JSON string (usually encoded as a single Base64 or JSON) in your database.
+
+### Decrypting and verifying a password
+
+Use the `decrypt` command to decrypt the data and verify a password.
+You can pass the encrypted data via `-d` (inline) or `-f` (file).
+
+**Inline example**:
+
+```bash
+cargo run -- decrypt 
+    --password "MySecureP@ssw0rd" 
+    --private_key_directory keys 
+    --data '{"key_version":"v1","encrypted_symmetric_key":"PL0I8E+...","nonce":"iaDq0gcDYZk=","ciphertext":"Z7saFqL..."}'
+```
+
+**Or with a file**:
+
+```bash
+cargo run -- decrypt 
+    --password "MySecureP@ssw0rd" 
+    --private_key_directory keys 
+    --file /path/to/encrypted_data.json
+```
+
+You can use the short code to decrypt :
+
+```bash
+ cargo run -- decrypt -w "M@rdochee2008" -k keys -f "encrypted_data.json"
+```
+
+Output if the password matches:
+
+```pgsql
 The password is correct.
 ```
 
-**Output in case of an error:**
+If it fails or any error arises, you’ll see a descriptive error message.
 
-```bash
-The password is incorrect or an error occurred: Detailed error message here
-```
+## Full example: Password encryption and decryption
 
-## Full Example: Password Encryption and Decryption
-
-Before using IronCrypt for password encryption and decryption, generate an RSA key pair using:
-
-```bash
-cargo run -- generate -v v1 -d keys -s 4096
-```
-
-Then use the following code to encrypt and verify passwords:
+Below is a concise Rust code example demonstrating **end-to-end** usage of IronCrypt in a single process (though typically you’d store the resulting encrypted data in a database for later retrieval).
 
 ```rust
-use ironcrypt::{hash_and_encrypt_password_with_criteria, decrypt_and_verify_password, load_private_key, load_public_key, PasswordCriteria};
+use ironcrypt::{
+  IronCrypt, IronCryptConfig, IronCryptError,
+  PasswordCriteria,
+};
+use std::collections::HashMap;
 use std::error::Error;
 
+/// Mock database table: username -> encrypted JSON
+type MockDatabase = HashMap<String, String>;
+
+/// Represents the API service that handles business logic
+/// (database interactions, encryption/decryption via IronCrypt).
+struct ServiceAPI {
+  db: MockDatabase,
+  crypt: IronCrypt,
+}
+
+impl ServiceAPI {
+  /// Creates the service by initializing IronCrypt (which generates or ensures RSA keys)
+  /// and an in-memory "database" (HashMap).
+  fn new(key_directory: &str, key_version: &str) -> Result<Self, IronCryptError> {
+    // Prepare the config (RSA key size, Argon2 params, PasswordCriteria, etc.).
+    let config = IronCryptConfig::default();
+    let crypt = IronCrypt::new(key_directory, key_version, config)?;
+
+    let db = HashMap::new(); // In-memory "database"
+    Ok(ServiceAPI { db, crypt })
+  }
+
+  /// Encrypts the user's password and stores it in the mock DB.
+  fn create_user(&mut self, username: &str, plain_password: &str) -> Result<(), IronCryptError> {
+    let encrypted_json = self.crypt.encrypt_password(plain_password)?;
+    self.db.insert(username.to_owned(), encrypted_json);
+    Ok(())
+  }
+
+  /// Verifies the user's provided password (if the user exists).
+  fn verify_user(&self, username: &str, password_attempt: &str) -> Result<bool, IronCryptError> {
+    if let Some(stored_json) = self.db.get(username) {
+      // Decrypt and compare the password
+      self.crypt.verify_password(stored_json, password_attempt)
+    } else {
+      // No user found => you can handle differently or return an error
+      Err(IronCryptError::InvalidPassword)
+    }
+  }
+}
+
+/// Simulates the Web/UI layer that calls the ServiceAPI methods.
+struct WebInterface<'a> {
+  service: &'a mut ServiceAPI,
+}
+
+impl<'a> WebInterface<'a> {
+  fn new(service: &'a mut ServiceAPI) -> Self {
+    WebInterface { service }
+  }
+
+  /// Simulates a "Create Account" form where the user chooses a password.
+  fn register_form(&mut self, username: &str, plain_password: &str) {
+    println!("(UI) User '{}' is creating an account...", username);
+    match self.service.create_user(username, plain_password) {
+      Ok(_) => println!("(UI) Successfully created account for '{}'.", username),
+      Err(e) => println!("(UI) Error creating user '{}': {:?}", username, e),
+    }
+  }
+
+  /// Simulates a "Login" form where the user attempts to log in.
+  fn login_form(&self, username: &str, password_attempt: &str) {
+    println!("(UI) User '{}' attempts to log in...", username);
+    match self.service.verify_user(username, password_attempt) {
+      Ok(valid) => {
+        if valid {
+          println!("(UI) Correct password! Access granted.");
+        } else {
+          println!("(UI) Wrong password!");
+        }
+      }
+      Err(e) => println!("(UI) Error verifying '{}': {:?}", username, e),
+    }
+  }
+}
+
+/// Main entry point simulating the end-to-end flow (User -> UI -> Service -> DB / IronCrypt).
 fn main() -> Result<(), Box<dyn Error>> {
-    // ------------------------- 1. Encrypt and Store the Password -------------------------
+  // ------------------------------ Setup --------------------------------
+  // Initialize the ServiceAPI + DB + IronCrypt
+  let mut service_api = ServiceAPI::new("keys", "v1")?;
 
-    let password = "MySuperSecurePassword@2024";
+  // Initialize a "WebInterface" that calls the ServiceAPI
+  let mut ui = WebInterface::new(&mut service_api);
 
+  // ------------------------------ Flow ---------------------------------
+  // 1) "alice" creates an account
+  ui.register_form("alice", "MySup3rSecret!");
+
+  // 2) "alice" tries to log in with the correct password
+  ui.login_form("alice", "MySup3rSecret!");
+
+  // 3) Test a wrong password
+  ui.login_form("alice", "BadPassword123");
+
+  // 4) Test an unknown user
+  ui.login_form("bob", "SomeRandomPwd");
+
+  Ok(())
+}
+```
+
+### Explanation
+
+1. **User**: Simulated by direct calls to `ui.register_form(...)` or `ui.login_form(...)`. In a real setup, these would come from HTTP requests.
+2. **WebInterface**: Mimics the UI layer (frontend) which requests the creation of a user or attempts a login.
+3. **ServiceAPI**: Acts as the “service” that orchestrates IronCrypt calls and database storage.
+   - *create_user* → uses `encrypt_password(...)` to store a JSON in the DB.
+   - *verify_user* → uses `verify_password(...)` to check correctness.
+4. **IronCrypt**: Provides all the cryptographic functionalities (Argon2 hashing, AES-256-GCM encryption, RSA key encryption).
+5. **Mock Database**: A simple `HashMap`, but in a real system you’d replace it with a real database (SQL, NoSQL, etc.).
+
+## Error handling
+
+**IronCrypt** provides a structured error type `IronCryptError` covering a range of failure modes:
+
+| **Variant**                  | **Description**                                               |
+|------------------------------|---------------------------------------------------------------|
+| `PasswordStrengthError(msg)` | Password doesn’t meet the specified criteria.                 |
+| `HashingError(msg)`          | Errors during Argon2 hashing.                                 |
+| `EncryptionError(msg)`       | Errors during AES or RSA encryption.                          |
+| `DecryptionError(msg)`       | Errors during AES or RSA decryption.                          |
+| `KeyGenerationError(msg)`    | Failures in generating RSA keys.                              |
+| `KeyLoadingError(msg)`       | Failures in loading RSA keys from files.                      |
+| `KeySavingError(msg)`        | Failures in saving RSA keys to files.                         |
+| `IOError(e)`                 | Underlying I/O problems (file read/write).                    |
+| `Utf8Error(e)`               | UTF-8 conversion issues.                                      |
+| `InvalidPassword`            | The user-provided password does not match the decrypted hash. |
+
+Handle these carefully in production to avoid revealing sensitive information.
+
+## Encrypting and decrypting binary files
+
+In addition to handling password encryption, **IronCrypt** provides two dedicated commands for encrypting/decrypting any binary file:
+
+IronCrypt also supports **binary files**:
+
+1. **EncryptFile** : AES-256-GCM + RSA for the file content/key, serialized as JSON (base64).
+2. **DecryptFile**: Reverse process to restore the original binary file.
+
+Commands and options for binary Files
+
+Below is a **summary** focusing on the commands related to binary files. Other commands (`generate`, `encrypt`, `decrypt`) exist but are not listed here.
+
+| **Command**   | **Short**                | **Alias**                                         | **Default**     |
+|---------------|--------------------------|---------------------------------------------------|-----------------|
+| `encryptfile` | `encfile`, `efile`, `ef` | Encrypts a binary file (AES+RSA) → JSON (base64). | `keys, version` |
+| `decryptfile` | `decfile`, `dfile`, `df` | Decrypts that JSON to restore the original file.  | `keys, version` |
+
+**Key Arguments/Options**:
+
+| **Option**                 | **Short** | **Description**                                              | **Default**  |
+|----------------------------|-----------|--------------------------------------------------------------|--------------|
+| `--input_file <input>`     | `-i`      | Path to the binary file to be encrypted/decrypted.           | *(required)* |
+| `--output_file <output>`   | `-o`      | Path of the output file (JSON or decrypted binary).          | *(required)* |
+| `--public_key_directory`   | `-d`      | Directory containing the public key (EncryptFile).           | `keys`       |
+| `--private_key_directory`  | `-k`      | Directory containing the private key (DecryptFile).          | `keys`       |
+| `--key_version <version>`  | `-v`      | Key version (e.g. `v1`, `v2`, etc.).                         | `v1`         |
+| `--password <string>`      | `-w`      | Optional string if you wish to enforce a password or Argon2. | *(empty)*    |
+
+### Workflow for binary files
+
+```mermaid
+sequenceDiagram
+  autonumber
+
+  participant U as User
+  participant FS as File System
+  participant IR as IronCrypt
+  participant DB as Storage (Mock DB / File)
+
+  Note over U: The user wants to encrypt a binary file (e.g. data.bin)
+
+%% --- ENCRYPTION PHASE ---
+  U->>FS: Opens and reads data.bin
+  FS-->>U: Returns the raw bytes (file_data)
+  U->>IR: Calls encrypt_binary_data(file_data, password)
+  IR->>IR: (1) Generates AES 256-bit key<br/>(2) Argon2 (if a password is provided)<br/>(3) AES-256-GCM encrypts the file content
+  IR->>IR: (4) Encrypts the AES key with the RSA public key
+  IR-->>U: Returns the encrypted JSON (ciphertext, nonce,<br/>encrypted_symmetric_key, etc.)
+  U->>DB: Stores data.enc = encrypted JSON
+
+  Note over U: Later, we want to decrypt
+
+%% --- DECRYPTION PHASE ---
+  U->>DB: Retrieves data.enc
+  DB-->>U: Sends back the encrypted JSON
+  U->>IR: Calls decrypt_binary_data(JSON, password)
+  IR->>IR: (1) Loads RSA private key<br/>(2) Decrypts the AES key<br/>(3) AES-256-GCM decrypts the file content
+  IR-->>U: Returns the decrypted bytes
+  U->>FS: Writes data_decrypted.bin
+  Note over FS: This is the clear-text binary file
+```
+
+**(Optional)** archive a folder:
+
+```bash
+tar -czf my_folder.tar.gz my_folder/
+```
+
+**Syntaxe** :
+
+```bash
+cargo run -- decryptfile 
+    --input_file <encrypted_file.json> 
+    --output_file <decrypted_file> 
+    --private_key_directory <private_key_dir> 
+    --key_version <key_version> 
+    --password <optiona
+```
+
+Copier
+
+### **Encrypt** it:
+
+```bash
+cargo run -- ef 
+    --input_file my_folder.tar.gz 
+    --output_file my_folder.enc 
+    --public_key_directory keys 
+    --key_version v1 
+    --password "MySecret"
+```
+
+**Decrypting a file**:
+
+```bash
+cargo run -- df 
+    --input_file my_folder.enc 
+    --output_file my_folder_decrypted.tar.gz 
+    --private_key_directory keys 
+    --key_version v1 
+    --password "MySecret"
+```
+
+> **Note**: **Extract** using `tar -xzf my_folder_decrypted.tar.gz`
+
+Exemple 
+
+```rust
+use ironcrypt::{
+    IronCrypt, IronCryptConfig, IronCryptError,
+};
+use std::error::Error;
+use std::fs::{File};
+use std::io::{Read, Write};
+use std::collections::HashMap;
+
+/// Mock storage: filename -> encrypted JSON
+type MockFileStorage = HashMap<String, String>;
+
+fn main() -> Result<(), Box<dyn Error>> {
+    // 1) Configure IronCrypt (key size, Argon2 params, etc.)
+    let config = IronCryptConfig::default();
+    // e.g. config.rsa_key_size = 4096; etc.
+
+    // 2) Create IronCrypt instance (ensures RSA keys exist in "keys" with version "v1")
+    let key_directory = "keys";
     let key_version = "v1";
-    let public_key_path = format!("keys/public_key_{}.pem", key_version);
-    let public_key = load_public_key(&public_key_path)?;
+    let crypt = IronCrypt::new(key_directory, key_version, config)?;
 
-    let criteria = PasswordCriteria::default();
+    // 3) Prepare a mock storage for "encrypted files"
+    let mut storage: MockFileStorage = HashMap::new();
 
-    let encrypted_data = hash_and_encrypt_password_with_criteria(password, &public_key, &criteria, key_version)?;
+    // -------------------- ENCRYPT a file --------------------
+    // Let's assume we have a file data.bin we want to encrypt
+    let input_filepath = "data.bin";
+    let password = "OptionalPass!"; // if you want to enforce Argon2 on the password
+    let mut file_data = Vec::new();
 
-    println!("Encrypted and hashed password to store in the database:");
-    println!("{}", encrypted_data);
+    // Read the original file
+    {
+        let mut f = File::open(input_filepath)?;
+        f.read_to_end(&mut file_data)?;
+    }
 
-    // --------------------- 2. Decrypt and Verify the Password ---------------------
+    // Now encrypt the file data
+    println!("Encrypting file '{}' ...", input_filepath);
+    let encrypted_json = crypt.encrypt_binary_data(&file_data, password)?;
+    println!("Resulting encrypted JSON: {}", &encrypted_json[..50.min(encrypted_json.len())]); // show partial
 
-    let user_input_password = "MySuperSecurePassword@2024";
+    // Simulate storing that encrypted JSON in a "storage" with a unique key
+    storage.insert("data.bin.enc".to_string(), encrypted_json);
 
-    let private_key_path = format!("keys/private_key_{}.pem", key_version);
-    let private_key = load_private_key(&private_key_path)?;
+    // We can also store it to a real file:
+    // std::fs::write("data.bin.enc", &encrypted_json)?;
 
-    match decrypt_and_verify_password(&encrypted_data, user_input_password, "keys") {
-        Ok(_) => println!("Password is correct."),
-        Err(e) => println!("The password is incorrect or an error occurred: {:?}", e),
+    // -------------------- DECRYPT the file --------------------
+    // Let's retrieve the encrypted JSON from our storage
+    if let Some(encrypted_stored) = storage.get("data.bin.enc") {
+        println!("Decrypting file ...");
+        let decrypted_bytes = crypt.decrypt_binary_data(encrypted_stored, password)?;
+        // Then write it to a new file:
+        let output_filepath = "data_decrypted.bin";
+        let mut out = File::create(output_filepath)?;
+        out.write_all(&decrypted_bytes)?;
+        println!("Decrypted file written to '{}'.", output_filepath);
+    } else {
+        eprintln!("Could not find 'data.bin.enc' in storage.");
     }
 
     Ok(())
 }
 ```
 
-### Steps:
+### Explanation of the steps
 
-1. **Encrypting and Storing the Password:**
+1. **IronCryptConfig**
 
-   - The password is hashed using **Argon2** and encrypted with **AES-256-GCM**.
-   - The symmetric key used for encryption is encrypted with an **RSA public key**.
-   - The result is serialized into **JSON** and encoded in **base64**, ready to be stored in the database.
+   - We start with a default config (which includes RSA key size = 2048 bits, Argon2 memory/time cost, default `PasswordCriteria`, etc.).
+   - You can adjust `config.rsa_key_size`, `config.password_criteria`, or Argon2 parameters as needed.
 
-2. **Decrypting and Verifying the Password:**
+2. **Creating an IronCrypt instance**
 
-   - The stored data is decrypted using the **RSA private key**, and the password is compared to the decrypted hash.
+   - `IronCrypt::new(key_directory, key_version, config)` ensures you have a `private_key_v1.pem` and `public_key_v1.pem` in the `keys` folder (it will generate them if missing).
+   - This instance can encrypt (`encrypt_binary_data(...)`) or decrypt (`decrypt_binary_data(...)`) any data.
 
-## Error Handling
+3. **Reading the original file** (`data.bin`)
 
-IronCrypt utilizes an enumeration `IronCryptError` to consistently and informatively handle various errors that may occur. Below are some common errors and their example messages:
+   - We open it and read all bytes into `file_data: Vec<u8>`.
 
-| Error | Example Messages |
-| --- | --- |
-| **Key Generation Error** | `Error generating the private key: Detailed error message` |
-| **Key Loading Error** | `Error reading the public key: Detailed error message`<br>`Error loading the private key: Detailed error message` |
-| **Key Saving Error** | `Error converting the private key: Detailed error message`<br>`Error writing the public key: Detailed error message` |
-| **Hashing Error** | `Error hashing: Detailed error message` |
-| **Encryption/Decryption Error** | `Encryption error: Detailed error message`<br>`Decryption error: Detailed error message` |
-| **IO Error** | `I/O error: Detailed error message` |
-| **UTF-8 Conversion Error** | `UTF-8 conversion error: Detailed error message` |
-| **Invalid Password** | `Invalid password` |
+4. **Encrypting the binary data**
 
-**Notes:**
+   - `crypt.encrypt_binary_data(&file_data, password)` performs:
+     - Optional password check/hashing if `password` is not empty (Argon2, etc.).
+     - AES-256-GCM encryption of the file data.
+     - RSA encryption of the AES key with the public key.
+     - Returns a serialized JSON with `"ciphertext"`, `"nonce"`, `"encrypted_symmetric_key"`, and possibly `"password_hash"` if configured.
 
-- **Protected RSA Private Key**: Ensure that private keys are stored securely and only accessible to authorized parties.
-- **File Permissions**: Verify that the files containing RSA keys have appropriate permissions to prevent unauthorized access.
+5. **Storing the encrypted JSON**
 
-## Security and Best Practices
+   - In this sample, we do so in a `HashMap<String, String>`.
+   - Alternatively, one might call `std::fs::write("data.bin.enc", &encrypted_json)?` to store it on disk, or save it in a database.
 
-- **Key Storage**: Keep the private key secure and never share it publicly. The public key can be shared to encrypt data.
-- **Robust Passwords**: Encourage the use of long and complex passwords to enhance security.
-- **Custom Criteria**: Adapt `PasswordCriteria` according to the specific needs of your application to strengthen password requirements.
-- **Error Management**: Carefully handle errors returned by functions to avoid disclosing sensitive information.
-- **Secure Random Sources**: Use cryptographically secure random number sources, such as `OsRng`, for all operations requiring randomness.
-- **Regular Updates**: Keep your dependencies up to date to benefit from the latest security improvements and bug fixes.
+6. **Decrypting the file**
 
-## Contribution
+   - Retrieve the JSON from your chosen storage.
+   - `crypt.decrypt_binary_data(&encrypted_json, password)` does the reverse:
+     - RSA with the private key to recover AES.
+     - AES-256-GCM decryption of the file data.
+   - We then write the **decrypted bytes** to `data_decrypted.bin`.
 
-Contributions are welcome! To contribute to IronCrypt, follow these steps:
+7. **Password** (Optional)
 
-1. **Fork** the repository.
-2. **Create a new branch** for your feature or bugfix.
-3. **Commit** your changes with clear messages.
-4. **Submit a Pull Request** detailing your modifications.
+   - The string `password = "OptionalPass!"` is used if you want to also Argon2-hash the password and store it for verification. If you prefer to skip password usage, pass an empty string or handle it differently.
 
-Ensure that your code adheres to Rust's best practices and passes all tests.
+## Table of commands and options
+
+Below is a **summary** focusing on the commands related to binary files. Other commands (`generate`, `encrypt`, `decrypt`) exist but are not listed here.
+
+| **Command** | **Alias** | **Description** |
+| --- | --- | --- |
+| `encryptfile` | `encfile`, `efile`, `ef` | Encrypts a binary file (AES+RSA) |
+| `decryptfile` | `decfile`, `dfile`, `df` | Decrypts a binary file (AES+RSA) |
+
+**Key Arguments/Options**:
+
+| **Option** | **Short** | **Description** | **Default** |
+| --- | --- | --- | --- |
+| `--input_file <input>` | `-i` | Path to the binary file to be encrypted/decrypted. | *(required)* |
+| `--output_file <output>` | `-o` | Path of the output file (JSON or decrypted binary). | *(required)* |
+| `--public_key_directory` | `-d` | Directory containing the public key (EncryptFile). | `keys` |
+| `--private_key_directory` | `-k` | Directory containing the private key (DecryptFile). | `keys` |
+| `--key_version <version>` | `-v` | Key version (e.g. `v1`, `v2`, etc.). | `v1` |
+| `--password <string>` | `-w` | Optional string if you wish to enforce a password or Argon2. | *(empty)* |
+
+**Complete Example**:
+
+1. **Archive** a folder:
+
+```plaintext
+tar -czf my_folder.tar.gz my_folder/
+```
+
+2. **Encrypt** (binary file):
+
+```bash
+cargo run -- ef 
+   --input_file my_folder.tar.gz 
+   --output_file my_folder.enc 
+   --public_key_directory keys 
+   --key_version v1 
+   --password "MySecret"
+```
+
+**Decrypt**:
+
+```bash
+cargo run -- df 
+   --input_file my_folder.enc 
+   --output_file my_folder_decrypted.tar.gz 
+   --private_key_directory keys 
+   --key_version v1 
+   --password "MySecret"
+```
+
+**Extract**:
+
+```bash
+tar -xzf my_folder_decrypted.tar.gz
+```
+
+This lets you encrypt/decrypt any binary content, whether large files or archives, by simply archiving them first and then using **EncryptFile** / **DecryptFile**.
 
 ---
 
-## License
-
-`IronCrypt` is distributed under the MIT License. See the [LICENSE](LICENSE) file for more details.
-
----
-
-**Final Notes:**
-
-- **Unique Short Options Usage**: Each short option is unique within each command to avoid conflicts. For example, in the `decrypt` command, `-k` is used for `private_key_directory` and `-d` for `data`.
-- **Mutual Exclusivity**: The `-d` (data) and `-f` (file) options in the `decrypt` command are mutually exclusive, preventing their simultaneous use.
-- **Help Messages**: Use the `--help` option with each command to get detailed information about available options.
+**Tip**: You can always run `cargo run -- <command> --help` to see detailed usage instructions for the CLI. For example:
 
 ```bash
 cargo run -- generate --help
 cargo run -- encrypt --help
 cargo run -- decrypt --help
+cargo run -- encrypt-file --help
+cargo run -- decrypt-file --help
 ```
 
-This will help you better understand the various options and their usage.
+> This provides concise information about flags and arguments for each command.
+
+This command generate an RSA key pair : `cargo run -- generate --help`
+
+```bash
+Usage: ironcrypt-cli generate [OPTIONS] --version <VERSION>
+
+Options:
+  -v, --version <VERSION>      Version de la clé
+  -d, --directory <DIRECTORY>  Chemin de sauvegarde pour les clés [default: keys]
+  -s, --key-size <KEY_SIZE>    Taille de la clé (en bits) [default: 2048]
+  -h, --help                  
+```
+
+This command hash and encrypt a password : `cargo run -- encrypt --help`
+
+```bash
+Usage: ironcrypt-cli encrypt [OPTIONS] --password <PASSWORD> --key-version <KEY_VERSION>
+
+Options:
+  -w, --password <PASSWORD>
+          Le mot de passe à hacher et chiffrer
+  -d, --public-key-directory <PUBLIC_KEY_DIRECTORY>
+          Chemin vers le répertoire des clés publiques [default: keys]
+  -v, --key-version <KEY_VERSION>
+          Version de la clé publique à utiliser
+  -h, --help
+```
+
+This command decrypt the encrypted data and verify the password.: `cargo run -- decrypt --help`
+
+```bash
+Usage: ironcrypt-cli decrypt [OPTIONS] --password <PASSWORD>
+
+Options:
+  -w, --password <PASSWORD>
+          Le mot de passe à vérifier
+  -k, --private-key-directory <PRIVATE_KEY_DIRECTORY>
+          Chemin vers le répertoire des clés privées [default: keys]
+  -d, --data <DATA>
+          Données chiffrées à déchiffrer (sous forme de chaîne)
+  -f, --file <FILE>
+          Chemin vers le fichier contenant les données chiffrées
+  -h, --help
+```
+
+This command hash and encrypt a binary `cargo run -- encrypt-file --help`:
+
+```bash
+Usage: ironcrypt-cli encrypt-file [OPTIONS] --input-file <INPUT_FILE> --output-file <OUTPUT_FILE>
+
+Options:
+  -i, --input-file <INPUT_FILE>
+          Chemin du fichier binaire à chiffrer
+  -o, --output-file <OUTPUT_FILE>
+          Chemin du fichier de sortie (JSON chiffré)
+  -d, --public-key-directory <PUBLIC_KEY_DIRECTORY>
+          Chemin du répertoire des clés publiques [default: keys]
+  -v, --key-version <KEY_VERSION>
+          Version de la clé publique à utiliser [default: v1]
+  -w, --password <PASSWORD>
+          Mot de passe "optionnel" (sinon laisser vide) [default: ]
+  -h, --help
+```
+
+This command hash and decrypt a binary `cargo run -- decrypt-file --help`:
+
+```bash
+Usage: ironcrypt-cli decrypt-file [OPTIONS] --input-file <INPUT_FILE> --output-file <OUTPUT_FILE>
+
+Options:
+  -i, --input-file <INPUT_FILE>
+          Chemin du fichier JSON chiffré
+  -o, --output-file <OUTPUT_FILE>
+          Chemin du fichier binaire déchiffré
+  -k, --private-key-directory <PRIVATE_KEY_DIRECTORY>
+          Chemin du répertoire des clés privées [default: keys]
+  -v, --key-version <KEY_VERSION>
+          Version de la clé privée [default: v1]
+  -w, --password <PASSWORD>
+          Mot de passe "optionnel" [default: ]
+  -h, --help
+```
+
+## Security and best practices
+
+1. **Secure Your RSA Keys**: Restrict file permissions or use a secure vault/KMS.
+2. **Key Rotation**: Use separate versions (`v1`, `v2`) for older vs. newer data.
+3. **Password Criteria**: Adjust `PasswordCriteria` for minimum length, uppercase, digits, etc.
+4. **Argon2 Tuning**: If memory usage is too high (64 MiB default), reduce memory/time cost.
+5. **Do Not Log Secrets**: Avoid logging plaintext data or passwords.
+6. **Use HTTPS**: Ensure data is encrypted in transit, too.
+
+## Contribution
+
+Contributions are welcome! To contribute:
+
+1. **Fork** the project on GitHub.
+
+2. **Create** a new branch for your feature/bug fix.
+
+3. **Submit** a pull request with clear explanations of your changes.
+
+We appreciate pull requests that:
+
+- Maintain code clarity and follow Rust idiomatic practices.
+
+- Include relevant tests for new features.
+
+- Update documentation if necessary.
+
+IronCrypt is released under the **MIT License**. Check the [LICENSE](LICENSE) file in the repository for more details.

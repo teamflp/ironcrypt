@@ -2,26 +2,19 @@
 
 use crate::handle_error::IronCryptError;
 use crate::{load_private_key, IronCryptConfig};
-
 use aes::{Aes128, Aes192, Aes256};
-//use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::aead::consts::U12;
 use aes_gcm::aead::{Aead, KeyInit}; // Décommentez cette ligne pour importer le trait KeyInit
 use aes_gcm::{AesGcm, Nonce};
-
 use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
 use argon2::{Algorithm, Argon2, Params, Version};
-
 use base64::engine::general_purpose::STANDARD as base64_standard;
 use base64::Engine;
-
 use rand::rngs::OsRng;
 use rand::RngCore;
-
 use rsa::{Oaep, RsaPublicKey};
-use sha2::Sha256;
-
 use serde_json;
+use sha2::Sha256;
 
 // Définition des alias de types pour AES-GCM avec différentes tailles de clés
 type Aes128Gcm = AesGcm<Aes128, U12>;
@@ -166,7 +159,10 @@ pub fn decrypt_and_verify_password(
     let ciphertext = base64_standard.decode(ciphertext_b64)?;
 
     println!("Longueur du nonce_bytes : {}", nonce_bytes.len());
-    println!("Longueur du encrypted_symmetric_key : {}", encrypted_symmetric_key.len());
+    println!(
+        "Longueur du encrypted_symmetric_key : {}",
+        encrypted_symmetric_key.len()
+    );
 
     // Vérifier la longueur du nonce
     if nonce_bytes.len() != 12 {
@@ -197,9 +193,10 @@ pub fn decrypt_and_verify_password(
             cipher.decrypt(nonce, ciphertext.as_ref())?
         }
         _ => {
-            return Err(IronCryptError::DecryptionError(
-                format!("Taille de clé AES invalide lors du déchiffrement. Taille obtenue: {} octets", symmetric_key.len()),
-            ));
+            return Err(IronCryptError::DecryptionError(format!(
+                "Taille de clé AES invalide lors du déchiffrement. Taille obtenue: {} octets",
+                symmetric_key.len()
+            )));
         }
     };
 
