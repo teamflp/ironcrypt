@@ -1,4 +1,7 @@
 /target
 /.idea
+/.vscode
 /keys
-procedure.md
+/demo
+/Zpoubelle
+encrypted_data.json

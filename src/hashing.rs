@@ -1,6 +1,6 @@
 use argon2::password_hash::SaltString;
 use argon2::{self, Argon2, PasswordHasher};
-use rand_core::OsRng;
+use argon2::password_hash::rand_core::OsRng;
 
 /// Hache un mot de passe avec Argon2id.
 /// Hache un mot de passe en utilisant l'algorithme Argon2.
