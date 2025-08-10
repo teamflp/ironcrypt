@@ -120,6 +120,7 @@ If the password is correct, the tool will print a success message.
 
 ### All Commands
 
+
 | Command | Description |
 |---|---|
 | `generate` | Generates a new RSA key pair (public and private). |
@@ -248,6 +249,16 @@ fn main() -> Result<(), IronCryptError> {
     Ok(())
 }
 ```
+
+### Running the Example
+
+This repository includes a complete, runnable example project in the `examples/basic-usage` directory. To run it, you can use the following command from the root of the repository:
+
+```sh
+cargo run --example basic-usage
+```
+
+This will execute the example code, which demonstrates initializing `IronCrypt`, encrypting a password, and verifying it.
 
 ## Security Best Practices
 
