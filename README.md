@@ -120,6 +120,7 @@ If the password is correct, the tool will print a success message.
 
 ### All Commands
 
+
 | Command | Description |
 |---|---|
 | `generate` | Generates a new RSA key pair (public and private). |
