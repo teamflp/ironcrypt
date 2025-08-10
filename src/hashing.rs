@@ -1,6 +1,6 @@
+use argon2::password_hash::rand_core::OsRng;
 use argon2::password_hash::SaltString;
 use argon2::{self, Argon2, PasswordHasher};
-use argon2::password_hash::rand_core::OsRng;
 
 /// Hache un mot de passe avec Argon2id.
 /// Hache un mot de passe en utilisant l'algorithme Argon2.
@@ -54,5 +54,5 @@ pub fn hash_password(password: &str) -> Result<String, String> {
     argon2
         .hash_password(password.as_bytes(), &salt)
         .map(|hash| hash.to_string())
-        .map_err(|e| format!("Erreur lors du hachage du mot de passe: {:?}", e))
+        .map_err(|e| format!("Erreur lors du hachage du mot de passe: {e:?}"))
 }
