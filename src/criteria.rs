@@ -16,7 +16,7 @@ use unicode_general_category::{get_general_category, GeneralCategory};
 /// - `uppercase`: Minimum number of uppercase letters.
 /// - `lowercase`: Minimum number of lowercase letters.
 /// - `digits`: Minimum number of digits.
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PasswordCriteria {
     pub min_length: usize,
     pub max_length: Option<usize>,
@@ -138,5 +138,66 @@ impl PasswordCriteria {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_password_criteria_valid() {
+        let criteria = PasswordCriteria::default();
+        assert!(criteria.validate("ValidPassword123!").is_ok());
+    }
+
+    #[test]
+    fn test_password_too_short() {
+        let criteria = PasswordCriteria::default();
+        let err = criteria.validate("Short1!").unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "Erreur de robustesse du mot de passe: Mot de passe trop court"
+        );
+    }
+
+    #[test]
+    fn test_password_no_uppercase() {
+        let criteria = PasswordCriteria::default();
+        let err = criteria.validate("nouppercase123!").unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "Erreur de robustesse du mot de passe: Pas assez de majuscules"
+        );
+    }
+
+    #[test]
+    fn test_password_no_lowercase() {
+        let criteria = PasswordCriteria::default();
+        let err = criteria.validate("NOLOWERCASE123!").unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "Erreur de robustesse du mot de passe: Pas assez de minuscules"
+        );
+    }
+
+    #[test]
+    fn test_password_no_digit() {
+        let criteria = PasswordCriteria::default();
+        let err = criteria.validate("NoDigitPassword!").unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "Erreur de robustesse du mot de passe: Pas assez de chiffres"
+        );
+    }
+
+    #[test]
+    fn test_password_no_special_char() {
+        let criteria = PasswordCriteria::default();
+        let err = criteria.validate("NoSpecialChar123").unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "Erreur de robustesse du mot de passe: Pas assez de caractères spéciaux"
+        );
     }
 }

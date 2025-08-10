@@ -1,7 +1,9 @@
 // config.rs
 use crate::PasswordCriteria;
+use serde::{Deserialize, Serialize};
 
 /// Configuration for IronCrypt security, including key sizes and password strength criteria.
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct IronCryptConfig {
     pub rsa_key_size: u32,                   // RSA key size
     pub argon2_memory_cost: u32,             // Memory cost for Argon2

@@ -48,42 +48,42 @@ pub enum IronCryptError {
 
 impl From<ArgonError> for IronCryptError {
     fn from(err: ArgonError) -> Self {
-        IronCryptError::HashingError(format!("{}", err))
+        IronCryptError::HashingError(format!("{err}"))
     }
 }
 
 impl From<AesGcmError> for IronCryptError {
     fn from(err: AesGcmError) -> Self {
-        IronCryptError::EncryptionError(format!("Erreur AES-GCM : {}", err))
+        IronCryptError::EncryptionError(format!("Erreur AES-GCM : {err}"))
     }
 }
 
 impl From<CipherInvalidLength> for IronCryptError {
     fn from(err: CipherInvalidLength) -> Self {
-        IronCryptError::EncryptionError(format!("Erreur de longueur de clé : {}", err))
+        IronCryptError::EncryptionError(format!("Erreur de longueur de clé : {err}"))
     }
 }
 
 impl From<Base64DecodeError> for IronCryptError {
     fn from(err: Base64DecodeError) -> Self {
-        IronCryptError::DecryptionError(format!("Erreur de décodage Base64 : {}", err))
+        IronCryptError::DecryptionError(format!("Erreur de décodage Base64 : {err}"))
     }
 }
 
 impl From<RsaError> for IronCryptError {
     fn from(err: RsaError) -> Self {
-        IronCryptError::DecryptionError(format!("Erreur RSA : {}", err))
+        IronCryptError::DecryptionError(format!("Erreur RSA : {err}"))
     }
 }
 
 impl From<SerdeJsonError> for IronCryptError {
     fn from(err: SerdeJsonError) -> Self {
-        IronCryptError::DecryptionError(format!("Erreur JSON : {}", err))
+        IronCryptError::DecryptionError(format!("Erreur JSON : {err}"))
     }
 }
 
 impl From<argon2::Error> for IronCryptError {
     fn from(err: argon2::Error) -> Self {
-        IronCryptError::Argon2Error(format!("{}", err))
+        IronCryptError::Argon2Error(format!("{err}"))
     }
 }

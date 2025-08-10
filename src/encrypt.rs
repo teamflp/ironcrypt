@@ -1,7 +1,7 @@
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{AeadCore, Aes256Gcm};
-use argon2::password_hash::{PasswordHasher, SaltString};
 use argon2::password_hash::rand_core::{OsRng, RngCore};
+use argon2::password_hash::{PasswordHasher, SaltString};
 use argon2::{Algorithm, Argon2, Params, Version};
 use base64::engine::general_purpose::STANDARD as base64_standard;
 use base64::Engine;
@@ -89,7 +89,9 @@ pub fn encrypt_data_with_criteria(
         // Use the same OsRng from argon2::password_hash::rand_core
         let salt = SaltString::generate(&mut OsRng);
 
-        let hash_str = argon2.hash_password(password.as_bytes(), &salt)?.to_string();
+        let hash_str = argon2
+            .hash_password(password.as_bytes(), &salt)?
+            .to_string();
         Some(base64_standard.encode(hash_str))
     } else {
         None
@@ -122,7 +124,7 @@ pub fn encrypt_data_with_criteria(
     let result = EncryptedData {
         key_version: key_version.to_string(),
         encrypted_symmetric_key: base64_standard.encode(&encrypted_symmetric_key),
-        nonce: base64_standard.encode(&nonce),
+        nonce: base64_standard.encode(nonce),
         ciphertext: base64_standard.encode(&ciphertext),
         password_hash,
     };
@@ -135,4 +137,3 @@ pub fn encrypt_data_with_criteria(
 
     Ok(result)
 }
-

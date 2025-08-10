@@ -65,8 +65,10 @@ rand_chacha = "0.3.1"
 rand_core = "0.6.4"
 clap = { version = "4.5.20", features = ["derive"] }
 thiserror = "1.0.64"
-indicatif = "0.17.2"
+indicatif = "0.17.8"
 aes-gcm = "0.10.3"
+tar = "0.4"
+flate2 = "1.0"
 ```
 
 ## Installation
@@ -110,6 +112,11 @@ IronCrypt offers a **Command-Line Interface** with several commands to manage RS
 | `generate` | Generates an RSA key pair (private and public). |
 | `encrypt` | Hashes and encrypts a password using a public key. |
 | `decrypt` | Decrypts encrypted data and verifies a password. |
+| `encrypt-file` | Encrypts a single file. |
+| `decrypt-file` | Decrypts a single file. |
+| `encrypt-dir` | Encrypts a directory into a single archive. |
+| `decrypt-dir` | Decrypts and extracts a directory archive. |
+| `rotate-key` | Rotates an encryption key and re-encrypts data. |
 
 ### Below is the general structure of each command.
 
@@ -308,6 +315,34 @@ The password is correct.
 ```
 
 If it fails or any error arises, you’ll see a descriptive error message.
+
+### Encrypting and Decrypting a Directory
+
+To encrypt an entire directory, `ironcrypt` will first archive it as a `.tar.gz` file in memory, then encrypt the archive.
+
+**Encrypt a directory:**
+```bash
+cargo run -- encrypt-dir -i ./my_secret_files -o my_secret_files.enc -v v1
+```
+
+**Decrypt a directory:**
+```bash
+cargo run -- decrypt-dir -i ./my_secret_files.enc -o ./my_restored_files -v v1
+```
+
+### Key Rotation
+
+`ironcrypt` supports key rotation, allowing you to migrate your encrypted files from an old key to a new one without ever decrypting the data on disk.
+
+**Rotate a key for a single file:**
+```bash
+cargo run -- rotate-key --old-version v1 --new-version v2 -f ./encrypted_data.json
+```
+
+**Rotate a key for an entire directory of encrypted files:**
+```bash
+cargo run -- rotate-key --old-version v1 --new-version v2 -d ./encrypted_files_directory
+```
 
 ## Full example: Password encryption and decryption
 
