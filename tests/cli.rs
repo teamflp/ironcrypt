@@ -204,6 +204,7 @@ fn test_encrypt_decrypt_dir() {
 
 #[test]
 fn test_rotate_key() {
+    let encrypted_file = "encrypted_data_rotate.json";
     // 1. Générer une clé v1
     let mut cmd = Command::cargo_bin("ironcrypt-cli").unwrap();
     cmd.arg("generate")
@@ -223,7 +224,11 @@ fn test_rotate_key() {
         .arg("test_keys_rotate")
         .arg("-v")
         .arg("v1_rotate");
+
     cmd.assert().success(); // Crée encrypted_data.json
+
+    // Rename the output file to avoid conflicts
+    fs::rename("encrypted_data.json", encrypted_file).unwrap();
 
     // 3. Effectuer la rotation de la clé de v1 à v2
     let mut cmd = Command::cargo_bin("ironcrypt-cli").unwrap();
@@ -235,7 +240,7 @@ fn test_rotate_key() {
         .arg("-k")
         .arg("test_keys_rotate")
         .arg("-f")
-        .arg("encrypted_data.json");
+        .arg(encrypted_file);
     cmd.assert().success();
 
     // 4. Vérifier que la nouvelle clé v2 existe
@@ -251,7 +256,7 @@ fn test_rotate_key() {
         .arg("-v")
         .arg("v2_rotate")
         .arg("-f")
-        .arg("encrypted_data.json");
+        .arg(encrypted_file);
     cmd.assert().success();
 
     // 6. Vérifier que le mot de passe ne peut plus être déchiffré avec l'ancienne clé v1
@@ -264,10 +269,10 @@ fn test_rotate_key() {
         .arg("-v")
         .arg("v1_rotate")
         .arg("-f")
-        .arg("encrypted_data.json");
+        .arg(encrypted_file);
     cmd.assert().failure();
 
     // Cleanup
     fs::remove_dir_all("test_keys_rotate").unwrap();
-    fs::remove_file("encrypted_data.json").unwrap();
+    fs::remove_file(encrypted_file).unwrap();
 }
