@@ -8,6 +8,11 @@ use std::fs::File;
 use std::io::Write;
 
 pub fn generate_rsa_keys(bits: u32) -> Result<(RsaPrivateKey, RsaPublicKey), IronCryptError> {
+    if bits < 2048 {
+        return Err(IronCryptError::KeyGenerationError(
+            "La taille de la clé RSA doit être d'au moins 2048 bits.".to_string(),
+        ));
+    }
     let priv_key = RsaPrivateKey::new(&mut OsRng, bits as usize)
         .map_err(|e| IronCryptError::EncryptionError(e.to_string()))?;
     let pub_key = RsaPublicKey::from(&priv_key);

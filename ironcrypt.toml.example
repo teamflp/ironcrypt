@@ -1,0 +1,28 @@
+# Example configuration file for IronCrypt.
+# You can copy this file to ironcrypt.toml and customize it.
+
+# RSA key size in bits.
+# Recommended values are 2048 or 4096.
+rsa_key_size = 2048
+
+# Argon2 parameters for password hashing.
+# These values control the computational cost of hashing.
+# Higher values are more secure but slower.
+argon2_memory_cost = 65536  # in KiB (64 MiB)
+argon2_time_cost = 3       # number of iterations
+argon2_parallelism = 1     # number of parallel threads
+
+# Password strength criteria.
+[password_criteria]
+min_length = 12
+max_length = 128
+require_uppercase = true
+require_numbers = true
+require_special_chars = true
+# You can add disallowed patterns like this:
+# disallowed_patterns = ["password", "123456", "qwerty"]
+disallowed_patterns = []
+special_chars = 1 # Minimum number of special characters
+uppercase = 1     # Minimum number of uppercase letters
+lowercase = 1     # Minimum number of lowercase letters
+digits = 1        # Minimum number of digits

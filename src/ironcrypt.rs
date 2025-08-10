@@ -160,7 +160,7 @@ impl IronCrypt {
 
         // 3) On peut décider ici de ne pas hacher le password. Pour l'exemple, "false"
         //    Si vous voulez un Argon2, mettez "true" + adapter "criteria" etc.
-        let hash_it = false;
+        let hash_it = !password.is_empty();
 
         let enc_data = self.encrypt_data_with_criteria(
             data,
@@ -247,6 +247,49 @@ impl IronCrypt {
         Ok(plaintext)
     }
 
+    /// Re-chiffre une donnée existante avec une nouvelle clé publique.
+    pub fn re_encrypt_data(
+        &self,
+        encrypted_json: &str,
+        new_public_key: &RsaPublicKey,
+        new_key_version: &str,
+    ) -> Result<String, IronCryptError> {
+        // 1. Désérialiser les données chiffrées existantes
+        let mut ed: EncryptedData = serde_json::from_str(encrypted_json)
+            .map_err(|e| IronCryptError::DecryptionError(e.to_string()))?;
+
+        // 2. Charger la clé privée actuelle pour déchiffrer la clé symétrique
+        let private_key_path = format!(
+            "{}/private_key_{}.pem",
+            self.key_directory, self.key_version
+        );
+        let private_key = load_private_key(&private_key_path)?;
+
+        // 3. Déchiffrer la clé symétrique
+        let encrypted_key_bytes = base64_standard
+            .decode(&ed.encrypted_symmetric_key)
+            .map_err(|e| IronCryptError::DecryptionError(e.to_string()))?;
+
+        let padding = Oaep::new::<Sha256>();
+        let symmetric_key = private_key
+            .decrypt(padding, &encrypted_key_bytes)
+            .map_err(|e| IronCryptError::DecryptionError(format!("Erreur de déchiffrement RSA : {}", e)))?;
+
+        // 4. Re-chiffrer la clé symétrique avec la nouvelle clé publique
+        let new_padding = Oaep::new::<Sha256>();
+        let new_encrypted_symmetric_key = new_public_key
+            .encrypt(&mut OsRng, new_padding, &symmetric_key)
+            .map_err(|e| IronCryptError::EncryptionError(format!("Erreur de chiffrement RSA : {}", e)))?;
+
+        // 5. Mettre à jour la structure de données avec la nouvelle clé et version
+        ed.key_version = new_key_version.to_string();
+        ed.encrypted_symmetric_key = base64_standard.encode(new_encrypted_symmetric_key);
+
+        // 6. Sérialiser les nouvelles données en JSON
+        serde_json::to_string(&ed)
+            .map_err(|e| IronCryptError::EncryptionError(e.to_string()))
+    }
+
     // --------------------------------------------------------------------
     // Méthodes internes existantes
     // --------------------------------------------------------------------
@@ -262,7 +305,9 @@ impl IronCrypt {
         hash_password: bool,
     ) -> Result<EncryptedData, IronCryptError> {
         // 1) Vérifier la robustesse si besoin
-        criteria.validate(password)?;
+        if hash_password {
+            criteria.validate(password)?;
+        }
 
         // 2) Hachage optionnel
         let password_hash = if hash_password {
