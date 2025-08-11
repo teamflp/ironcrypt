@@ -7,14 +7,12 @@ This tool is ideal for developers who need to secure data in applications, manag
 
 ## Features
 
-- **Strong Password Hashing**: Uses **Argon2** to protect stored passwords against brute-force attacks.
-- **Data Encryption**: Secures data with **AES-256-GCM**, a high-performance, authenticated encryption cipher.
-- **Asymmetric Key Management**: Employs **RSA** to encrypt the symmetric keys, ensuring that only the holder of the private key can decrypt the data.
-- **Key Rotation**: Supports rotating RSA keys to enhance security over time without decrypting data on disk.
-- **File & Directory Encryption**: Encrypt and decrypt individual files or entire directories.
-- **Configurable Security**: Allows customization of password strength criteria, RSA key size, and Argon2 parameters via a configuration file.
-- **Command-Line Interface**: An easy-to-use CLI for all encryption and key management tasks.
-- **Rust Library**: Can be integrated directly into your Rust applications.
+- **Hybrid Encryption (RSA + AES):** IronCrypt uses a smart combination of encryption methods. It encrypts your data with AES-256 (very fast and secure), and then encrypts the AES key itself with RSA. This is an industry-standard technique called "envelope encryption" that combines the best of both worlds: the speed of symmetric encryption and the secure key management of asymmetric encryption.
+- **State-of-the-Art Password Hashing:** For passwords, IronCrypt uses Argon2, currently considered one of the most secure hashing algorithms in the world. It is specifically designed to resist modern GPU-based brute-force attacks, providing much greater security than older algorithms.
+- **Advanced Key Management:** The built-in key versioning system (`-v v1`, `-v v2`) and the dedicated `rotate-key` command allow you to update your encryption keys over time. This automates the process of migrating to a new key without having to manually decrypt and re-encrypt all your data.
+- **Flexible Configuration:** You can finely tune security parameters via the `ironcrypt.toml` file or the `IronCryptConfig` struct. This includes RSA key size and the computational "costs" of the Argon2 algorithm, allowing you to balance security and performance to fit your needs.
+- **Comprehensive Data Encryption:** IronCrypt is built to handle more than just passwords. It can encrypt any file (images, PDFs, documents), entire directories (by archiving them first), or any other data that can be represented as a stream of bytes.
+- **Dual Use (CLI and Library):** IronCrypt is designed from the ground up to be dual-purpose. You can use it as a quick command-line tool for simple tasks, or integrate it as a library (crate) directly into your own Rust applications for more complex logic.
 
 ## Workflow
 
@@ -44,9 +42,6 @@ cd ironcrypt
 
 # Run the --help command
 cargo run -- --help
-
-# Run the generate command
-cargo run -- generate -v v1
 ```
 
 #### 2. Building and running the executable directly
@@ -97,16 +92,6 @@ require_numbers = true
 require_special_chars = true
 ```
 
-## Usage (Command-Line)
-
-You can view the help menu for a list of all commands and their options:
-```sh
-ironcrypt --help
-```
-And for a specific command:
-```sh
-ironcrypt <command> --help
-```
 
 ### Quick Start: Encrypting and Decrypting a Password
 
