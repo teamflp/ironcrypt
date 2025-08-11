@@ -55,7 +55,7 @@ impl PasswordCriteria {
         // Minimum length
         if password.len() < self.min_length {
             return Err(IronCryptError::PasswordStrengthError(
-                "Mot de passe trop court".to_string(),
+                "Password is too short".to_string(),
             ));
         }
 
@@ -63,7 +63,7 @@ impl PasswordCriteria {
         if let Some(max_length) = self.max_length {
             if password.len() > max_length {
                 return Err(IronCryptError::PasswordStrengthError(
-                    "Mot de passe trop long".to_string(),
+                    "Password is too long".to_string(),
                 ));
             }
         }
@@ -72,7 +72,7 @@ impl PasswordCriteria {
         for pattern in &self.disallowed_patterns {
             if password.contains(pattern) {
                 return Err(IronCryptError::PasswordStrengthError(
-                    "Le mot de passe contient un motif interdit".to_string(),
+                    "Password contains a disallowed pattern".to_string(),
                 ));
             }
         }
@@ -98,7 +98,7 @@ impl PasswordCriteria {
                 | GeneralCategory::LineSeparator
                 | GeneralCategory::ParagraphSeparator => {
                     return Err(IronCryptError::PasswordStrengthError(
-                        "Les espaces ne sont pas autorisés".to_string(),
+                        "Spaces are not allowed".to_string(),
                     ))
                 }
                 _ => {}
@@ -108,7 +108,7 @@ impl PasswordCriteria {
         if let Some(min_u) = self.uppercase {
             if uppercase_count < min_u {
                 return Err(IronCryptError::PasswordStrengthError(
-                    "Pas assez de majuscules".to_string(),
+                    "Not enough uppercase letters".to_string(),
                 ));
             }
         }
@@ -116,7 +116,7 @@ impl PasswordCriteria {
         if let Some(min_l) = self.lowercase {
             if lowercase_count < min_l {
                 return Err(IronCryptError::PasswordStrengthError(
-                    "Pas assez de minuscules".to_string(),
+                    "Not enough lowercase letters".to_string(),
                 ));
             }
         }
@@ -124,7 +124,7 @@ impl PasswordCriteria {
         if let Some(min_d) = self.digits {
             if digit_count < min_d {
                 return Err(IronCryptError::PasswordStrengthError(
-                    "Pas assez de chiffres".to_string(),
+                    "Not enough digits".to_string(),
                 ));
             }
         }
@@ -132,7 +132,7 @@ impl PasswordCriteria {
         if let Some(min_s) = self.special_chars {
             if special_char_count < min_s {
                 return Err(IronCryptError::PasswordStrengthError(
-                    "Pas assez de caractères spéciaux".to_string(),
+                    "Not enough special characters".to_string(),
                 ));
             }
         }
@@ -157,7 +157,7 @@ mod tests {
         let err = criteria.validate("Short1!").unwrap_err();
         assert_eq!(
             err.to_string(),
-            "Erreur de robustesse du mot de passe: Mot de passe trop court"
+            "Password strength error: Password is too short"
         );
     }
 
@@ -167,7 +167,7 @@ mod tests {
         let err = criteria.validate("nouppercase123!").unwrap_err();
         assert_eq!(
             err.to_string(),
-            "Erreur de robustesse du mot de passe: Pas assez de majuscules"
+            "Password strength error: Not enough uppercase letters"
         );
     }
 
@@ -177,7 +177,7 @@ mod tests {
         let err = criteria.validate("NOLOWERCASE123!").unwrap_err();
         assert_eq!(
             err.to_string(),
-            "Erreur de robustesse du mot de passe: Pas assez de minuscules"
+            "Password strength error: Not enough lowercase letters"
         );
     }
 
@@ -187,7 +187,7 @@ mod tests {
         let err = criteria.validate("NoDigitPassword!").unwrap_err();
         assert_eq!(
             err.to_string(),
-            "Erreur de robustesse du mot de passe: Pas assez de chiffres"
+            "Password strength error: Not enough digits"
         );
     }
 
@@ -197,7 +197,7 @@ mod tests {
         let err = criteria.validate("NoSpecialChar123").unwrap_err();
         assert_eq!(
             err.to_string(),
-            "Erreur de robustesse du mot de passe: Pas assez de caractères spéciaux"
+            "Password strength error: Not enough special characters"
         );
     }
 }

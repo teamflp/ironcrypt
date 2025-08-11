@@ -12,7 +12,6 @@ use argon2::PasswordVerifier;
 use argon2::{Algorithm, Argon2, Params, Version};
 use base64::engine::general_purpose::STANDARD as base64_standard;
 use base64::Engine;
-// use rand::RngCore as MyRngCore;
 use rsa::pkcs1::DecodeRsaPrivateKey;
 use rsa::{Oaep, RsaPrivateKey, RsaPublicKey};
 use serde::{Deserialize, Serialize};
@@ -39,19 +38,19 @@ impl Default for Argon2Config {
     }
 }
 
-/// Structure renvoyée après chiffrement (données JSON + base64).
+/// Structure returned after encryption (JSON data + base64).
 #[derive(Serialize, Deserialize, Debug)]
 pub struct EncryptedData {
     pub key_version: String,
     pub encrypted_symmetric_key: String,
     pub nonce: String,
     pub ciphertext: String,
-    /// Optionnel, si `hash_password` est `true`.
+    /// Optional, if `hash_password` is `true`.
     pub password_hash: Option<String>,
 }
 
-/// La structure `IronCrypt` gère la génération/chargement des clés
-/// et expose des méthodes pour chiffrer/déchiffrer un mot de passe ou des données binaires.
+/// The `IronCrypt` struct manages key generation/loading
+/// and exposes methods for encrypting/decrypting a password or binary data.
 pub struct IronCrypt {
     key_directory: String,
     key_version: String,
@@ -59,7 +58,7 @@ pub struct IronCrypt {
 }
 
 impl IronCrypt {
-    /// Crée une nouvelle instance d'IronCrypt (génère les clés RSA si besoin).
+    /// Creates a new instance of IronCrypt (generates RSA keys if needed).
     pub fn new(
         directory: &str,
         version: &str,
@@ -92,8 +91,8 @@ impl IronCrypt {
         Ok(())
     }
 
-    /// Chiffre un mot de passe (logique existante).
-    /// Retourne une chaîne JSON (base64) prête à être stockée dans "encrypted_data.json".
+    /// Encrypts a password (existing logic).
+    /// Returns a JSON string (base64) ready to be stored in "encrypted_data.json".
     pub fn encrypt_password(&self, password: &str) -> Result<String, IronCryptError> {
         let public_key_path = format!("{}/public_key_{}.pem", self.key_directory, self.key_version);
         let public_key = load_public_key(&public_key_path)?;
@@ -107,7 +106,7 @@ impl IronCrypt {
             parallelism: self.config.argon2_parallelism,
         };
 
-        // On chiffre des données vides (b""), en hachant le mot de passe (hash_password = true).
+        // Encrypt empty data (b""), hashing the password (hash_password = true).
         let enc_data = self.encrypt_data_with_criteria(
             b"",
             &mut pwd_string,
@@ -123,7 +122,7 @@ impl IronCrypt {
         Ok(json_str)
     }
 
-    /// Vérifie un mot de passe en déchiffrant la chaîne JSON (logique existante).
+    /// Verifies a password by decrypting the JSON string (existing logic).
     pub fn verify_password(
         &self,
         encrypted_json: &str,
@@ -141,25 +140,25 @@ impl IronCrypt {
     }
 
     // --------------------------------------------------------------------
-    //                          NOUVELLES METHODES
+    //                          NEW METHODS
     // --------------------------------------------------------------------
 
-    /// Chiffre n'importe quelle donnée binaire (data) en JSON (base64).
-    /// Le `password` peut être utilisé (ou pas) pour imposer un Argon2, si `hash_password=false`, on ignore le hash.
+    /// Encrypts any binary data into a JSON string (base64).
+    /// The `password` can be used (or not) to enforce Argon2; if `hash_password=false`, the hash is ignored.
     pub fn encrypt_binary_data(
         &self,
         data: &[u8],
         password: &str,
     ) -> Result<String, IronCryptError> {
-        // 1) Charger la clé publique
+        // 1) Load the public key
         let public_key_path = format!("{}/public_key_{}.pem", self.key_directory, self.key_version);
         let public_key = load_public_key(&public_key_path)?;
 
-        // 2) Convertir en mutable (nécessaire si on hache le password)
+        // 2) Convert to mutable (needed if we hash the password)
         let mut pwd_string = password.to_string();
 
-        // 3) On peut décider ici de ne pas hacher le password. Pour l'exemple, "false"
-        //    Si vous voulez un Argon2, mettez "true" + adapter "criteria" etc.
+        // 3) We can decide here not to hash the password. For the example, "false"
+        //    If you want Argon2, set this to "true" and adapt "criteria" etc.
         let hash_it = !password.is_empty();
 
         let enc_data = self.encrypt_data_with_criteria(
@@ -172,66 +171,66 @@ impl IronCrypt {
             hash_it,
         )?;
 
-        // 4) Sérialiser en JSON
+        // 4) Serialize to JSON
         let json_str = serde_json::to_string(&enc_data)
             .map_err(|e| IronCryptError::EncryptionError(e.to_string()))?;
         Ok(json_str)
     }
 
-    /// Déchiffre un JSON (base64) représentant des données binaires,
-    /// et renvoie un Vec<u8> (le binaire original).
+    /// Decrypts a JSON string (base64) representing binary data,
+    /// and returns a Vec<u8> (the original binary).
     pub fn decrypt_binary_data(
         &self,
         encrypted_json: &str,
         password: &str,
     ) -> Result<Vec<u8>, IronCryptError> {
-        // 1) Désérialiser le JSON -> EncryptedData
+        // 1) Deserialize the JSON -> EncryptedData
         let ed: EncryptedData = serde_json::from_str(encrypted_json)
             .map_err(|e| IronCryptError::DecryptionError(e.to_string()))?;
 
-        // 2) Charger la clé privée
+        // 2) Load the private key
         let private_key_path = format!(
             "{}/private_key_{}.pem",
             self.key_directory, self.key_version
         );
         let private_key = load_private_key(&private_key_path)?;
 
-        // 3) Déchiffrer la clé symétrique
+        // 3) Decrypt the symmetric key
         let encrypted_key_bytes = base64_standard
             .decode(&ed.encrypted_symmetric_key)
-            .map_err(|e| IronCryptError::DecryptionError(format!("Erreur decode symkey : {e}")))?;
+            .map_err(|e| IronCryptError::DecryptionError(format!("Failed to decode symmetric key: {e}")))?;
 
         let padding = Oaep::new::<Sha256>();
         let symmetric_key = private_key
             .decrypt(padding, &encrypted_key_bytes)
-            .map_err(|e| IronCryptError::DecryptionError(format!("RSA decrypt error : {e}")))?;
+            .map_err(|e| IronCryptError::DecryptionError(format!("RSA decrypt error: {e}")))?;
 
-        // 4) Déchiffrer les données (ciphertext)
+        // 4) Decrypt the data (ciphertext)
         let ciphertext = base64_standard.decode(&ed.ciphertext).map_err(|e| {
-            IronCryptError::DecryptionError(format!("Erreur decode ciphertext : {e}"))
+            IronCryptError::DecryptionError(format!("Failed to decode ciphertext: {e}"))
         })?;
 
         let nonce_bytes = base64_standard
             .decode(&ed.nonce)
-            .map_err(|e| IronCryptError::DecryptionError(format!("Erreur decode nonce : {e}")))?;
+            .map_err(|e| IronCryptError::DecryptionError(format!("Failed to decode nonce: {e}")))?;
 
         let cipher = Aes256Gcm::new_from_slice(&symmetric_key)
-            .map_err(|e| IronCryptError::DecryptionError(format!("Erreur init AES : {e}")))?;
+            .map_err(|e| IronCryptError::DecryptionError(format!("Failed to initialize AES: {e}")))?;
         let nonce = Nonce::from_slice(&nonce_bytes);
 
         let plaintext = cipher
             .decrypt(nonce, ciphertext.as_ref())
-            .map_err(|e| IronCryptError::DecryptionError(format!("AES decrypt : {e}")))?;
+            .map_err(|e| IronCryptError::DecryptionError(format!("AES decrypt error: {e}")))?;
 
-        // 5) Si "ed.password_hash" existe => comparer Argon2 + `password`
+        // 5) If "ed.password_hash" exists => compare Argon2 + `password`
         if let Some(hash_b64) = ed.password_hash.as_ref() {
             let decoded_hash = base64_standard.decode(hash_b64).map_err(|e| {
-                IronCryptError::DecryptionError(format!("Decode password_hash : {e}"))
+                IronCryptError::DecryptionError(format!("Failed to decode password_hash: {e}"))
             })?;
             let hash_str = String::from_utf8(decoded_hash)
-                .map_err(|e| IronCryptError::DecryptionError(format!("UTF8 decode : {e}")))?;
+                .map_err(|e| IronCryptError::DecryptionError(format!("UTF8 decode error: {e}")))?;
 
-            // Vérifier
+            // Verify
             let parsed_hash = PasswordHash::new(&hash_str)
                 .map_err(|e| IronCryptError::DecryptionError(e.to_string()))?;
             let argon2 = Argon2::default();
@@ -243,29 +242,29 @@ impl IronCrypt {
             }
         }
 
-        // Retourner le binaire déchiffré
+        // Return the decrypted binary
         Ok(plaintext)
     }
 
-    /// Re-chiffre une donnée existante avec une nouvelle clé publique.
+    /// Re-encrypts existing data with a new public key.
     pub fn re_encrypt_data(
         &self,
         encrypted_json: &str,
         new_public_key: &RsaPublicKey,
         new_key_version: &str,
     ) -> Result<String, IronCryptError> {
-        // 1. Désérialiser les données chiffrées existantes
+        // 1. Deserialize the existing encrypted data
         let mut ed: EncryptedData = serde_json::from_str(encrypted_json)
             .map_err(|e| IronCryptError::DecryptionError(e.to_string()))?;
 
-        // 2. Charger la clé privée actuelle pour déchiffrer la clé symétrique
+        // 2. Load the current private key to decrypt the symmetric key
         let private_key_path = format!(
             "{}/private_key_{}.pem",
             self.key_directory, self.key_version
         );
         let private_key = load_private_key(&private_key_path)?;
 
-        // 3. Déchiffrer la clé symétrique
+        // 3. Decrypt the symmetric key
         let encrypted_key_bytes = base64_standard
             .decode(&ed.encrypted_symmetric_key)
             .map_err(|e| IronCryptError::DecryptionError(e.to_string()))?;
@@ -273,25 +272,25 @@ impl IronCrypt {
         let padding = Oaep::new::<Sha256>();
         let symmetric_key = private_key
             .decrypt(padding, &encrypted_key_bytes)
-            .map_err(|e| IronCryptError::DecryptionError(format!("Erreur de déchiffrement RSA : {}", e)))?;
+            .map_err(|e| IronCryptError::DecryptionError(format!("RSA decryption error: {}", e)))?;
 
-        // 4. Re-chiffrer la clé symétrique avec la nouvelle clé publique
+        // 4. Re-encrypt the symmetric key with the new public key
         let new_padding = Oaep::new::<Sha256>();
         let new_encrypted_symmetric_key = new_public_key
             .encrypt(&mut OsRng, new_padding, &symmetric_key)
-            .map_err(|e| IronCryptError::EncryptionError(format!("Erreur de chiffrement RSA : {}", e)))?;
+            .map_err(|e| IronCryptError::EncryptionError(format!("RSA encryption error: {}", e)))?;
 
-        // 5. Mettre à jour la structure de données avec la nouvelle clé et version
+        // 5. Update the data structure with the new key and version
         ed.key_version = new_key_version.to_string();
         ed.encrypted_symmetric_key = base64_standard.encode(new_encrypted_symmetric_key);
 
-        // 6. Sérialiser les nouvelles données en JSON
+        // 6. Serialize the new data to JSON
         serde_json::to_string(&ed)
             .map_err(|e| IronCryptError::EncryptionError(e.to_string()))
     }
 
     // --------------------------------------------------------------------
-    // Méthodes internes existantes
+    // Internal methods
     // --------------------------------------------------------------------
 
     fn encrypt_data_with_criteria(
@@ -304,12 +303,12 @@ impl IronCrypt {
         argon_cfg: Argon2Config,
         hash_password: bool,
     ) -> Result<EncryptedData, IronCryptError> {
-        // 1) Vérifier la robustesse si besoin
+        // 1) Check strength if needed
         if hash_password {
             criteria.validate(password)?;
         }
 
-        // 2) Hachage optionnel
+        // 2) Optional hashing
         let password_hash = if hash_password {
             let params = Params::new(
                 argon_cfg.memory_cost,
@@ -328,7 +327,7 @@ impl IronCrypt {
             None
         };
 
-        // 3) Clé symétrique
+        // 3) Symmetric key
         let mut symmetric_key = [0u8; 32];
         OsRng.fill_bytes(&mut symmetric_key);
 
@@ -341,13 +340,13 @@ impl IronCrypt {
 
         let ciphertext = cipher
             .encrypt(nonce, data)
-            .map_err(|e| IronCryptError::EncryptionError(format!("Chiffrement AES: {e}")))?;
+            .map_err(|e| IronCryptError::EncryptionError(format!("AES encryption error: {e}")))?;
 
-        // 5) Chiffrement de la clé symétrique en RSA
+        // 5) Encrypt the symmetric key with RSA
         let padding = Oaep::new::<Sha256>();
         let encrypted_symmetric_key = public_key
             .encrypt(&mut OsRng, padding, &symmetric_key)
-            .map_err(|e| IronCryptError::EncryptionError(format!("Chiffrement RSA: {e}")))?;
+            .map_err(|e| IronCryptError::EncryptionError(format!("RSA encryption error: {e}")))?;
 
         let result = EncryptedData {
             key_version: key_version.to_string(),
@@ -372,12 +371,12 @@ impl IronCrypt {
         let ed: EncryptedData = serde_json::from_str(encrypted_data_json)
             .map_err(|e| IronCryptError::DecryptionError(e.to_string()))?;
 
-        // 1) Charger la clé privée
+        // 1) Load the private key
         let private_key_pem = std::fs::read_to_string(private_key_pem_path)?;
         let private_key = RsaPrivateKey::from_pkcs1_pem(&private_key_pem)
             .map_err(|e| IronCryptError::DecryptionError(e.to_string()))?;
 
-        // 2) Déchiffrer la clé symétrique
+        // 2) Decrypt the symmetric key
         let encrypted_key_bytes = base64_standard
             .decode(ed.encrypted_symmetric_key)
             .map_err(|e| IronCryptError::DecryptionError(e.to_string()))?;
@@ -389,10 +388,10 @@ impl IronCrypt {
         // 3) AES decrypt
         let ciphertext = base64_standard
             .decode(ed.ciphertext)
-            .map_err(|e| IronCryptError::DecryptionError(format!("Decode ciphertext: {e}")))?;
+            .map_err(|e| IronCryptError::DecryptionError(format!("Decode ciphertext error: {e}")))?;
         let nonce_bytes = base64_standard
             .decode(ed.nonce)
-            .map_err(|e| IronCryptError::DecryptionError(format!("Decode nonce: {e}")))?;
+            .map_err(|e| IronCryptError::DecryptionError(format!("Decode nonce error: {e}")))?;
         let cipher = Aes256Gcm::new_from_slice(&symmetric_key)
             .map_err(|e| IronCryptError::DecryptionError(e.to_string()))?;
         let nonce = Nonce::from_slice(&nonce_bytes);
@@ -400,7 +399,7 @@ impl IronCrypt {
             .decrypt(nonce, ciphertext.as_ref())
             .map_err(|e| IronCryptError::DecryptionError(format!("AES decrypt error: {e}")))?;
 
-        // 4) Comparer le hash Argon2 si password_hash
+        // 4) Compare the Argon2 hash if password_hash exists
         if let Some(hash_b64) = ed.password_hash {
             let decoded_hash = base64_standard
                 .decode(hash_b64)
