@@ -40,5 +40,5 @@ name = "ironcrypt"
 path = "src/lib.rs"
 
 [[bin]]
-name = "ironcrypt-cli"
+name = "ironcrypt"
 path = "src/main.rs"
