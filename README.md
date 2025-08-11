@@ -43,12 +43,12 @@ You can install IronCrypt by compiling it from the source.
     ```sh
     cargo build --release
     ```
-    The executable will be located at `target/release/ironcrypt-cli`.
+    The executable will be located at `target/release/ironcrypt`.
 
 3.  **Install (Optional):**
     You can copy the executable to a directory in your `PATH` for easy access.
     ```sh
-    cp target/release/ironcrypt-cli /usr/local/bin/ironcrypt
+    cp target/release/ironcrypt /usr/local/bin/ironcrypt
     ```
 
 ## Configuration
