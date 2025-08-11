@@ -5,8 +5,9 @@
 //! 2. Registering a user by encrypting their password and storing it.
 //! 3. Verifying a user's password from the simulated database.
 //! 4. Encrypting and decrypting a binary file.
+//! 5. Explicitly setting custom configuration for encryption parameters.
 
-use ironcrypt::{IronCrypt, IronCryptConfig, IronCryptError};
+use ironcrypt::{IronCrypt, IronCryptConfig, IronCryptError, criteria::PasswordCriteria};
 use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
@@ -29,8 +30,35 @@ fn run_example() -> Result<(), IronCryptError> {
     // === Setup ===
     let key_directory = "example_keys";
     let key_version = "v1";
-    let config = IronCryptConfig::default();
-    let crypt = IronCrypt::new(key_directory, key_version, config)?;
+
+    // --- Custom Configuration ---
+    // Instead of IronCryptConfig::default(), we can specify our own settings.
+    let custom_config = IronCryptConfig {
+        // Set a larger RSA key size for more security.
+        rsa_key_size: 4096,
+        // AES key size can be 128, 192, or 256. 256 is recommended.
+        aes_key_size: 256,
+        // Customize Argon2 parameters for password hashing.
+        // These are example values; they should be tuned for your environment.
+        argon2_memory_cost: 32768, // 32MB
+        argon2_time_cost: 4,
+        argon2_parallelism: 2,
+        // Define custom password strength rules.
+        password_criteria: PasswordCriteria {
+            min_length: 10,
+            max_length: Some(64),
+            // Set minimum counts for each character type.
+            uppercase: Some(1),
+            lowercase: Some(1),
+            digits: Some(1),
+            special_chars: Some(1),
+            disallowed_patterns: vec!["password".to_string(), "12345".to_string()],
+            ..Default::default()
+        },
+    };
+
+    println!("Initializing IronCrypt with CUSTOM configuration...");
+    let crypt = IronCrypt::new(key_directory, key_version, custom_config)?;
     let mut db: UserDatabase = HashMap::new();
 
     // === Part 1: Password Management with a Simulated Database ===
@@ -38,7 +66,7 @@ fn run_example() -> Result<(), IronCryptError> {
 
     // 1. Register a new user "alice"
     let username = "alice";
-    let password = "My$up3rS3cureP@ssw0rd!";
+    let password = "My$trongP@ssw0rd!"; // A password that meets our custom criteria
     println!("Registering user '{}'...", username);
     let encrypted_data_json = crypt.encrypt_password(password)?;
     db.insert(username.to_string(), encrypted_data_json);

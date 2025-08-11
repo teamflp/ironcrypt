@@ -16,6 +16,12 @@ This tool is ideal for developers who need to secure data in applications, manag
 - **Command-Line Interface**: An easy-to-use CLI for all encryption and key management tasks.
 - **Rust Library**: Can be integrated directly into your Rust applications.
 
+## Workflow
+
+The following diagram illustrates the general encryption and decryption workflow in IronCrypt:
+
+![IronCrypt Workflow](images/img.png)
+
 ## Installation
 
 You can install IronCrypt by compiling it from the source.
@@ -119,7 +125,6 @@ ironcrypt decrypt --password "My$ecureP@ssw0rd!" --key-version v1 --file encrypt
 If the password is correct, the tool will print a success message.
 
 ### All Commands
-
 
 | Command | Description |
 |---|---|
