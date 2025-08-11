@@ -31,25 +31,43 @@ You can install IronCrypt by compiling it from the source.
 - **Rust** (latest stable version recommended)
 - **Cargo** (Rust's package manager)
 
-### Building from Source
+### Building and Running from Source
 
-1.  **Clone the repository:**
-    ```sh
-    git clone https://github.com/teamflp/ironcrypt.git
-    cd ironcrypt
-    ```
+There are three main ways to run the `ironcrypt` command-line tool.
 
-2.  **Build the project:**
-    ```sh
-    cargo build --release
-    ```
-    The executable will be located at `target/release/ironcrypt`.
+#### 1. Using `cargo run` (Recommended for development)
+This command compiles and runs the program in one step. Use `--` to separate `cargo`'s arguments from your program's arguments.
+```sh
+# Clone the repository
+git clone https://github.com/teamflp/ironcrypt.git
+cd ironcrypt
 
-3.  **Install (Optional):**
-    You can copy the executable to a directory in your `PATH` for easy access.
-    ```sh
-    cp target/release/ironcrypt /usr/local/bin/ironcrypt
-    ```
+# Run the --help command
+cargo run -- --help
+
+# Run the generate command
+cargo run -- generate -v v1
+```
+
+#### 2. Building and running the executable directly
+You can build the executable and then run it from its path in the `target` directory. Note that on some systems (like macOS), the exact path might include your system's architecture (e.g., `target/x86_64-apple-darwin/release/`).
+```sh
+# Build the optimized release executable
+cargo build --release
+
+# Run it from its path
+./target/release/ironcrypt --help
+```
+
+#### 3. Installing the binary (Recommended for usage)
+This will install the `ironcrypt` command on your system, making it available from any directory. This is the best option for regular use.
+```sh
+# From the root of the project directory, run:
+cargo install --path .
+
+# Now you can use the command from anywhere
+ironcrypt --help
+```
 
 ## Configuration
 
