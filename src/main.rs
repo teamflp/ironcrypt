@@ -18,7 +18,7 @@ use tar::{Archive, Builder};
 #[derive(Parser)]
 #[command(
     name = "ironcrypt",
-    about = "Génération et gestion des clés RSA pour IronCrypt."
+    about = "Generation and management of RSA keys for IronCrypt."
 )]
 struct Cli {
     #[command(subcommand)]
@@ -27,180 +27,187 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Génère une paire de clés RSA.
+    /// Generates an RSA key pair.
     Generate {
+        /// The version of the key pair.
         #[arg(short = 'v', long)]
         version: String,
 
+        /// The directory where the keys will be saved.
         #[arg(short = 'd', long, default_value = "keys")]
         directory: String,
 
+        /// The size of the RSA key in bits.
         #[arg(short = 's', long, default_value_t = 2048)]
         key_size: u32,
     },
 
-    /// Hache et chiffre un mot de passe (logique existante).
+    /// Hashes and encrypts a password.
     Encrypt {
+        /// The password to hash and encrypt.
         #[arg(short = 'w', long)]
         password: String,
 
+        /// The directory containing the public key file.
         #[arg(short = 'd', long, default_value = "keys")]
         public_key_directory: String,
 
-        /// Version de la clé publique (aucune valeur par défaut)
+        /// The version of the public key to use.
         #[arg(short = 'v', long)]
         key_version: String,
     },
 
-    /// Déchiffre un mot de passe chiffré (logique existante).
+    /// Decrypts and verifies a password.
     Decrypt {
+        /// The password to verify.
         #[arg(short = 'w', long)]
         password: String,
 
+        /// The directory containing the private key file.
         #[arg(short = 'k', long, default_value = "keys")]
         private_key_directory: String,
 
-        /// Version de la clé privée (pas de valeur par défaut)
+        /// The version of the private key to use.
         #[arg(short = 'v', long)]
         key_version: String,
 
+        /// The encrypted data as a string.
         #[arg(short = 'd', long, conflicts_with = "file")]
         data: Option<String>,
 
+        /// The path to the file containing the encrypted data.
         #[arg(short = 'f', long, conflicts_with = "data")]
         file: Option<String>,
     },
 
-    /// Chiffre un fichier binaire (nouvelle commande).
+    /// Encrypts a binary file using AES+RSA.
     #[command(
-        about = "Chiffre un fichier binaire (utilise AES+RSA)",
         alias("encfile"),
         alias("efile"),
         alias("ef")
     )]
     EncryptFile {
-        /// Chemin du fichier binaire à chiffrer
+        /// Path to the binary file to encrypt.
         #[arg(short = 'i', long)]
         input_file: String,
 
-        /// Chemin du fichier de sortie (JSON chiffré)
+        /// Path for the encrypted output file (JSON).
         #[arg(short = 'o', long)]
         output_file: String,
 
-        /// Chemin du répertoire des clés publiques
+        /// Directory of the public keys.
         #[arg(short = 'd', long, default_value = "keys")]
         public_key_directory: String,
 
-        /// Version de la clé publique à utiliser
+        /// Version of the public key to use.
         #[arg(short = 'v', long)]
         key_version: String,
 
-        /// Mot de passe "optionnel" (sinon laisser vide)
+        /// Optional password (leave empty if not needed).
         #[arg(short = 'w', long, default_value = "")]
         password: String,
     },
 
-    /// Déchiffre un fichier binaire (nouvelle commande).
+    /// Decrypts a binary file.
     #[command(
-        about = "Déchiffre un fichier binaire (retourne un .tar, .zip, etc.)",
         alias("decfile"),
         alias("dfile"),
         alias("df")
     )]
     DecryptFile {
-        /// Chemin du fichier JSON chiffré
+        /// Path to the encrypted JSON file.
         #[arg(short = 'i', long)]
         input_file: String,
 
-        /// Chemin du fichier binaire déchiffré
+        /// Path for the decrypted binary file.
         #[arg(short = 'o', long)]
         output_file: String,
 
-        /// Chemin du répertoire des clés privées
+        /// Directory of the private keys.
         #[arg(short = 'k', long, default_value = "keys")]
         private_key_directory: String,
 
-        /// Version de la clé privée
+        /// Version of the private key to use.
         #[arg(short = 'v', long)]
         key_version: String,
 
-        /// Mot de passe "optionnel"
+        /// Optional password.
         #[arg(short = 'w', long, default_value = "")]
         password: String,
     },
 
-    /// Chiffre un répertoire entier.
+    /// Encrypts an entire directory.
     #[command(alias("encdir"))]
     EncryptDir {
-        /// Chemin du répertoire à chiffrer.
+        /// Path to the directory to encrypt.
         #[arg(short = 'i', long)]
         input_dir: String,
 
-        /// Chemin du fichier de sortie chiffré.
+        /// Path for the encrypted output file.
         #[arg(short = 'o', long)]
         output_file: String,
 
-        /// Chemin du répertoire des clés publiques.
+        /// Directory of the public keys.
         #[arg(short = 'd', long, default_value = "keys")]
         public_key_directory: String,
 
-        /// Version de la clé publique à utiliser.
+        /// Version of the public key to use.
         #[arg(short = 'v', long)]
         key_version: String,
 
-        /// Mot de passe "optionnel" (sinon laisser vide).
+        /// Optional password.
         #[arg(short = 'w', long, default_value = "")]
         password: String,
     },
 
-    /// Déchiffre un répertoire entier.
+    /// Decrypts an entire directory.
     #[command(alias("decdir"))]
     DecryptDir {
-        /// Chemin du fichier chiffré.
+        /// Path to the encrypted file.
         #[arg(short = 'i', long)]
         input_file: String,
 
-        /// Chemin du répertoire de sortie.
+        /// Path for the output directory.
         #[arg(short = 'o', long)]
         output_dir: String,
 
-        /// Chemin du répertoire des clés privées.
+        /// Directory of the private keys.
         #[arg(short = 'k', long, default_value = "keys")]
         private_key_directory: String,
 
-        /// Version de la clé privée.
+        /// Version of the private key.
         #[arg(short = 'v', long)]
         key_version: String,
 
-        /// Mot de passe "optionnel".
+        /// Optional password.
         #[arg(short = 'w', long, default_value = "")]
         password: String,
     },
 
-    /// Fait pivoter une clé de chiffrement.
+    /// Rotates an encryption key.
     #[command(alias("rk"))]
     RotateKey {
-        /// L'ancienne version de la clé.
+        /// The old key version.
         #[arg(long)]
         old_version: String,
 
-        /// La nouvelle version de la clé.
+        /// The new key version.
         #[arg(long)]
         new_version: String,
 
-        /// Le répertoire des clés.
+        /// The directory where keys are stored.
         #[arg(short='k', long, default_value = "keys")]
         key_directory: String,
 
-        /// La taille de la nouvelle clé (optionnel, défaut: 2048).
+        /// The size for the new key (optional, defaults to 2048).
         #[arg(short='s', long)]
         key_size: Option<u32>,
 
-        /// Un fichier unique à rechiffrer.
+        /// A single file to re-encrypt.
         #[arg(short='f', long, conflicts_with="directory")]
         file: Option<String>,
 
-        /// Un répertoire de fichiers à rechiffrer.
+        /// A directory of files to re-encrypt.
         #[arg(short='d', long, conflicts_with="file")]
         directory: Option<String>,
     }
@@ -211,7 +218,7 @@ fn main() {
 
     match args.command {
         // ---------------------------------------------------------------
-        // 1) Génération d'une paire de clés RSA
+        // 1) Generate an RSA key pair
         // ---------------------------------------------------------------
         Commands::Generate {
             version,
@@ -219,7 +226,7 @@ fn main() {
             key_size,
         } => {
             if let Err(e) = std::fs::create_dir_all(&directory) {
-                eprintln!("error: impossible de créer le répertoire des clés '{}': {}", directory, e);
+                eprintln!("error: failed to create key directory '{}': {}", directory, e);
                 process::exit(1);
             }
             let private_key_path = format!("{}/private_key_{}.pem", directory, version);
@@ -231,34 +238,34 @@ fn main() {
                     .unwrap()
                     .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]),
             );
-            spinner.set_message("Génération des clés RSA...");
+            spinner.set_message("Generating RSA keys...");
             spinner.enable_steady_tick(Duration::from_millis(100));
 
             let (private_key, public_key) = match generate_rsa_keys(key_size) {
                 Ok((pk, pubk)) => (pk, pubk),
                 Err(e) => {
-                    spinner.finish_with_message("Erreur.");
-                    eprintln!("error: impossible de générer la paire de clés RSA : {}", e);
+                    spinner.finish_with_message("Error.");
+                    eprintln!("error: failed to generate RSA key pair: {}", e);
                     process::exit(1);
                 }
             };
-            spinner.finish_with_message("Clés RSA générées.");
+            spinner.finish_with_message("RSA keys generated.");
 
             match save_keys_to_files(&private_key, &public_key, &private_key_path, &public_key_path) {
                 Ok(_) => {
-                    println!("Clés RSA sauvegardées avec succès.");
-                    println!("Clé privée : {private_key_path}");
-                    println!("Clé publique : {public_key_path}");
+                    println!("RSA keys saved successfully.");
+                    println!("Private Key: {private_key_path}");
+                    println!("Public Key: {public_key_path}");
                 }
                 Err(e) => {
-                    eprintln!("error: impossible de sauvegarder les clés dans les fichiers : {}", e);
+                    eprintln!("error: failed to save keys to files: {}", e);
                     process::exit(1);
                 }
             }
         }
 
         // ---------------------------------------------------------------
-        // 2) Chiffrement d'un mot de passe
+        // 2) Encrypt a password
         // ---------------------------------------------------------------
         Commands::Encrypt {
             password,
@@ -269,7 +276,7 @@ fn main() {
             let crypt = match IronCrypt::new(&public_key_directory, &key_version, config) {
                 Ok(c) => c,
                 Err(e) => {
-                    eprintln!("error: impossible d'initialiser le module de chiffrement : {}", e);
+                    eprintln!("error: failed to initialize encryption module: {}", e);
                     process::exit(1);
                 }
             };
@@ -279,27 +286,27 @@ fn main() {
                     match File::create(file_path) {
                         Ok(mut file) => {
                             if let Err(e) = file.write_all(encrypted_hash.as_bytes()) {
-                                eprintln!("error: impossible d'écrire les données chiffrées dans le fichier '{}': {}", file_path, e);
+                                eprintln!("error: failed to write encrypted data to file '{}': {}", file_path, e);
                                 process::exit(1);
                             } else {
-                                println!("Mot de passe chiffré dans '{file_path}'.");
+                                println!("Password encrypted to '{file_path}'.");
                             }
                         }
                         Err(e) => {
-                            eprintln!("error: impossible de créer le fichier de sortie '{}': {}", file_path, e);
+                            eprintln!("error: failed to create output file '{}': {}", file_path, e);
                             process::exit(1);
                         }
                     }
                 }
                 Err(e) => {
-                    eprintln!("error: impossible de chiffrer le mot de passe : {}", e);
+                    eprintln!("error: failed to encrypt password: {}", e);
                     process::exit(1);
                 }
             }
         }
 
         // ---------------------------------------------------------------
-        // 3) Déchiffrement/vérification d'un mot de passe
+        // 3) Decrypt/verify a password
         // ---------------------------------------------------------------
         Commands::Decrypt {
             password,
@@ -314,12 +321,12 @@ fn main() {
                 match std::fs::read_to_string(&f) {
                     Ok(content) => content,
                     Err(e) => {
-                        eprintln!("error: impossible de lire le fichier '{}': {}", f, e);
+                        eprintln!("error: failed to read file '{}': {}", f, e);
                         process::exit(1);
                     }
                 }
             } else {
-                eprintln!("error: veuillez fournir les données chiffrées avec --data ou --file.");
+                eprintln!("error: please provide encrypted data with --data or --file.");
                 process::exit(1);
             };
 
@@ -327,7 +334,7 @@ fn main() {
             let crypt = match IronCrypt::new(&private_key_directory, &key_version, config) {
                 Ok(c) => c,
                 Err(e) => {
-                    eprintln!("error: impossible d'initialiser le module de chiffrement : {}", e);
+                    eprintln!("error: failed to initialize encryption module: {}", e);
                     process::exit(1);
                 }
             };
@@ -335,21 +342,21 @@ fn main() {
             match crypt.verify_password(&encrypted_data, &password) {
                 Ok(ok) => {
                     if ok {
-                        println!("Mot de passe correct.");
+                        println!("Password correct.");
                     } else {
-                        eprintln!("error: mot de passe incorrect ou hash non trouvé.");
+                        eprintln!("error: incorrect password or hash not found.");
                         process::exit(1);
                     }
                 }
                 Err(e) => {
-                    eprintln!("error: impossible de vérifier le mot de passe : {}", e);
+                    eprintln!("error: failed to verify password: {}", e);
                     process::exit(1);
                 }
             }
         }
 
         // ---------------------------------------------------------------
-        // 4) Chiffrement d'un fichier binaire
+        // 4) Encrypt a binary file
         // ---------------------------------------------------------------
         Commands::EncryptFile {
             input_file,
@@ -358,59 +365,59 @@ fn main() {
             key_version,
             password,
         } => {
-            // Lire le fichier binaire
+            // Read the binary file
             let mut file_data = vec![];
             match File::open(&input_file) {
                 Ok(mut f) => {
                     if let Err(e) = f.read_to_end(&mut file_data) {
-                        eprintln!("error: impossible de lire le fichier d'entrée '{}': {}", input_file, e);
+                        eprintln!("error: failed to read input file '{}': {}", input_file, e);
                         process::exit(1);
                     }
                 }
                 Err(e) => {
-                    eprintln!("error: impossible d'ouvrir le fichier d'entrée '{}': {}", input_file, e);
+                    eprintln!("error: failed to open input file '{}': {}", input_file, e);
                     process::exit(1);
                 }
             }
 
-            // Construire IronCrypt
+            // Build IronCrypt
             let config = IronCryptConfig::default();
             let crypt = match IronCrypt::new(&public_key_directory, &key_version, config) {
                 Ok(c) => c,
                 Err(e) => {
-                    eprintln!("error: impossible d'initialiser le module de chiffrement : {}", e);
+                    eprintln!("error: failed to initialize encryption module: {}", e);
                     process::exit(1);
                 }
             };
 
-            // Chiffrer la data binaire
+            // Encrypt the binary data
             match crypt.encrypt_binary_data(&file_data, &password) {
                 Ok(encrypted_json) => {
-                    // Écriture du JSON
+                    // Write the JSON
                     match File::create(&output_file) {
                         Ok(mut f) => {
                             if let Err(e) = f.write_all(encrypted_json.as_bytes()) {
-                                eprintln!("error: impossible d'écrire le fichier chiffré '{}': {}", output_file, e);
+                                eprintln!("error: failed to write encrypted file '{}': {}", output_file, e);
                                 process::exit(1);
                             } else {
-                                println!("Fichier binaire chiffré sauvegardé dans '{output_file}'.");
+                                println!("Binary file encrypted and saved to '{output_file}'.");
                             }
                         }
                         Err(e) => {
-                            eprintln!("error: impossible de créer le fichier de sortie '{}': {}", output_file, e);
+                            eprintln!("error: failed to create output file '{}': {}", output_file, e);
                             process::exit(1);
                         }
                     }
                 }
                 Err(e) => {
-                    eprintln!("error: impossible de chiffrer le fichier : {}", e);
+                    eprintln!("error: failed to encrypt file: {}", e);
                     process::exit(1);
                 }
             }
         }
 
         // ---------------------------------------------------------------
-        // 5) Déchiffrement d'un fichier binaire
+        // 5) Decrypt a binary file
         // ---------------------------------------------------------------
         Commands::EncryptDir {
             input_dir,
@@ -419,28 +426,28 @@ fn main() {
             key_version,
             password,
         } => {
-            // 1. Archiver et compresser le répertoire en mémoire
+            // 1. Archive and compress the directory in memory
             let mut archive_data = Vec::new();
             {
                 let encoder = GzEncoder::new(&mut archive_data, Compression::default());
                 let mut builder = Builder::new(encoder);
                 if let Err(e) = builder.append_dir_all(".", &input_dir) {
-                    eprintln!("error: impossible d'archiver le répertoire '{}': {}", input_dir, e);
+                    eprintln!("error: failed to archive directory '{}': {}", input_dir, e);
                     process::exit(1);
                 }
-                // Finaliser l'archive
+                // Finalize the archive
                 if let Err(e) = builder.into_inner() {
-                     eprintln!("error: impossible de finaliser l'archive : {}", e);
+                     eprintln!("error: failed to finalize archive: {}", e);
                     process::exit(1);
                 }
             }
 
-            // 2. Chiffrer les données de l'archive
+            // 2. Encrypt the archive data
             let config = IronCryptConfig::default();
             let crypt = match IronCrypt::new(&public_key_directory, &key_version, config) {
                 Ok(c) => c,
                 Err(e) => {
-                    eprintln!("error: impossible d'initialiser le module de chiffrement : {}", e);
+                    eprintln!("error: failed to initialize encryption module: {}", e);
                     process::exit(1);
                 }
             };
@@ -448,14 +455,14 @@ fn main() {
             match crypt.encrypt_binary_data(&archive_data, &password) {
                 Ok(encrypted_json) => {
                     if let Err(e) = std::fs::write(&output_file, encrypted_json) {
-                         eprintln!("error: impossible d'écrire le fichier chiffré '{}': {}", output_file, e);
+                         eprintln!("error: failed to write encrypted file '{}': {}", output_file, e);
                         process::exit(1);
                     } else {
-                        println!("Répertoire chiffré et sauvegardé dans '{}'.", output_file);
+                        println!("Directory encrypted and saved to '{}'.", output_file);
                     }
                 }
                 Err(e) => {
-                    eprintln!("error: impossible de chiffrer l'archive du répertoire : {}", e);
+                    eprintln!("error: failed to encrypt directory archive: {}", e);
                     process::exit(1);
                 }
             }
@@ -467,11 +474,11 @@ fn main() {
             key_version,
             password,
         } => {
-            // 1. Lire et déchiffrer le fichier
+            // 1. Read and decrypt the file
             let encrypted_json = match std::fs::read_to_string(&input_file) {
                 Ok(c) => c,
                 Err(e) => {
-                    eprintln!("error: impossible de lire le fichier chiffré '{}': {}", input_file, e);
+                    eprintln!("error: failed to read encrypted file '{}': {}", input_file, e);
                     process::exit(1);
                 }
             };
@@ -480,7 +487,7 @@ fn main() {
             let crypt = match IronCrypt::new(&private_key_directory, &key_version, config) {
                 Ok(c) => c,
                 Err(e) => {
-                    eprintln!("error: impossible d'initialiser le module de chiffrement : {}", e);
+                    eprintln!("error: failed to initialize encryption module: {}", e);
                     process::exit(1);
                 }
             };
@@ -488,20 +495,20 @@ fn main() {
             let decrypted_data = match crypt.decrypt_binary_data(&encrypted_json, &password) {
                 Ok(d) => d,
                 Err(e) => {
-                    eprintln!("error: impossible de déchiffrer les données : {}", e);
+                    eprintln!("error: failed to decrypt data: {}", e);
                     process::exit(1);
                 }
             };
 
-            // 2. Décompresser et extraire l'archive
+            // 2. Decompress and extract the archive
             let gz_decoder = GzDecoder::new(decrypted_data.as_slice());
             let mut archive = Archive::new(gz_decoder);
             if let Err(e) = archive.unpack(&output_dir) {
-                eprintln!("error: impossible d'extraire l'archive dans '{}': {}", output_dir, e);
+                eprintln!("error: failed to extract archive to '{}': {}", output_dir, e);
                 process::exit(1);
             }
 
-            println!("Répertoire déchiffré et extrait dans '{}'.", output_dir);
+            println!("Directory decrypted and extracted to '{}'.", output_dir);
         }
         Commands::RotateKey {
             old_version,
@@ -511,10 +518,10 @@ fn main() {
             file,
             directory,
         } => {
-            // 1. Déterminer la taille de la nouvelle clé
+            // 1. Determine the new key size
             let new_key_size = key_size.unwrap_or(2048);
 
-            // 2. Créer les instances d'IronCrypt pour l'ancienne et la nouvelle version
+            // 2. Create IronCrypt instances for the old and new versions
             let old_config = IronCryptConfig::default();
             let mut new_config = IronCryptConfig::default();
             new_config.rsa_key_size = new_key_size;
@@ -522,16 +529,16 @@ fn main() {
             let old_crypt = match IronCrypt::new(&key_directory, &old_version, old_config) {
                 Ok(c) => c,
                 Err(e) => {
-                    eprintln!("error: impossible de charger l'ancienne clé (version {}): {}", old_version, e);
+                    eprintln!("error: failed to load old key (version {}): {}", old_version, e);
                     process::exit(1);
                 }
             };
 
-            // La création de `new_crypt` va générer la nouvelle paire de clés si elle n'existe pas
+            // Creating `new_crypt` will generate the new key pair if it doesn't exist
             let _new_crypt = match IronCrypt::new(&key_directory, &new_version, new_config) {
                  Ok(c) => c,
                 Err(e) => {
-                    eprintln!("error: impossible de créer la nouvelle clé (version {}): {}", new_version, e);
+                    eprintln!("error: failed to create new key (version {}): {}", new_version, e);
                     process::exit(1);
                 }
             };
@@ -540,12 +547,12 @@ fn main() {
             let new_public_key = match ironcrypt::load_public_key(&new_public_key_path) {
                  Ok(k) => k,
                 Err(e) => {
-                    eprintln!("error: impossible de charger la nouvelle clé publique '{}': {}", new_public_key_path, e);
+                    eprintln!("error: failed to load new public key '{}': {}", new_public_key_path, e);
                     process::exit(1);
                 }
             };
 
-            // 3. Déterminer la liste des fichiers à traiter
+            // 3. Determine the list of files to process
             let files_to_process = if let Some(f) = file {
                 vec![f]
             } else if let Some(d) = directory {
@@ -561,22 +568,22 @@ fn main() {
                         })
                     }).collect(),
                     Err(e) => {
-                        eprintln!("error: impossible de lire le répertoire '{}': {}", d, e);
+                        eprintln!("error: failed to read directory '{}': {}", d, e);
                         process::exit(1);
                     }
                 }
             } else {
-                eprintln!("error: veuillez spécifier un fichier (--file) ou un répertoire (--directory).");
+                eprintln!("error: please specify a file (--file) or a directory (--directory).");
                 process::exit(1);
             };
 
-            // 4. Traiter chaque fichier
+            // 4. Process each file
             for file_path in files_to_process {
-                println!("Traitement du fichier : {}...", file_path);
+                println!("Processing file: {}...", file_path);
                 let encrypted_json = match std::fs::read_to_string(&file_path) {
                     Ok(c) => c,
                     Err(e) => {
-                        eprintln!("avertissement: impossible de lire le fichier '{}', ignoré. Raison: {}", file_path, e);
+                        eprintln!("warning: failed to read file '{}', skipping. Reason: {}", file_path, e);
                         continue;
                     }
                 };
@@ -584,16 +591,16 @@ fn main() {
                 match old_crypt.re_encrypt_data(&encrypted_json, &new_public_key, &new_version) {
                     Ok(new_json) => {
                         if let Err(e) = std::fs::write(&file_path, new_json) {
-                            eprintln!("avertissement: impossible de réécrire le fichier '{}', ignoré. Raison: {}", file_path, e);
+                            eprintln!("warning: failed to rewrite file '{}', skipping. Reason: {}", file_path, e);
                         }
                     }
                     Err(e) => {
-                         eprintln!("avertissement: impossible de re-chiffrer le fichier '{}', ignoré. Raison: {}", file_path, e);
+                         eprintln!("warning: failed to re-encrypt file '{}', skipping. Reason: {}", file_path, e);
                     }
                 }
             }
 
-            println!("\nRotation des clés terminée avec succès.");
+            println!("\nKey rotation completed successfully.");
         }
         Commands::DecryptFile {
             input_file,
@@ -602,17 +609,17 @@ fn main() {
             key_version,
             password,
         } => {
-            // Lire le JSON chiffré
+            // Read the encrypted JSON
             let mut encrypted_json = String::new();
             match File::open(&input_file) {
                 Ok(mut f) => {
                     if let Err(e) = f.read_to_string(&mut encrypted_json) {
-                        eprintln!("error: impossible de lire le fichier d'entrée '{}': {}", input_file, e);
+                        eprintln!("error: failed to read input file '{}': {}", input_file, e);
                         process::exit(1);
                     }
                 }
                 Err(e) => {
-                    eprintln!("error: impossible d'ouvrir le fichier d'entrée '{}': {}", input_file, e);
+                    eprintln!("error: failed to open input file '{}': {}", input_file, e);
                     process::exit(1);
                 }
             }
@@ -621,32 +628,32 @@ fn main() {
             let crypt = match IronCrypt::new(&private_key_directory, &key_version, config) {
                 Ok(c) => c,
                 Err(e) => {
-                    eprintln!("error: impossible d'initialiser le module de chiffrement : {}", e);
+                    eprintln!("error: failed to initialize encryption module: {}", e);
                     process::exit(1);
                 }
             };
 
-            // Déchiffrer
+            // Decrypt
             match crypt.decrypt_binary_data(&encrypted_json, &password) {
                 Ok(plaintext_bytes) => {
-                    // Écriture du binaire déchiffré
+                    // Write the decrypted binary
                     match File::create(&output_file) {
                         Ok(mut f) => {
                             if let Err(e) = f.write_all(&plaintext_bytes) {
-                                eprintln!("error: impossible d'écrire le fichier déchiffré '{}': {}", output_file, e);
+                                eprintln!("error: failed to write decrypted file '{}': {}", output_file, e);
                                 process::exit(1);
                             } else {
-                                println!("Fichier binaire déchiffré dans '{output_file}'.");
+                                println!("Binary file decrypted to '{output_file}'.");
                             }
                         }
                         Err(e) => {
-                            eprintln!("error: impossible de créer le fichier de sortie '{}': {}", output_file, e);
+                            eprintln!("error: failed to create output file '{}': {}", output_file, e);
                             process::exit(1);
                         }
                     }
                 }
                 Err(e) => {
-                    eprintln!("error: impossible de déchiffrer le fichier : {}", e);
+                    eprintln!("error: failed to decrypt file: {}", e);
                     process::exit(1);
                 }
             }
@@ -674,29 +681,29 @@ mod tests {
         let mut config = IronCryptConfig::default();
         config.rsa_key_size = 2048;
 
-        // Construire IronCrypt
-        // Ici on utilise "v1" dans le test, mais c'est juste un exemple d'usage
-        let crypt = IronCrypt::new(key_directory, "v1", config).expect("Erreur IronCrypt::new");
+        // Build IronCrypt
+        // We use "v1" here for testing, but it's just an example
+        let crypt = IronCrypt::new(key_directory, "v1", config).expect("Failed to call IronCrypt::new");
 
-        // Chiffrer le mot de passe
+        // Encrypt the password
         let password = "Str0ngP@ssw0rd!";
         let encrypted = crypt
             .encrypt_password(password)
-            .expect("Erreur encrypt_password");
+            .expect("Failed to call encrypt_password");
 
         println!("Encrypted data JSON = {}", encrypted);
 
-        // Vérifier
+        // Verify
         let ok = crypt
             .verify_password(&encrypted, password)
-            .expect("Erreur verify_password");
-        assert!(ok, "Le mot de passe devrait être correct");
+            .expect("Failed to call verify_password");
+        assert!(ok, "The password should be correct");
 
-        // Vérifier un mauvais mot de passe
+        // Verify a bad password
         let bad_ok = crypt.verify_password(&encrypted, "bad_password");
         assert!(
             bad_ok.is_err(),
-            "Devrait échouer sur un mauvais mot de passe"
+            "Should fail on a bad password"
         );
     }
 }
