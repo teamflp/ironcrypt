@@ -44,9 +44,6 @@ cd ironcrypt
 
 # Run the --help command
 cargo run -- --help
-
-# Run the generate command
-cargo run -- generate -v v1
 ```
 
 #### 2. Building and running the executable directly
@@ -97,16 +94,6 @@ require_numbers = true
 require_special_chars = true
 ```
 
-## Usage (Command-Line)
-
-You can view the help menu for a list of all commands and their options:
-```sh
-ironcrypt --help
-```
-And for a specific command:
-```sh
-ironcrypt <command> --help
-```
 
 ### Quick Start: Encrypting and Decrypting a Password
 
