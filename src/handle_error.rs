@@ -10,39 +10,51 @@ use std::io::Error as IoError;
 use std::string::FromUtf8Error;
 use thiserror::Error;
 
+/// Represents all possible errors that can occur within the IronCrypt library.
 #[derive(Debug, Error)]
 pub enum IronCryptError {
-    #[error("Erreur de robustesse du mot de passe: {0}")]
+    /// Error returned when a password does not meet the defined strength criteria.
+    #[error("Password strength error: {0}")]
     PasswordStrengthError(String),
 
-    #[error("Erreur lors du hachage: {0}")]
+    /// An error occurred during the password hashing process with Argon2.
+    #[error("Hashing error: {0}")]
     HashingError(String),
 
-    #[error("Erreur de chiffrement: {0}")]
+    /// An error occurred during symmetric (AES) or asymmetric (RSA) encryption.
+    #[error("Encryption error: {0}")]
     EncryptionError(String),
 
-    #[error("Erreur de déchiffrement: {0}")]
+    /// An error occurred during symmetric (AES) or asymmetric (RSA) decryption.
+    #[error("Decryption error: {0}")]
     DecryptionError(String),
 
-    #[error("Erreur lors de la génération des clés : {0}")]
+    /// Failed to generate a new RSA key pair.
+    #[error("Key generation error: {0}")]
     KeyGenerationError(String),
 
-    #[error("Erreur lors du chargement de la clé : {0}")]
+    /// Failed to load an RSA key from a file.
+    #[error("Key loading error: {0}")]
     KeyLoadingError(String),
 
-    #[error("Erreur lors de la sauvegarde de la clé : {0}")]
+    /// Failed to save an RSA key to a file.
+    #[error("Key saving error: {0}")]
     KeySavingError(String),
 
-    #[error("Erreur d'entrée/sortie: {0}")]
+    /// A standard I/O error occurred (e.g., file not found, permission denied).
+    #[error("I/O error: {0}")]
     IOError(#[from] IoError),
 
-    #[error("Erreur de conversion UTF-8: {0}")]
+    /// An error occurred when converting a byte sequence to a UTF-8 string.
+    #[error("UTF-8 conversion error: {0}")]
     Utf8Error(#[from] FromUtf8Error),
 
-    #[error("Mot de passe invalide")]
+    /// The provided password does not match the stored hash during verification.
+    #[error("Invalid password")]
     InvalidPassword,
 
-    #[error("Erreur lors de la configuration d'Argon2: {0}")]
+    /// An error occurred during the configuration of the Argon2 algorithm.
+    #[error("Argon2 configuration error: {0}")]
     Argon2Error(String),
 }
 
@@ -54,31 +66,31 @@ impl From<ArgonError> for IronCryptError {
 
 impl From<AesGcmError> for IronCryptError {
     fn from(err: AesGcmError) -> Self {
-        IronCryptError::EncryptionError(format!("Erreur AES-GCM : {err}"))
+        IronCryptError::EncryptionError(format!("AES-GCM error: {err}"))
     }
 }
 
 impl From<CipherInvalidLength> for IronCryptError {
     fn from(err: CipherInvalidLength) -> Self {
-        IronCryptError::EncryptionError(format!("Erreur de longueur de clé : {err}"))
+        IronCryptError::EncryptionError(format!("Invalid key length: {err}"))
     }
 }
 
 impl From<Base64DecodeError> for IronCryptError {
     fn from(err: Base64DecodeError) -> Self {
-        IronCryptError::DecryptionError(format!("Erreur de décodage Base64 : {err}"))
+        IronCryptError::DecryptionError(format!("Base64 decoding error: {err}"))
     }
 }
 
 impl From<RsaError> for IronCryptError {
     fn from(err: RsaError) -> Self {
-        IronCryptError::DecryptionError(format!("Erreur RSA : {err}"))
+        IronCryptError::DecryptionError(format!("RSA error: {err}"))
     }
 }
 
 impl From<SerdeJsonError> for IronCryptError {
     fn from(err: SerdeJsonError) -> Self {
-        IronCryptError::DecryptionError(format!("Erreur JSON : {err}"))
+        IronCryptError::DecryptionError(format!("JSON error: {err}"))
     }
 }
 

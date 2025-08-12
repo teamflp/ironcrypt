@@ -7,7 +7,7 @@ use std::process::Command;
 
 #[test]
 fn test_generate_keys() {
-    let mut cmd = Command::cargo_bin("ironcrypt-cli").unwrap();
+    let mut cmd = Command::cargo_bin("ironcrypt").unwrap();
     cmd.arg("generate")
         .arg("-v")
         .arg("v_test")
@@ -16,7 +16,7 @@ fn test_generate_keys() {
 
     cmd.assert()
         .success()
-        .stdout(predicate::str::contains("Clés RSA sauvegardées avec succès."));
+        .stdout(predicate::str::contains("RSA keys saved successfully."));
 
     assert!(fs::metadata("test_keys_cli/private_key_v_test.pem").is_ok());
     assert!(fs::metadata("test_keys_cli/public_key_v_test.pem").is_ok());
@@ -27,8 +27,9 @@ fn test_generate_keys() {
 
 #[test]
 fn test_encrypt_decrypt_password() {
+    let encrypted_file = "encrypted_data_password.json";
     // 1. Generate keys
-    let mut cmd = Command::cargo_bin("ironcrypt-cli").unwrap();
+    let mut cmd = Command::cargo_bin("ironcrypt").unwrap();
     cmd.arg("generate")
         .arg("-v")
         .arg("v_test_enc")
@@ -37,7 +38,7 @@ fn test_encrypt_decrypt_password() {
     cmd.assert().success();
 
     // 2. Encrypt
-    let mut cmd = Command::cargo_bin("ironcrypt-cli").unwrap();
+    let mut cmd = Command::cargo_bin("ironcrypt").unwrap();
     cmd.arg("encrypt")
         .arg("-w")
         .arg("MySuperSecretPassword123!")
@@ -49,13 +50,14 @@ fn test_encrypt_decrypt_password() {
     cmd.assert()
         .success()
         .stdout(predicate::str::contains(
-            "Mot de passe chiffré dans 'encrypted_data.json'.",
+            "Password encrypted to 'encrypted_data.json'.",
         ));
 
-    assert!(fs::metadata("encrypted_data.json").is_ok());
+    fs::rename("encrypted_data.json", encrypted_file).unwrap();
+    assert!(fs::metadata(encrypted_file).is_ok());
 
     // 3. Decrypt with correct password
-    let mut cmd = Command::cargo_bin("ironcrypt-cli").unwrap();
+    let mut cmd = Command::cargo_bin("ironcrypt").unwrap();
     cmd.arg("decrypt")
         .arg("-w")
         .arg("MySuperSecretPassword123!")
@@ -64,14 +66,14 @@ fn test_encrypt_decrypt_password() {
         .arg("-v")
         .arg("v_test_enc")
         .arg("-f")
-        .arg("encrypted_data.json");
+        .arg(encrypted_file);
 
     cmd.assert()
         .success()
-        .stdout(predicate::str::contains("Mot de passe correct."));
+        .stdout(predicate::str::contains("Password correct."));
 
     // 4. Decrypt with incorrect password
-    let mut cmd = Command::cargo_bin("ironcrypt-cli").unwrap();
+    let mut cmd = Command::cargo_bin("ironcrypt").unwrap();
     cmd.arg("decrypt")
         .arg("-w")
         .arg("WrongPassword")
@@ -80,21 +82,21 @@ fn test_encrypt_decrypt_password() {
         .arg("-v")
         .arg("v_test_enc")
         .arg("-f")
-        .arg("encrypted_data.json");
+        .arg(encrypted_file);
 
     cmd.assert()
         .failure()
-        .stderr(predicate::str::contains("Mot de passe invalide"));
+        .stderr(predicate::str::contains("Error: Invalid password"));
 
     // Cleanup
     fs::remove_dir_all("test_keys_cli_enc").unwrap();
-    fs::remove_file("encrypted_data.json").unwrap();
+    fs::remove_file(encrypted_file).unwrap();
 }
 
 #[test]
 fn test_encrypt_decrypt_file() {
     // 1. Generate keys
-    let mut cmd = Command::cargo_bin("ironcrypt-cli").unwrap();
+    let mut cmd = Command::cargo_bin("ironcrypt").unwrap();
     cmd.arg("generate")
         .arg("-v")
         .arg("v_test_file")
@@ -107,7 +109,7 @@ fn test_encrypt_decrypt_file() {
     fs::write("test_file.txt", file_content).unwrap();
 
     // 3. Encrypt the file
-    let mut cmd = Command::cargo_bin("ironcrypt-cli").unwrap();
+    let mut cmd = Command::cargo_bin("ironcrypt").unwrap();
     cmd.arg("encrypt-file")
         .arg("-i")
         .arg("test_file.txt")
@@ -121,7 +123,7 @@ fn test_encrypt_decrypt_file() {
     assert!(fs::metadata("test_file.enc").is_ok());
 
     // 4. Decrypt the file
-    let mut cmd = Command::cargo_bin("ironcrypt-cli").unwrap();
+    let mut cmd = Command::cargo_bin("ironcrypt").unwrap();
     cmd.arg("decrypt-file")
         .arg("-i")
         .arg("test_file.enc")
@@ -148,7 +150,7 @@ fn test_encrypt_decrypt_file() {
 #[test]
 fn test_encrypt_decrypt_dir() {
     // 1. Generate keys
-    let mut cmd = Command::cargo_bin("ironcrypt-cli").unwrap();
+    let mut cmd = Command::cargo_bin("ironcrypt").unwrap();
     cmd.arg("generate")
         .arg("-v")
         .arg("v_test_dir")
@@ -162,7 +164,7 @@ fn test_encrypt_decrypt_dir() {
     fs::write(format!("{}/test.txt", dir_to_encrypt), "hello from dir").unwrap();
 
     // 3. Encrypt the directory
-    let mut cmd = Command::cargo_bin("ironcrypt-cli").unwrap();
+    let mut cmd = Command::cargo_bin("ironcrypt").unwrap();
     cmd.arg("encrypt-dir")
         .arg("-i")
         .arg(dir_to_encrypt)
@@ -177,7 +179,7 @@ fn test_encrypt_decrypt_dir() {
 
     // 4. Decrypt the directory
     let output_dir = "test_dir_decrypted";
-    let mut cmd = Command::cargo_bin("ironcrypt-cli").unwrap();
+    let mut cmd = Command::cargo_bin("ironcrypt").unwrap();
     cmd.arg("decrypt-dir")
         .arg("-i")
         .arg("test_dir.enc")
@@ -204,8 +206,9 @@ fn test_encrypt_decrypt_dir() {
 
 #[test]
 fn test_rotate_key() {
-    // 1. Générer une clé v1
-    let mut cmd = Command::cargo_bin("ironcrypt-cli").unwrap();
+    let encrypted_file = "encrypted_data_rotate.json";
+    // 1. Generate a v1 key
+    let mut cmd = Command::cargo_bin("ironcrypt").unwrap();
     cmd.arg("generate")
         .arg("-v")
         .arg("v1_rotate")
@@ -213,9 +216,9 @@ fn test_rotate_key() {
         .arg("test_keys_rotate");
     cmd.assert().success();
 
-    // 2. Chiffrer un mot de passe avec v1
+    // 2. Encrypt a password with v1
     let password = "MyRotationP@ssw0rd";
-    let mut cmd = Command::cargo_bin("ironcrypt-cli").unwrap();
+    let mut cmd = Command::cargo_bin("ironcrypt").unwrap();
     cmd.arg("encrypt")
         .arg("-w")
         .arg(password)
@@ -223,10 +226,14 @@ fn test_rotate_key() {
         .arg("test_keys_rotate")
         .arg("-v")
         .arg("v1_rotate");
-    cmd.assert().success(); // Crée encrypted_data.json
 
-    // 3. Effectuer la rotation de la clé de v1 à v2
-    let mut cmd = Command::cargo_bin("ironcrypt-cli").unwrap();
+    cmd.assert().success(); // Creates encrypted_data.json
+
+    // Rename the output file to avoid conflicts
+    fs::rename("encrypted_data.json", encrypted_file).unwrap();
+
+    // 3. Perform key rotation from v1 to v2
+    let mut cmd = Command::cargo_bin("ironcrypt").unwrap();
     cmd.arg("rotate-key")
         .arg("--old-version")
         .arg("v1_rotate")
@@ -235,14 +242,14 @@ fn test_rotate_key() {
         .arg("-k")
         .arg("test_keys_rotate")
         .arg("-f")
-        .arg("encrypted_data.json");
+        .arg(encrypted_file);
     cmd.assert().success();
 
-    // 4. Vérifier que la nouvelle clé v2 existe
+    // 4. Verify that the new v2 key exists
     assert!(fs::metadata("test_keys_rotate/private_key_v2_rotate.pem").is_ok());
 
-    // 5. Vérifier que le mot de passe peut être déchiffré avec la nouvelle clé v2
-    let mut cmd = Command::cargo_bin("ironcrypt-cli").unwrap();
+    // 5. Verify that the password can be decrypted with the new v2 key
+    let mut cmd = Command::cargo_bin("ironcrypt").unwrap();
     cmd.arg("decrypt")
         .arg("-w")
         .arg(password)
@@ -251,11 +258,11 @@ fn test_rotate_key() {
         .arg("-v")
         .arg("v2_rotate")
         .arg("-f")
-        .arg("encrypted_data.json");
+        .arg(encrypted_file);
     cmd.assert().success();
 
-    // 6. Vérifier que le mot de passe ne peut plus être déchiffré avec l'ancienne clé v1
-    let mut cmd = Command::cargo_bin("ironcrypt-cli").unwrap();
+    // 6. Verify that the password can no longer be decrypted with the old v1 key
+    let mut cmd = Command::cargo_bin("ironcrypt").unwrap();
     cmd.arg("decrypt")
         .arg("-w")
         .arg(password)
@@ -264,10 +271,63 @@ fn test_rotate_key() {
         .arg("-v")
         .arg("v1_rotate")
         .arg("-f")
-        .arg("encrypted_data.json");
+        .arg(encrypted_file);
     cmd.assert().failure();
 
     // Cleanup
     fs::remove_dir_all("test_keys_rotate").unwrap();
-    fs::remove_file("encrypted_data.json").unwrap();
+    fs::remove_file(encrypted_file).unwrap();
+}
+
+#[test]
+fn test_backward_compatibility_with_pkcs1_keys() {
+    // This test verifies that the application can still load and use
+    // legacy PKCS#1 keys.
+    let key_dir = "test_keys_pkcs1";
+    let key_version = "pkcs1_legacy";
+
+    // 1. Create a dummy file to encrypt
+    let file_content = "This data is secured by a legacy PKCS#1 key.";
+    let input_file = "test_file_pkcs1.txt";
+    let encrypted_file = "test_file_pkcs1.enc";
+    let decrypted_file = "test_file_pkcs1.dec";
+    fs::write(input_file, file_content).unwrap();
+
+    // 2. Encrypt the file using the PKCS#1 public key
+    let mut cmd = Command::cargo_bin("ironcrypt").unwrap();
+    cmd.arg("encrypt-file")
+        .arg("-i")
+        .arg(input_file)
+        .arg("-o")
+        .arg(encrypted_file)
+        .arg("-d")
+        .arg(key_dir)
+        .arg("-v")
+        .arg(key_version);
+    cmd.assert().success();
+    assert!(fs::metadata(encrypted_file).is_ok());
+
+    // 3. Decrypt the file using the PKCS#1 private key
+    let mut cmd = Command::cargo_bin("ironcrypt").unwrap();
+    cmd.arg("decrypt-file")
+        .arg("-i")
+        .arg(encrypted_file)
+        .arg("-o")
+        .arg(decrypted_file)
+        .arg("-k")
+        .arg(key_dir)
+        .arg("-v")
+        .arg(key_version);
+    cmd.assert().success();
+    assert!(fs::metadata(decrypted_file).is_ok());
+
+    // 4. Verify content
+    let decrypted_content = fs::read_to_string(decrypted_file).unwrap();
+    assert_eq!(file_content, decrypted_content);
+
+    // Cleanup
+    fs::remove_file(input_file).unwrap();
+    fs::remove_file(encrypted_file).unwrap();
+    fs::remove_file(decrypted_file).unwrap();
+    fs::remove_dir_all(key_dir).unwrap();
 }
