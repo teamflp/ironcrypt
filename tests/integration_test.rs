@@ -28,7 +28,7 @@ fn test_file_encryption_decryption() {
 
     // Encrypt
     let encrypted_json = crypt
-        .encrypt_binary_data(&fs::read(input_file).unwrap(), "file_password")
+        .encrypt_binary_data(&fs::read(input_file).unwrap(), "File_password1!")
         .unwrap();
     fs::write(output_enc_file, encrypted_json).unwrap();
 
@@ -36,7 +36,7 @@ fn test_file_encryption_decryption() {
     let decrypted_data = crypt
         .decrypt_binary_data(
             &fs::read_to_string(output_enc_file).unwrap(),
-            "file_password",
+            "File_password1!",
         )
         .unwrap();
     fs::write(output_dec_file, &decrypted_data).unwrap();
@@ -75,7 +75,7 @@ fn test_directory_encryption_decryption() {
     {
         let enc = flate2::write::GzEncoder::new(&mut archive_data, flate2::Compression::default());
         let mut tar_builder = tar::Builder::new(enc);
-        tar_builder.append_dir_all(".", source_dir).unwrap();
+        tar_builder.append_dir_all(restored_dir, source_dir).unwrap(); // Change here
         tar_builder.into_inner().unwrap();
     }
     let encrypted_json = crypt.encrypt_binary_data(&archive_data, "").unwrap();
@@ -87,15 +87,15 @@ fn test_directory_encryption_decryption() {
 
     let dec = flate2::read::GzDecoder::new(decrypted_data.as_slice());
     let mut archive = tar::Archive::new(dec);
-    archive.unpack(restored_dir).unwrap();
+    archive.unpack(".").unwrap(); // Change here
 
     // Verify
     let original_file1 = fs::read_to_string(Path::new(source_dir).join("file1.txt")).unwrap();
-    let restored_file1 = fs::read_to_string(Path::new(restored_dir).join(source_dir).join("file1.txt")).unwrap();
+    let restored_file1 = fs::read_to_string(Path::new(restored_dir).join("file1.txt")).unwrap();
     assert_eq!(original_file1, restored_file1);
 
     let original_file2 = fs::read_to_string(Path::new(source_dir).join("subdir/file2.txt")).unwrap();
-    let restored_file2 = fs::read_to_string(Path::new(restored_dir).join(source_dir).join("subdir/file2.txt")).unwrap();
+    let restored_file2 = fs::read_to_string(Path::new(restored_dir).join("subdir/file2.txt")).unwrap();
     assert_eq!(original_file2, restored_file2);
 
 
@@ -114,7 +114,7 @@ fn test_key_rotation() {
     // 1. Create initial version (v1)
     let config_v1 = IronCryptConfig::default();
     let crypt_v1 = IronCrypt::new(key_dir, "v1", config_v1).unwrap();
-    let encrypted_data_v1 = crypt_v1.encrypt_password("my_password").unwrap();
+    let encrypted_data_v1 = crypt_v1.encrypt_password("My_password123!").unwrap();
 
     // 2. Create a new key version (v2)
     let mut config_v2 = IronCryptConfig::default();
@@ -133,7 +133,7 @@ fn test_key_rotation() {
     // 5. Verify with the new key
     let crypt_v2_verify = IronCrypt::new(key_dir, "v2", IronCryptConfig::default()).unwrap();
     let is_valid = crypt_v2_verify
-        .verify_password(&re_encrypted_data, "my_password")
+        .verify_password(&re_encrypted_data, "My_password123!")
         .unwrap();
     assert!(is_valid);
 
@@ -164,13 +164,13 @@ fn test_load_pkcs1_and_pkcs8_keys() {
 
     // Test PKCS#1
     let crypt_v1 = IronCrypt::new(key_dir, "v1", IronCryptConfig::default()).unwrap();
-    let encrypted_v1 = crypt_v1.encrypt_password("test_pkcs1").unwrap();
-    assert!(crypt_v1.verify_password(&encrypted_v1, "test_pkcs1").unwrap());
+    let encrypted_v1 = crypt_v1.encrypt_password("Test_pkcs1!").unwrap();
+    assert!(crypt_v1.verify_password(&encrypted_v1, "Test_pkcs1!").unwrap());
 
     // Test PKCS#8
     let crypt_v2 = IronCrypt::new(key_dir, "v2", IronCryptConfig::default()).unwrap();
-    let encrypted_v2 = crypt_v2.encrypt_password("test_pkcs8").unwrap();
-    assert!(crypt_v2.verify_password(&encrypted_v2, "test_pkcs8").unwrap());
+    let encrypted_v2 = crypt_v2.encrypt_password("Test_pkcs8!").unwrap();
+    assert!(crypt_v2.verify_password(&encrypted_v2, "Test_pkcs8!").unwrap());
 
     // Cleanup
     fs::remove_dir_all(key_dir).unwrap();
