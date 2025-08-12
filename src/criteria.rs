@@ -2,42 +2,57 @@ use crate::IronCryptError;
 use serde::{Deserialize, Serialize};
 use unicode_general_category::{get_general_category, GeneralCategory};
 
-/// Structure for configuring password strength criteria.
+/// Defines the criteria for validating password strength.
 ///
-/// This structure allows defining the minimum requirements that a password must meet
-/// to be considered sufficiently strong.
+/// This struct is used to configure the minimum requirements a password must meet.
 ///
-/// # Fields
+/// # Examples
 ///
-/// - `min_length`: Minimum length of the password (in characters).
-/// - `max_length`: Maximum allowed length (if `None`, no limit).
-/// - `disallowed_patterns`: Disallowed patterns.
-/// - `special_chars`: Minimum number of special characters.
-/// - `uppercase`: Minimum number of uppercase letters.
-/// - `lowercase`: Minimum number of lowercase letters.
-/// - `digits`: Minimum number of digits.
+/// ```
+/// use ironcrypt::criteria::PasswordCriteria;
+///
+/// let criteria = PasswordCriteria {
+///     min_length: 16,
+///     max_length: Some(128),
+///     uppercase: Some(2),
+///     lowercase: Some(2),
+///     digits: Some(2),
+///     special_chars: Some(2),
+///     disallowed_patterns: vec!["123".to_string()],
+/// };
+///
+/// assert!(criteria.validate("StrongPassword123!@#").is_err());
+/// assert!(criteria.validate("weak").is_err());
+/// ```
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PasswordCriteria {
+    /// The minimum required length of the password.
     pub min_length: usize,
+    /// The maximum allowed length of the password. If `None`, there is no upper limit.
     pub max_length: Option<usize>,
-    pub require_uppercase: bool,
-    pub require_numbers: bool,
-    pub require_special_chars: bool,
+    /// A list of patterns that are not allowed to appear in the password (e.g., "password", "12345").
     pub disallowed_patterns: Vec<String>,
+    /// The minimum number of special characters required. If `None`, no check is performed.
+    /// Special characters include punctuation, symbols, etc.
     pub special_chars: Option<usize>,
+    /// The minimum number of uppercase letters required. If `None`, no check is performed.
     pub uppercase: Option<usize>,
+    /// The minimum number of lowercase letters required. If `None`, no check is performed.
     pub lowercase: Option<usize>,
+    /// The minimum number of numeric digits required. If `None`, no check is performed.
     pub digits: Option<usize>,
 }
 
 impl Default for PasswordCriteria {
+    /// Creates a new `PasswordCriteria` with strong default values.
+    ///
+    /// - **Min Length:** 12
+    /// - **Max Length:** 128
+    /// - **Required Characters:** At least 1 uppercase, 1 lowercase, 1 digit, and 1 special character.
     fn default() -> Self {
         Self {
             min_length: 12,
             max_length: Some(128),
-            require_uppercase: true,
-            require_numbers: true,
-            require_special_chars: true,
             disallowed_patterns: vec![],
             special_chars: Some(1),
             uppercase: Some(1),
@@ -48,14 +63,14 @@ impl Default for PasswordCriteria {
 }
 
 impl PasswordCriteria {
-    /// Checks if a password meets the specified strength criteria.
+    /// Validates a password against the defined criteria.
     ///
-    /// Returns `Ok(())` if everything is compliant, otherwise `Err(IronCryptError)`.
+    /// Returns `Ok(())` if the password is valid, otherwise returns a `PasswordStrengthError`.
     pub fn validate(&self, password: &str) -> Result<(), IronCryptError> {
         // Minimum length
         if password.len() < self.min_length {
             return Err(IronCryptError::PasswordStrengthError(
-                "Mot de passe trop court".to_string(),
+                "Password is too short".to_string(),
             ));
         }
 
@@ -63,7 +78,7 @@ impl PasswordCriteria {
         if let Some(max_length) = self.max_length {
             if password.len() > max_length {
                 return Err(IronCryptError::PasswordStrengthError(
-                    "Mot de passe trop long".to_string(),
+                    "Password is too long".to_string(),
                 ));
             }
         }
@@ -72,7 +87,7 @@ impl PasswordCriteria {
         for pattern in &self.disallowed_patterns {
             if password.contains(pattern) {
                 return Err(IronCryptError::PasswordStrengthError(
-                    "Le mot de passe contient un motif interdit".to_string(),
+                    "Password contains a disallowed pattern".to_string(),
                 ));
             }
         }
@@ -93,12 +108,12 @@ impl PasswordCriteria {
                 | GeneralCategory::MathSymbol
                 | GeneralCategory::CurrencySymbol
                 | GeneralCategory::ModifierSymbol => special_char_count += 1,
-                // If you want to disallow spaces
+                // Disallow spaces
                 GeneralCategory::SpaceSeparator
                 | GeneralCategory::LineSeparator
                 | GeneralCategory::ParagraphSeparator => {
                     return Err(IronCryptError::PasswordStrengthError(
-                        "Les espaces ne sont pas autorisés".to_string(),
+                        "Spaces are not allowed".to_string(),
                     ))
                 }
                 _ => {}
@@ -108,7 +123,7 @@ impl PasswordCriteria {
         if let Some(min_u) = self.uppercase {
             if uppercase_count < min_u {
                 return Err(IronCryptError::PasswordStrengthError(
-                    "Pas assez de majuscules".to_string(),
+                    "Not enough uppercase letters".to_string(),
                 ));
             }
         }
@@ -116,7 +131,7 @@ impl PasswordCriteria {
         if let Some(min_l) = self.lowercase {
             if lowercase_count < min_l {
                 return Err(IronCryptError::PasswordStrengthError(
-                    "Pas assez de minuscules".to_string(),
+                    "Not enough lowercase letters".to_string(),
                 ));
             }
         }
@@ -124,7 +139,7 @@ impl PasswordCriteria {
         if let Some(min_d) = self.digits {
             if digit_count < min_d {
                 return Err(IronCryptError::PasswordStrengthError(
-                    "Pas assez de chiffres".to_string(),
+                    "Not enough digits".to_string(),
                 ));
             }
         }
@@ -132,7 +147,7 @@ impl PasswordCriteria {
         if let Some(min_s) = self.special_chars {
             if special_char_count < min_s {
                 return Err(IronCryptError::PasswordStrengthError(
-                    "Pas assez de caractères spéciaux".to_string(),
+                    "Not enough special characters".to_string(),
                 ));
             }
         }
@@ -157,7 +172,7 @@ mod tests {
         let err = criteria.validate("Short1!").unwrap_err();
         assert_eq!(
             err.to_string(),
-            "Erreur de robustesse du mot de passe: Mot de passe trop court"
+            "Password strength error: Password is too short"
         );
     }
 
@@ -167,7 +182,7 @@ mod tests {
         let err = criteria.validate("nouppercase123!").unwrap_err();
         assert_eq!(
             err.to_string(),
-            "Erreur de robustesse du mot de passe: Pas assez de majuscules"
+            "Password strength error: Not enough uppercase letters"
         );
     }
 
@@ -177,7 +192,7 @@ mod tests {
         let err = criteria.validate("NOLOWERCASE123!").unwrap_err();
         assert_eq!(
             err.to_string(),
-            "Erreur de robustesse du mot de passe: Pas assez de minuscules"
+            "Password strength error: Not enough lowercase letters"
         );
     }
 
@@ -187,7 +202,7 @@ mod tests {
         let err = criteria.validate("NoDigitPassword!").unwrap_err();
         assert_eq!(
             err.to_string(),
-            "Erreur de robustesse du mot de passe: Pas assez de chiffres"
+            "Password strength error: Not enough digits"
         );
     }
 
@@ -197,7 +212,7 @@ mod tests {
         let err = criteria.validate("NoSpecialChar123").unwrap_err();
         assert_eq!(
             err.to_string(),
-            "Erreur de robustesse du mot de passe: Pas assez de caractères spéciaux"
+            "Password strength error: Not enough special characters"
         );
     }
 }
