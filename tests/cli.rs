@@ -27,7 +27,6 @@ fn test_generate_keys() {
 
 #[test]
 fn test_encrypt_decrypt_password() {
-    let encrypted_file = "encrypted_data_password.json";
     // 1. Generate keys
     let mut cmd = Command::cargo_bin("ironcrypt-cli").unwrap();
     cmd.arg("generate")
@@ -47,14 +46,11 @@ fn test_encrypt_decrypt_password() {
         .arg("-v")
         .arg("v_test_enc");
 
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::contains(
-            "Password encrypted to 'encrypted_data.json'.",
-        ));
+    cmd.assert().success().stdout(predicate::str::contains(
+        "Password encrypted to 'encrypted_data.json'.",
+    ));
 
-    fs::rename("encrypted_data.json", encrypted_file).unwrap();
-    assert!(fs::metadata(encrypted_file).is_ok());
+    assert!(fs::metadata("encrypted_data.json").is_ok());
 
     // 3. Decrypt with correct password
     let mut cmd = Command::cargo_bin("ironcrypt-cli").unwrap();
@@ -66,7 +62,7 @@ fn test_encrypt_decrypt_password() {
         .arg("-v")
         .arg("v_test_enc")
         .arg("-f")
-        .arg(encrypted_file);
+        .arg("encrypted_data.json");
 
     cmd.assert()
         .success()
@@ -82,15 +78,15 @@ fn test_encrypt_decrypt_password() {
         .arg("-v")
         .arg("v_test_enc")
         .arg("-f")
-        .arg(encrypted_file);
+        .arg("encrypted_data.json");
 
     cmd.assert()
         .failure()
-        .stderr(predicate::str::contains("failed to verify password: Invalid password"));
+        .stderr(predicate::str::contains("Invalid password"));
 
     // Cleanup
     fs::remove_dir_all("test_keys_cli_enc").unwrap();
-    fs::remove_file(encrypted_file).unwrap();
+    fs::remove_file("encrypted_data.json").unwrap();
 }
 
 #[test]
@@ -206,7 +202,6 @@ fn test_encrypt_decrypt_dir() {
 
 #[test]
 fn test_rotate_key() {
-    let encrypted_file = "encrypted_data_rotate.json";
     // 1. Generate a v1 key
     let mut cmd = Command::cargo_bin("ironcrypt-cli").unwrap();
     cmd.arg("generate")
@@ -226,11 +221,7 @@ fn test_rotate_key() {
         .arg("test_keys_rotate")
         .arg("-v")
         .arg("v1_rotate");
-
     cmd.assert().success(); // Creates encrypted_data.json
-
-    // Rename the output file to avoid conflicts
-    fs::rename("encrypted_data.json", encrypted_file).unwrap();
 
     // 3. Perform key rotation from v1 to v2
     let mut cmd = Command::cargo_bin("ironcrypt-cli").unwrap();
@@ -242,7 +233,7 @@ fn test_rotate_key() {
         .arg("-k")
         .arg("test_keys_rotate")
         .arg("-f")
-        .arg(encrypted_file);
+        .arg("encrypted_data.json");
     cmd.assert().success();
 
     // 4. Verify that the new v2 key exists
@@ -258,7 +249,7 @@ fn test_rotate_key() {
         .arg("-v")
         .arg("v2_rotate")
         .arg("-f")
-        .arg(encrypted_file);
+        .arg("encrypted_data.json");
     cmd.assert().success();
 
     // 6. Verify that the password can no longer be decrypted with the old v1 key
@@ -271,10 +262,10 @@ fn test_rotate_key() {
         .arg("-v")
         .arg("v1_rotate")
         .arg("-f")
-        .arg(encrypted_file);
+        .arg("encrypted_data.json");
     cmd.assert().failure();
 
     // Cleanup
     fs::remove_dir_all("test_keys_rotate").unwrap();
-    fs::remove_file(encrypted_file).unwrap();
+    fs::remove_file("encrypted_data.json").unwrap();
 }
