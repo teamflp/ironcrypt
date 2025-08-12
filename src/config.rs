@@ -1,5 +1,5 @@
 // config.rs
-use crate::PasswordCriteria;
+pub use crate::PasswordCriteria;
 use serde::{Deserialize, Serialize};
 
 /// Main configuration for an `IronCrypt` instance.
