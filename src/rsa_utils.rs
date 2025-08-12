@@ -1,17 +1,11 @@
 use crate::IronCryptError;
 use argon2::password_hash::rand_core::OsRng;
+use rsa::pkcs1::{DecodeRsaPrivateKey, DecodeRsaPublicKey, EncodeRsaPublicKey};
+use rsa::pkcs8::{DecodePrivateKey, DecodePublicKey, EncodePrivateKey, LineEnding};
 use rsa::{RsaPrivateKey, RsaPublicKey};
-
-// PKCS#8 (recommended modern format)
-use rsa::pkcs8::{DecodePrivateKey, DecodePublicKey, EncodePrivateKey, EncodePublicKey};
-
-// PKCS#1 (legacy format)
-use rsa::pkcs1::{DecodeRsaPrivateKey, DecodeRsaPublicKey};
-
 use std::fs::File;
 use std::io::Write;
 
-/// Generates a new RSA key pair.
 pub fn generate_rsa_keys(bits: u32) -> Result<(RsaPrivateKey, RsaPublicKey), IronCryptError> {
     if bits < 2048 {
         return Err(IronCryptError::KeyGenerationError(
@@ -24,21 +18,20 @@ pub fn generate_rsa_keys(bits: u32) -> Result<(RsaPrivateKey, RsaPublicKey), Iro
     Ok((priv_key, pub_key))
 }
 
-/// Saves the RSA key pair to PEM-encoded files in the modern PKCS#8 format.
 pub fn save_keys_to_files(
     priv_key: &RsaPrivateKey,
     pub_key: &RsaPublicKey,
     priv_path: &str,
     pub_path: &str,
 ) -> Result<(), IronCryptError> {
-    // Private key: PKCS#8 ("-----BEGIN PRIVATE KEY-----")
+    // Save private key in PKCS#8 format
     let priv_pem = priv_key
-        .to_pkcs8_pem(Default::default())
+        .to_pkcs8_pem(LineEnding::LF)
         .map_err(|e| IronCryptError::KeySavingError(e.to_string()))?;
 
-    // Public key: SPKI/PKCS#8 ("-----BEGIN PUBLIC KEY-----")
+    // Save public key in PKCS#1 format (as it's common)
     let pub_pem = pub_key
-        .to_public_key_pem(Default::default())
+        .to_pkcs1_pem(LineEnding::LF)
         .map_err(|e| IronCryptError::KeySavingError(e.to_string()))?;
 
     let mut fpriv = File::create(priv_path)?;
@@ -50,36 +43,28 @@ pub fn save_keys_to_files(
     Ok(())
 }
 
-// Helper functions to detect PEM format by checking the header.
-fn is_pkcs1_private_pem(pem: &str) -> bool {
-    pem.trim_start().starts_with("-----BEGIN RSA PRIVATE KEY-----")
-}
-fn is_pkcs1_public_pem(pem: &str) -> bool {
-    pem.trim_start().starts_with("-----BEGIN RSA PUBLIC KEY-----")
-}
-
-/// Loads an RSA public key from a PEM-encoded file.
-/// Automatically detects and handles both PKCS#1 and PKCS#8 (SPKI) formats.
 pub fn load_public_key(path: &str) -> Result<RsaPublicKey, IronCryptError> {
-    let pem = std::fs::read_to_string(path)?;
-
-    if is_pkcs1_public_pem(&pem) {
-        RsaPublicKey::from_pkcs1_pem(&pem).map_err(|e| IronCryptError::KeyLoadingError(e.to_string()))
-    } else {
-        // Assume PKCS#8 (SPKI) otherwise.
-        RsaPublicKey::from_public_key_pem(&pem).map_err(|e| IronCryptError::KeyLoadingError(e.to_string()))
-    }
+    let pem_str = &std::fs::read_to_string(path)?;
+    // Try parsing as PKCS#1 first, then as PKCS#8
+    RsaPublicKey::from_pkcs1_pem(pem_str)
+        .or_else(|_| RsaPublicKey::from_public_key_pem(pem_str))
+        .map_err(|e| IronCryptError::KeyLoadingError(e.to_string()))
 }
 
-/// Loads an RSA private key from a PEM-encoded file.
-/// Automatically detects and handles both PKCS#1 and PKCS#8 formats.
 pub fn load_private_key(path: &str) -> Result<RsaPrivateKey, IronCryptError> {
-    let pem = std::fs::read_to_string(path)?;
-
-    if is_pkcs1_private_pem(&pem) {
-        RsaPrivateKey::from_pkcs1_pem(&pem).map_err(|e| IronCryptError::KeyLoadingError(e.to_string()))
+    let pem_str = &std::fs::read_to_string(path)?;
+    // Inspect the PEM header to decide which format to use
+    if pem_str.starts_with("-----BEGIN PRIVATE KEY-----") {
+        // This is PKCS#8
+        RsaPrivateKey::from_pkcs8_pem(pem_str)
+            .map_err(|e| IronCryptError::KeyLoadingError(e.to_string()))
+    } else if pem_str.starts_with("-----BEGIN RSA PRIVATE KEY-----") {
+        // This is PKCS#1
+        RsaPrivateKey::from_pkcs1_pem(pem_str)
+            .map_err(|e| IronCryptError::KeyLoadingError(e.to_string()))
     } else {
-        // Assume PKCS#8 otherwise.
-        RsaPrivateKey::from_pkcs8_pem(&pem).map_err(|e| IronCryptError::KeyLoadingError(e.to_string()))
+        Err(IronCryptError::KeyLoadingError(
+            "Unsupported or unknown private key format".to_string(),
+        ))
     }
 }

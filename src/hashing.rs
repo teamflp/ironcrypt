@@ -2,51 +2,51 @@ use argon2::password_hash::rand_core::OsRng;
 use argon2::password_hash::SaltString;
 use argon2::{self, Argon2, PasswordHasher};
 
-/// Hache un mot de passe avec Argon2id.
-/// Hache un mot de passe en utilisant l'algorithme Argon2.
+/// Hashes a password with Argon2id.
+/// Hashes a password using the Argon2 algorithm.
 ///
-/// Cette fonction prend un mot de passe sous forme de chaîne de caractères et le hache
-/// en utilisant l'algorithme Argon2, considéré comme l'un des plus sûrs pour le stockage de mots de passe.
-/// Un sel aléatoire est généré à chaque hachage pour renforcer la sécurité et garantir
-/// que même deux mots de passe identiques auront des hachages différents.
+/// This function takes a password as a string slice and hashes it
+/// using the Argon2 algorithm, which is considered one of the most secure for password storage.
+/// A random salt is generated for each hash to enhance security and ensure
+/// that even two identical passwords will have different hashes.
 ///
 /// # Arguments
 ///
-/// * `password` - Une référence à une chaîne de caractères représentant le mot de passe à hacher.
+/// * `password` - A reference to a string slice representing the password to be hashed.
 ///
-/// # Retour
+/// # Returns
 ///
-/// Renvoie un `Result` contenant :
-/// - `Ok(String)` : Le mot de passe haché encodé sous forme de chaîne de caractères en cas de succès.
-/// - `Err(String)` : Un message d'erreur détaillant la raison de l'échec si le hachage échoue.
+/// Returns a `Result` containing:
+/// - `Ok(String)`: The hashed password encoded as a string on success.
+/// - `Err(String)`: An error message detailing the reason for failure if hashing fails.
 ///
-/// # Exemple
+/// # Example
 ///
 /// ```rust
 /// use ironcrypt::hash_password;
 ///
 /// let password = "MySecureP@ssw0rd";
 /// match hash_password(password) {
-///     Ok(hashed) => println!("Mot de passe haché : {}", hashed),
-///     Err(e) => println!("Erreur : {}", e),
+///     Ok(hashed) => println!("Hashed password: {}", hashed),
+///     Err(e) => println!("Error: {}", e),
 /// }
 /// ```
 ///
-/// Dans cet exemple, le mot de passe "MySecureP@ssw0rd" est haché, et le résultat est affiché
-/// si l'opération est réussie. En cas d'échec, un message d'erreur est affiché.
+/// In this example, the password "MySecureP@ssw0rd" is hashed, and the result is displayed
+/// if the operation is successful. In case of failure, an error message is displayed.
 ///
-/// # Remarques
+/// # Remarks
 ///
-/// - Le sel est généré automatiquement à l'aide de `SaltString::generate` et est incorporé
-///   dans le hachage final, ce qui le rend prêt pour une vérification future.
-/// - Utilisez cette fonction pour stocker les mots de passe de manière sécurisée dans votre base de données
-///   en utilisant le hachage résultant au lieu du mot de passe en clair.
+/// - The salt is automatically generated using `SaltString::generate` and is incorporated
+///   into the final hash, making it ready for future verification.
+/// - Use this function to securely store passwords in your database
+///   by using the resulting hash instead of the plaintext password.
 ///
-/// # Erreurs
+/// # Errors
 ///
-/// La fonction peut renvoyer une `Err` si :
-/// - La génération du sel ou le processus de hachage échoue.
-/// - Une erreur interne survient lors de l'appel à `hash_password` de la bibliothèque Argon2.
+/// The function may return an `Err` if:
+/// - The salt generation or the hashing process fails.
+/// - An internal error occurs during the call to `hash_password` from the Argon2 library.
 pub fn hash_password(password: &str) -> Result<String, String> {
     let salt = SaltString::generate(&mut OsRng);
     let argon2 = Argon2::default();
@@ -54,5 +54,5 @@ pub fn hash_password(password: &str) -> Result<String, String> {
     argon2
         .hash_password(password.as_bytes(), &salt)
         .map(|hash| hash.to_string())
-        .map_err(|e| format!("Erreur lors du hachage du mot de passe: {e:?}"))
+        .map_err(|e| format!("Error while hashing password: {e:?}"))
 }
