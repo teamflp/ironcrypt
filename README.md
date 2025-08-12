@@ -89,6 +89,27 @@ Alternatively, many command-line options can be configured via environment varia
 
 *Note: Command-line arguments will always take precedence over environment variables.*
 
+### JSON Output
+When using `--format json`, the tool will output structured JSON, which is useful for scripting. On success, the output will be sent to `stdout`. On error, it will be sent to `stderr`.
+
+**Example Success Output (`decrypt` command):**
+```json
+{
+  "status": "success",
+  "data": {
+    "password_correct": true
+  }
+}
+```
+
+**Example Error Output:**
+```json
+{
+  "status": "error",
+  "error": "Decryption error: Invalid password"
+}
+```
+
 **Example `ironcrypt.toml`:**
 ```toml
 # RSA key size in bits (e.g., 2048, 4096)
@@ -141,6 +162,12 @@ ironcrypt decrypt --password "My$ecureP@ssw0rd!" --key-version v1 --file encrypt
 ```
 
 If the password is correct, the tool will print a success message.
+
+### Global Options
+
+| Flag | Environment Variable | Description |
+|---|---|---|
+| `--format <FORMAT>` | `IRONCRYPT_FORMAT` | Sets the output format. Can be `text` (default) or `json`. |
 
 ### All Commands
 

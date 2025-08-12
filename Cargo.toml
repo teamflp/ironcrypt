@@ -28,6 +28,7 @@ unicode-general-category = "1.0.0"
 zeroize = "1.8.1"
 tar = "0.4.44"
 flate2 = "1.0.30"
+anyhow = "1.0"
 
 [dev-dependencies]
 assert_cmd = "2.0"
