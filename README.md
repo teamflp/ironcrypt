@@ -74,6 +74,21 @@ cp ironcrypt.toml.example ironcrypt.toml
 
 You can then edit `ironcrypt.toml` to customize settings like RSA key size, Argon2 parameters, and password complexity rules.
 
+### Environment Variables
+Alternatively, many command-line options can be configured via environment variables. This is especially useful in CI/CD or containerized environments.
+
+| Variable | Corresponding Command(s) |
+|---|---|
+| `IRONCRYPT_KEY_VERSION` | `generate`, `encrypt`, `decrypt`, ... |
+| `IRONCRYPT_KEY_DIR` | `generate`, `rotate-key` |
+| `IRONCRYPT_PUBKEY_DIR` | `encrypt`, `encrypt-file`, `encrypt-dir` |
+| `IRONCRYPT_PRIVKEY_DIR`| `decrypt`, `decrypt-file`, `decrypt-dir` |
+| `IRONCRYPT_PASSWORD` | `encrypt`, `decrypt`, ... |
+| `IRONCRYPT_INPUT` | `encrypt-file`, `decrypt-file`, ... |
+| `IRONCRYPT_OUTPUT` | `encrypt-file`, `decrypt-file`, ... |
+
+*Note: Command-line arguments will always take precedence over environment variables.*
+
 **Example `ironcrypt.toml`:**
 ```toml
 # RSA key size in bits (e.g., 2048, 4096)

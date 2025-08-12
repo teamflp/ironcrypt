@@ -30,53 +30,53 @@ enum Commands {
     /// Generates an RSA key pair.
     Generate {
         /// The version of the key pair.
-        #[arg(short = 'v', long)]
+        #[arg(short = 'v', long, env = "IRONCRYPT_KEY_VERSION")]
         version: String,
 
         /// The directory where the keys will be saved.
-        #[arg(short = 'd', long, default_value = "keys")]
+        #[arg(short = 'd', long, default_value = "keys", env = "IRONCRYPT_KEY_DIR")]
         directory: String,
 
         /// The size of the RSA key in bits.
-        #[arg(short = 's', long, default_value_t = 2048)]
+        #[arg(short = 's', long, default_value_t = 2048, env = "IRONCRYPT_KEY_SIZE")]
         key_size: u32,
     },
 
     /// Hashes and encrypts a password.
     Encrypt {
         /// The password to hash and encrypt.
-        #[arg(short = 'w', long)]
+        #[arg(short = 'w', long, env = "IRONCRYPT_PASSWORD")]
         password: String,
 
         /// The directory containing the public key file.
-        #[arg(short = 'd', long, default_value = "keys")]
+        #[arg(short = 'd', long, default_value = "keys", env = "IRONCRYPT_PUBKEY_DIR")]
         public_key_directory: String,
 
         /// The version of the public key to use.
-        #[arg(short = 'v', long)]
+        #[arg(short = 'v', long, env = "IRONCRYPT_KEY_VERSION")]
         key_version: String,
     },
 
     /// Decrypts and verifies a password.
     Decrypt {
         /// The password to verify.
-        #[arg(short = 'w', long)]
+        #[arg(short = 'w', long, env = "IRONCRYPT_PASSWORD")]
         password: String,
 
         /// The directory containing the private key file.
-        #[arg(short = 'k', long, default_value = "keys")]
+        #[arg(short = 'k', long, default_value = "keys", env = "IRONCRYPT_PRIVKEY_DIR")]
         private_key_directory: String,
 
         /// The version of the private key to use.
-        #[arg(short = 'v', long)]
+        #[arg(short = 'v', long, env = "IRONCRYPT_KEY_VERSION")]
         key_version: String,
 
         /// The encrypted data as a string.
-        #[arg(short = 'd', long, conflicts_with = "file")]
+        #[arg(short = 'd', long, conflicts_with = "file", env = "IRONCRYPT_DATA")]
         data: Option<String>,
 
         /// The path to the file containing the encrypted data.
-        #[arg(short = 'f', long, conflicts_with = "data")]
+        #[arg(short = 'f', long, conflicts_with = "data", env = "IRONCRYPT_FILE")]
         file: Option<String>,
     },
 
@@ -88,23 +88,23 @@ enum Commands {
     )]
     EncryptFile {
         /// Path to the binary file to encrypt.
-        #[arg(short = 'i', long)]
+        #[arg(short = 'i', long, env = "IRONCRYPT_INPUT")]
         input_file: String,
 
         /// Path for the encrypted output file (JSON).
-        #[arg(short = 'o', long)]
+        #[arg(short = 'o', long, env = "IRONCRYPT_OUTPUT")]
         output_file: String,
 
         /// Directory of the public keys.
-        #[arg(short = 'd', long, default_value = "keys")]
+        #[arg(short = 'd', long, default_value = "keys", env = "IRONCRYPT_PUBKEY_DIR")]
         public_key_directory: String,
 
         /// Version of the public key to use.
-        #[arg(short = 'v', long)]
+        #[arg(short = 'v', long, env = "IRONCRYPT_KEY_VERSION")]
         key_version: String,
 
         /// Optional password (leave empty if not needed).
-        #[arg(short = 'w', long, default_value = "")]
+        #[arg(short = 'w', long, default_value = "", env = "IRONCRYPT_PASSWORD")]
         password: String,
     },
 
@@ -116,23 +116,23 @@ enum Commands {
     )]
     DecryptFile {
         /// Path to the encrypted JSON file.
-        #[arg(short = 'i', long)]
+        #[arg(short = 'i', long, env = "IRONCRYPT_INPUT")]
         input_file: String,
 
         /// Path for the decrypted binary file.
-        #[arg(short = 'o', long)]
+        #[arg(short = 'o', long, env = "IRONCRYPT_OUTPUT")]
         output_file: String,
 
         /// Directory of the private keys.
-        #[arg(short = 'k', long, default_value = "keys")]
+        #[arg(short = 'k', long, default_value = "keys", env = "IRONCRYPT_PRIVKEY_DIR")]
         private_key_directory: String,
 
         /// Version of the private key to use.
-        #[arg(short = 'v', long)]
+        #[arg(short = 'v', long, env = "IRONCRYPT_KEY_VERSION")]
         key_version: String,
 
         /// Optional password.
-        #[arg(short = 'w', long, default_value = "")]
+        #[arg(short = 'w', long, default_value = "", env = "IRONCRYPT_PASSWORD")]
         password: String,
     },
 
@@ -140,23 +140,23 @@ enum Commands {
     #[command(alias("encdir"))]
     EncryptDir {
         /// Path to the directory to encrypt.
-        #[arg(short = 'i', long)]
+        #[arg(short = 'i', long, env = "IRONCRYPT_INPUT")]
         input_dir: String,
 
         /// Path for the encrypted output file.
-        #[arg(short = 'o', long)]
+        #[arg(short = 'o', long, env = "IRONCRYPT_OUTPUT")]
         output_file: String,
 
         /// Directory of the public keys.
-        #[arg(short = 'd', long, default_value = "keys")]
+        #[arg(short = 'd', long, default_value = "keys", env = "IRONCRYPT_PUBKEY_DIR")]
         public_key_directory: String,
 
         /// Version of the public key to use.
-        #[arg(short = 'v', long)]
+        #[arg(short = 'v', long, env = "IRONCRYPT_KEY_VERSION")]
         key_version: String,
 
         /// Optional password.
-        #[arg(short = 'w', long, default_value = "")]
+        #[arg(short = 'w', long, default_value = "", env = "IRONCRYPT_PASSWORD")]
         password: String,
     },
 
@@ -164,23 +164,23 @@ enum Commands {
     #[command(alias("decdir"))]
     DecryptDir {
         /// Path to the encrypted file.
-        #[arg(short = 'i', long)]
+        #[arg(short = 'i', long, env = "IRONCRYPT_INPUT")]
         input_file: String,
 
         /// Path for the output directory.
-        #[arg(short = 'o', long)]
+        #[arg(short = 'o', long, env = "IRONCRYPT_OUTPUT")]
         output_dir: String,
 
         /// Directory of the private keys.
-        #[arg(short = 'k', long, default_value = "keys")]
+        #[arg(short = 'k', long, default_value = "keys", env = "IRONCRYPT_PRIVKEY_DIR")]
         private_key_directory: String,
 
         /// Version of the private key.
-        #[arg(short = 'v', long)]
+        #[arg(short = 'v', long, env = "IRONCRYPT_KEY_VERSION")]
         key_version: String,
 
         /// Optional password.
-        #[arg(short = 'w', long, default_value = "")]
+        #[arg(short = 'w', long, default_value = "", env = "IRONCRYPT_PASSWORD")]
         password: String,
     },
 
@@ -188,27 +188,27 @@ enum Commands {
     #[command(alias("rk"))]
     RotateKey {
         /// The old key version.
-        #[arg(long)]
+        #[arg(long, env = "IRONCRYPT_OLD_KEY_VERSION")]
         old_version: String,
 
         /// The new key version.
-        #[arg(long)]
+        #[arg(long, env = "IRONCRYPT_NEW_KEY_VERSION")]
         new_version: String,
 
         /// The directory where keys are stored.
-        #[arg(short='k', long, default_value = "keys")]
+        #[arg(short='k', long, default_value = "keys", env = "IRONCRYPT_KEY_DIR")]
         key_directory: String,
 
         /// The size for the new key (optional, defaults to 2048).
-        #[arg(short='s', long)]
+        #[arg(short='s', long, env = "IRONCRYPT_KEY_SIZE")]
         key_size: Option<u32>,
 
         /// A single file to re-encrypt.
-        #[arg(short='f', long, conflicts_with="directory")]
+        #[arg(short='f', long, conflicts_with="directory", env = "IRONCRYPT_FILE")]
         file: Option<String>,
 
         /// A directory of files to re-encrypt.
-        #[arg(short='d', long, conflicts_with="file")]
+        #[arg(short='d', long, conflicts_with="file", env = "IRONCRYPT_DIR")]
         directory: Option<String>,
     }
 }
