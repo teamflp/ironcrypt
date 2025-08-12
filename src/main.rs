@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{Parser, Subcommand};
 use indicatif::{ProgressBar, ProgressStyle};
 use ironcrypt::{
     generate_rsa_keys,
@@ -9,9 +9,8 @@ use ironcrypt::{
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
-use serde::Serialize;
 use std::fs::File;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::process;
 use std::time::Duration;
 use tar::{Archive, Builder};
@@ -24,176 +23,157 @@ use tar::{Archive, Builder};
 struct Cli {
     #[command(subcommand)]
     command: Commands,
-
-    /// Set the output format.
-    #[arg(global = true, long, value_enum, default_value_t = OutputFormat::Text, env = "IRONCRYPT_FORMAT")]
-    format: OutputFormat,
-}
-
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Debug)]
-enum OutputFormat {
-    /// Human-readable text format.
-    Text,
-    /// JSON format for machine-readable output.
-    Json,
 }
 
 #[derive(Subcommand)]
 enum Commands {
     /// Generates an RSA key pair.
     Generate {
-        /// The version of the key pair.
-        #[arg(short = 'v', long, env = "IRONCRYPT_KEY_VERSION")]
+        #[arg(short = 'v', long)]
         version: String,
 
-        /// The directory where the keys will be saved.
-        #[arg(short = 'd', long, default_value = "keys", env = "IRONCRYPT_KEY_DIR")]
+        #[arg(short = 'd', long, default_value = "keys")]
         directory: String,
 
-        /// The size of the RSA key in bits.
-        #[arg(short = 's', long, default_value_t = 2048, env = "IRONCRYPT_KEY_SIZE")]
+        #[arg(short = 's', long, default_value_t = 2048)]
         key_size: u32,
     },
 
-    /// Hashes and encrypts a password.
+    /// Hashes and encrypts a password (existing logic).
     Encrypt {
-        /// The password to hash and encrypt.
-        #[arg(short = 'w', long, env = "IRONCRYPT_PASSWORD")]
+        #[arg(short = 'w', long)]
         password: String,
 
-        /// The directory containing the public key file.
-        #[arg(short = 'd', long, default_value = "keys", env = "IRONCRYPT_PUBKEY_DIR")]
+        #[arg(short = 'd', long, default_value = "keys")]
         public_key_directory: String,
 
-        /// The version of the public key to use.
-        #[arg(short = 'v', long, env = "IRONCRYPT_KEY_VERSION")]
+        /// Version of the public key (no default value)
+        #[arg(short = 'v', long)]
         key_version: String,
     },
 
-    /// Decrypts and verifies a password.
+    /// Decrypts an encrypted password (existing logic).
     Decrypt {
-        /// The password to verify.
-        #[arg(short = 'w', long, env = "IRONCRYPT_PASSWORD")]
+        #[arg(short = 'w', long)]
         password: String,
 
-        /// The directory containing the private key file.
-        #[arg(short = 'k', long, default_value = "keys", env = "IRONCRYPT_PRIVKEY_DIR")]
+        #[arg(short = 'k', long, default_value = "keys")]
         private_key_directory: String,
 
-        /// The version of the private key to use.
-        #[arg(short = 'v', long, env = "IRONCRYPT_KEY_VERSION")]
+        /// Version of the private key (no default value)
+        #[arg(short = 'v', long)]
         key_version: String,
 
-        /// The encrypted data as a string.
-        #[arg(short = 'd', long, conflicts_with = "file", env = "IRONCRYPT_DATA")]
+        #[arg(short = 'd', long, conflicts_with = "file")]
         data: Option<String>,
 
-        /// The path to the file containing the encrypted data.
-        #[arg(short = 'f', long, conflicts_with = "data", env = "IRONCRYPT_FILE")]
+        #[arg(short = 'f', long, conflicts_with = "data")]
         file: Option<String>,
     },
 
-    /// Encrypts a binary file using AES+RSA.
+    /// Encrypts a binary file (new command).
     #[command(
+        about = "Encrypts a binary file (uses AES+RSA)",
         alias("encfile"),
         alias("efile"),
         alias("ef")
     )]
     EncryptFile {
-        /// Path to the binary file to encrypt.
-        #[arg(short = 'i', long, env = "IRONCRYPT_INPUT")]
+        /// Path to the binary file to encrypt
+        #[arg(short = 'i', long)]
         input_file: String,
 
-        /// Path for the encrypted output file (JSON).
-        #[arg(short = 'o', long, env = "IRONCRYPT_OUTPUT")]
+        /// Path to the output file (encrypted JSON)
+        #[arg(short = 'o', long)]
         output_file: String,
 
-        /// Directory of the public keys.
-        #[arg(short = 'd', long, default_value = "keys", env = "IRONCRYPT_PUBKEY_DIR")]
+        /// Path to the public keys directory
+        #[arg(short = 'd', long, default_value = "keys")]
         public_key_directory: String,
 
-        /// Version of the public key to use.
-        #[arg(short = 'v', long, env = "IRONCRYPT_KEY_VERSION")]
+        /// Version of the public key to use
+        #[arg(short = 'v', long)]
         key_version: String,
 
-        /// Optional password (leave empty if not needed).
-        #[arg(short = 'w', long, default_value = "", env = "IRONCRYPT_PASSWORD")]
+        /// Optional password (leave empty otherwise)
+        #[arg(short = 'w', long, default_value = "")]
         password: String,
     },
 
-    /// Decrypts a binary file.
+    /// Decrypts a binary file (new command).
     #[command(
+        about = "Decrypts a binary file (returns a .tar, .zip, etc.)",
         alias("decfile"),
         alias("dfile"),
         alias("df")
     )]
     DecryptFile {
-        /// Path to the encrypted JSON file.
-        #[arg(short = 'i', long, env = "IRONCRYPT_INPUT")]
+        /// Path to the encrypted JSON file
+        #[arg(short = 'i', long)]
         input_file: String,
 
-        /// Path for the decrypted binary file.
-        #[arg(short = 'o', long, env = "IRONCRYPT_OUTPUT")]
+        /// Path to the decrypted binary file
+        #[arg(short = 'o', long)]
         output_file: String,
 
-        /// Directory of the private keys.
-        #[arg(short = 'k', long, default_value = "keys", env = "IRONCRYPT_PRIVKEY_DIR")]
+        /// Path to the private keys directory
+        #[arg(short = 'k', long, default_value = "keys")]
         private_key_directory: String,
 
-        /// Version of the private key to use.
-        #[arg(short = 'v', long, env = "IRONCRYPT_KEY_VERSION")]
+        /// Version of the private key
+        #[arg(short = 'v', long)]
         key_version: String,
 
-        /// Optional password.
-        #[arg(short = 'w', long, default_value = "", env = "IRONCRYPT_PASSWORD")]
+        /// Optional password
+        #[arg(short = 'w', long, default_value = "")]
         password: String,
     },
 
     /// Encrypts an entire directory.
     #[command(alias("encdir"))]
     EncryptDir {
-        /// Path to the directory to encrypt.
-        #[arg(short = 'i', long, env = "IRONCRYPT_INPUT")]
+        /// Path of the directory to encrypt.
+        #[arg(short = 'i', long)]
         input_dir: String,
 
-        /// Path for the encrypted output file.
-        #[arg(short = 'o', long, env = "IRONCRYPT_OUTPUT")]
+        /// Path of the encrypted output file.
+        #[arg(short = 'o', long)]
         output_file: String,
 
-        /// Directory of the public keys.
-        #[arg(short = 'd', long, default_value = "keys", env = "IRONCRYPT_PUBKEY_DIR")]
+        /// Path to the public keys directory.
+        #[arg(short = 'd', long, default_value = "keys")]
         public_key_directory: String,
 
         /// Version of the public key to use.
-        #[arg(short = 'v', long, env = "IRONCRYPT_KEY_VERSION")]
+        #[arg(short = 'v', long)]
         key_version: String,
 
-        /// Optional password.
-        #[arg(short = 'w', long, default_value = "", env = "IRONCRYPT_PASSWORD")]
+        /// Optional password (leave empty otherwise).
+        #[arg(short = 'w', long, default_value = "")]
         password: String,
     },
 
     /// Decrypts an entire directory.
     #[command(alias("decdir"))]
     DecryptDir {
-        /// Path to the encrypted file.
-        #[arg(short = 'i', long, env = "IRONCRYPT_INPUT")]
+        /// Path of the encrypted file.
+        #[arg(short = 'i', long)]
         input_file: String,
 
-        /// Path for the output directory.
-        #[arg(short = 'o', long, env = "IRONCRYPT_OUTPUT")]
+        /// Path of the output directory.
+        #[arg(short = 'o', long)]
         output_dir: String,
 
-        /// Directory of the private keys.
-        #[arg(short = 'k', long, default_value = "keys", env = "IRONCRYPT_PRIVKEY_DIR")]
+        /// Path to the private keys directory.
+        #[arg(short = 'k', long, default_value = "keys")]
         private_key_directory: String,
 
         /// Version of the private key.
-        #[arg(short = 'v', long, env = "IRONCRYPT_KEY_VERSION")]
+        #[arg(short = 'v', long)]
         key_version: String,
 
         /// Optional password.
-        #[arg(short = 'w', long, default_value = "", env = "IRONCRYPT_PASSWORD")]
+        #[arg(short = 'w', long, default_value = "")]
         password: String,
     },
 
@@ -201,88 +181,328 @@ enum Commands {
     #[command(alias("rk"))]
     RotateKey {
         /// The old key version.
-        #[arg(long, env = "IRONCRYPT_OLD_KEY_VERSION")]
+        #[arg(long)]
         old_version: String,
 
         /// The new key version.
-        #[arg(long, env = "IRONCRYPT_NEW_KEY_VERSION")]
+        #[arg(long)]
         new_version: String,
 
-        /// The directory where keys are stored.
-        #[arg(short='k', long, default_value = "keys", env = "IRONCRYPT_KEY_DIR")]
+        /// The key directory.
+        #[arg(short='k', long, default_value = "keys")]
         key_directory: String,
 
-        /// The size for the new key (optional, defaults to 2048).
-        #[arg(short='s', long, env = "IRONCRYPT_KEY_SIZE")]
+        /// The new key size (optional, default: 2048).
+        #[arg(short='s', long)]
         key_size: Option<u32>,
 
         /// A single file to re-encrypt.
-        #[arg(short='f', long, conflicts_with="directory", env = "IRONCRYPT_FILE")]
+        #[arg(short='f', long, conflicts_with="directory")]
         file: Option<String>,
 
         /// A directory of files to re-encrypt.
-        #[arg(short='d', long, conflicts_with="file", env = "IRONCRYPT_DIR")]
+        #[arg(short='d', long, conflicts_with="file")]
         directory: Option<String>,
     }
 }
 
-// Structs for JSON output
-#[derive(Serialize)]
-struct JsonResponse<'a> {
-    status: &'a str,
-    data: Option<serde_json::Value>,
-}
-
 fn main() {
     let args = Cli::parse();
-    let format = args.format;
 
-    let result = match args.command {
+    match args.command {
+        // ---------------------------------------------------------------
+        // 1) Generating an RSA key pair
+        // ---------------------------------------------------------------
         Commands::Generate {
             version,
             directory,
             key_size,
-        } => handle_generate(format, version, directory, key_size),
+        } => {
+            if let Err(e) = std::fs::create_dir_all(&directory) {
+                eprintln!("error: could not create key directory '{}': {}", directory, e);
+                process::exit(1);
+            }
+            let private_key_path = format!("{}/private_key_{}.pem", directory, version);
+            let public_key_path = format!("{}/public_key_{}.pem", directory, version);
+
+            let spinner = ProgressBar::new_spinner();
+            spinner.set_style(
+                ProgressStyle::with_template("{spinner} {msg}")
+                    .unwrap()
+                    .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]),
+            );
+            spinner.set_message("Generating RSA keys...");
+            spinner.enable_steady_tick(Duration::from_millis(100));
+
+            let (private_key, public_key) = match generate_rsa_keys(key_size) {
+                Ok((pk, pubk)) => (pk, pubk),
+                Err(e) => {
+                    spinner.finish_with_message("Error.");
+                    eprintln!("error: could not generate RSA key pair: {}", e);
+                    process::exit(1);
+                }
+            };
+            spinner.finish_with_message("RSA keys generated.");
+
+            match save_keys_to_files(&private_key, &public_key, &private_key_path, &public_key_path) {
+                Ok(_) => {
+                    println!("RSA keys saved successfully.");
+                    println!("Private key: {private_key_path}");
+                    println!("Public key: {public_key_path}");
+                }
+                Err(e) => {
+                    eprintln!("error: could not save keys to files: {}", e);
+                    process::exit(1);
+                }
+            }
+        }
+
+        // ---------------------------------------------------------------
+        // 2) Encrypting a password
+        // ---------------------------------------------------------------
         Commands::Encrypt {
             password,
             public_key_directory,
             key_version,
-        } => handle_encrypt(format, password, public_key_directory, key_version),
+        } => {
+            let config = IronCryptConfig::default();
+            let crypt = match IronCrypt::new(&public_key_directory, &key_version, config) {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!("error: could not initialize encryption module: {}", e);
+                    process::exit(1);
+                }
+            };
+            match crypt.encrypt_password(&password) {
+                Ok(encrypted_hash) => {
+                    let file_path = "encrypted_data.json";
+                    match File::create(file_path) {
+                        Ok(mut file) => {
+                            if let Err(e) = file.write_all(encrypted_hash.as_bytes()) {
+                                eprintln!("error: could not write encrypted data to file '{}': {}", file_path, e);
+                                process::exit(1);
+                            } else {
+                                println!("Password encrypted to '{file_path}'.");
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("error: could not create output file '{}': {}", file_path, e);
+                            process::exit(1);
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("error: could not encrypt password: {}", e);
+                    process::exit(1);
+                }
+            }
+        }
+
+        // ---------------------------------------------------------------
+        // 3) Decrypting/verifying a password
+        // ---------------------------------------------------------------
         Commands::Decrypt {
             password,
             private_key_directory,
             key_version,
             data,
             file,
-        } => handle_decrypt(format, password, private_key_directory, key_version, data, file),
+        } => {
+            let encrypted_data = if let Some(s) = data {
+                s
+            } else if let Some(f) = file {
+                match std::fs::read_to_string(&f) {
+                    Ok(content) => content,
+                    Err(e) => {
+                        eprintln!("error: could not read file '{}': {}", f, e);
+                        process::exit(1);
+                    }
+                }
+            } else {
+                eprintln!("error: please provide encrypted data with --data or --file.");
+                process::exit(1);
+            };
+
+            let config = IronCryptConfig::default();
+            let crypt = match IronCrypt::new(&private_key_directory, &key_version, config) {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!("error: could not initialize encryption module: {}", e);
+                    process::exit(1);
+                }
+            };
+
+            match crypt.verify_password(&encrypted_data, &password) {
+                Ok(ok) => {
+                    if ok {
+                        println!("Password correct.");
+                    } else {
+                        eprintln!("error: incorrect password or hash not found.");
+                        process::exit(1);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("error: could not verify password: {}", e);
+                    process::exit(1);
+                }
+            }
+        }
+
+        // ---------------------------------------------------------------
+        // 4) Encrypting a binary file
+        // ---------------------------------------------------------------
         Commands::EncryptFile {
             input_file,
             output_file,
             public_key_directory,
             key_version,
             password,
-        } => handle_encrypt_file(format, input_file, output_file, public_key_directory, key_version, password),
-        Commands::DecryptFile {
-            input_file,
-            output_file,
-            private_key_directory,
-            key_version,
-            password,
-        } => handle_decrypt_file(format, input_file, output_file, private_key_directory, key_version, password),
+        } => {
+            // Read the binary file
+            let mut file_data = vec![];
+            match File::open(&input_file) {
+                Ok(mut f) => {
+                    if let Err(e) = f.read_to_end(&mut file_data) {
+                        eprintln!("error: could not read input file '{}': {}", input_file, e);
+                        process::exit(1);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("error: could not open input file '{}': {}", input_file, e);
+                    process::exit(1);
+                }
+            }
+
+            // Build IronCrypt
+            let config = IronCryptConfig::default();
+            let crypt = match IronCrypt::new(&public_key_directory, &key_version, config) {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!("error: could not initialize encryption module: {}", e);
+                    process::exit(1);
+                }
+            };
+
+            // Encrypt the binary data
+            match crypt.encrypt_binary_data(&file_data, &password) {
+                Ok(encrypted_json) => {
+                    // Write the JSON
+                    match File::create(&output_file) {
+                        Ok(mut f) => {
+                            if let Err(e) = f.write_all(encrypted_json.as_bytes()) {
+                                eprintln!("error: could not write encrypted file '{}': {}", output_file, e);
+                                process::exit(1);
+                            } else {
+                                println!("Binary file encrypted and saved to '{output_file}'.");
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("error: could not create output file '{}': {}", output_file, e);
+                            process::exit(1);
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("error: could not encrypt file: {}", e);
+                    process::exit(1);
+                }
+            }
+        }
+
+        // ---------------------------------------------------------------
+        // 5) Decrypting a binary file
+        // ---------------------------------------------------------------
         Commands::EncryptDir {
             input_dir,
             output_file,
             public_key_directory,
             key_version,
             password,
-        } => handle_encrypt_dir(format, input_dir, output_file, public_key_directory, key_version, password),
+        } => {
+            // 1. Archive and compress the directory in memory
+            let mut archive_data = Vec::new();
+            {
+                let encoder = GzEncoder::new(&mut archive_data, Compression::default());
+                let mut builder = Builder::new(encoder);
+                if let Err(e) = builder.append_dir_all(".", &input_dir) {
+                    eprintln!("error: could not archive directory '{}': {}", input_dir, e);
+                    process::exit(1);
+                }
+                // Finalize the archive
+                if let Err(e) = builder.into_inner() {
+                     eprintln!("error: could not finalize archive: {}", e);
+                    process::exit(1);
+                }
+            }
+
+            // 2. Encrypt the archive data
+            let config = IronCryptConfig::default();
+            let crypt = match IronCrypt::new(&public_key_directory, &key_version, config) {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!("error: could not initialize encryption module: {}", e);
+                    process::exit(1);
+                }
+            };
+
+            match crypt.encrypt_binary_data(&archive_data, &password) {
+                Ok(encrypted_json) => {
+                    if let Err(e) = std::fs::write(&output_file, encrypted_json) {
+                         eprintln!("error: could not write encrypted file '{}': {}", output_file, e);
+                        process::exit(1);
+                    } else {
+                        println!("Directory encrypted and saved to '{}'.", output_file);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("error: could not encrypt directory archive: {}", e);
+                    process::exit(1);
+                }
+            }
+        }
         Commands::DecryptDir {
             input_file,
             output_dir,
             private_key_directory,
             key_version,
             password,
-        } => handle_decrypt_dir(format, input_file, output_dir, private_key_directory, key_version, password),
+        } => {
+            // 1. Read and decrypt the file
+            let encrypted_json = match std::fs::read_to_string(&input_file) {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!("error: could not read encrypted file '{}': {}", input_file, e);
+                    process::exit(1);
+                }
+            };
+
+            let config = IronCryptConfig::default();
+            let crypt = match IronCrypt::new(&private_key_directory, &key_version, config) {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!("error: could not initialize encryption module: {}", e);
+                    process::exit(1);
+                }
+            };
+
+            let decrypted_data = match crypt.decrypt_binary_data(&encrypted_json, &password) {
+                Ok(d) => d,
+                Err(e) => {
+                    eprintln!("error: could not decrypt data: {}", e);
+                    process::exit(1);
+                }
+            };
+
+            // 2. Decompress and extract the archive
+            let gz_decoder = GzDecoder::new(decrypted_data.as_slice());
+            let mut archive = Archive::new(gz_decoder);
+            if let Err(e) = archive.unpack(&output_dir) {
+                eprintln!("error: could not extract archive to '{}': {}", output_dir, e);
+                process::exit(1);
+            }
+
+            println!("Directory decrypted and extracted to '{}'.", output_dir);
+        }
         Commands::RotateKey {
             old_version,
             new_version,
@@ -290,267 +510,153 @@ fn main() {
             key_size,
             file,
             directory,
-        } => handle_rotate_key(format, old_version, new_version, key_directory, key_size, file, directory),
-    };
+        } => {
+            // 1. Determine the new key size
+            let new_key_size = key_size.unwrap_or(2048);
 
-    if let Err(e) = result {
-        if format == OutputFormat::Json {
-            let error_response = serde_json::json!({
-                "status": "error",
-                "error": e.to_string(),
-            });
-            eprintln!("{}", serde_json::to_string(&error_response).unwrap());
-        } else {
-            eprintln!("Error: {}", e);
-        }
-        process::exit(1);
-    }
-}
+            // 2. Create IronCrypt instances for the old and new versions
+            let old_config = IronCryptConfig::default();
+            let mut new_config = IronCryptConfig::default();
+            new_config.rsa_key_size = new_key_size;
 
-fn handle_generate(format: OutputFormat, version: String, directory: String, key_size: u32) -> Result<(), anyhow::Error> {
-    if let Err(e) = std::fs::create_dir_all(&directory) {
-        return Err(anyhow::anyhow!("failed to create key directory '{}': {}", directory, e));
-    }
-    let private_key_path = format!("{}/private_key_{}.pem", directory, version);
-    let public_key_path = format!("{}/public_key_{}.pem", directory, version);
+            let old_crypt = match IronCrypt::new(&key_directory, &old_version, old_config) {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!("error: could not load old key (version {}): {}", old_version, e);
+                    process::exit(1);
+                }
+            };
 
-    let (private_key, public_key) = if format == OutputFormat::Text {
-        let spinner = ProgressBar::new_spinner();
-        spinner.set_style(
-            ProgressStyle::with_template("{spinner} {msg}")?
-                .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]),
-        );
-        spinner.set_message("Generating RSA keys...");
-        spinner.enable_steady_tick(Duration::from_millis(100));
-        let result = generate_rsa_keys(key_size)?;
-        spinner.finish_with_message("RSA keys generated.");
-        result
-    } else {
-        generate_rsa_keys(key_size)?
-    };
+            // Creating `new_crypt` will generate the new key pair if it doesn't exist
+            let _new_crypt = match IronCrypt::new(&key_directory, &new_version, new_config) {
+                 Ok(c) => c,
+                Err(e) => {
+                    eprintln!("error: could not create new key (version {}): {}", new_version, e);
+                    process::exit(1);
+                }
+            };
 
-    save_keys_to_files(&private_key, &public_key, &private_key_path, &public_key_path)?;
+            let new_public_key_path = format!("{}/public_key_{}.pem", key_directory, new_version);
+            let new_public_key = match ironcrypt::load_public_key(&new_public_key_path) {
+                 Ok(k) => k,
+                Err(e) => {
+                    eprintln!("error: could not load new public key '{}': {}", new_public_key_path, e);
+                    process::exit(1);
+                }
+            };
 
-    if format == OutputFormat::Json {
-        let response = JsonResponse {
-            status: "success",
-            data: Some(serde_json::json!({
-                "private_key_path": private_key_path,
-                "public_key_path": public_key_path,
-            })),
-        };
-        println!("{}", serde_json::to_string(&response)?);
-    } else {
-        println!("RSA keys saved successfully.");
-        println!("Private Key: {private_key_path}");
-        println!("Public Key: {public_key_path}");
-    }
-    Ok(())
-}
-
-fn handle_encrypt(format: OutputFormat, password: String, public_key_directory: String, key_version: String) -> Result<(), anyhow::Error> {
-    let config = IronCryptConfig::default();
-    let crypt = IronCrypt::new(&public_key_directory, &key_version, config)?;
-    let encrypted_hash = crypt.encrypt_password(&password)?;
-
-    if format == OutputFormat::Json {
-        println!("{}", encrypted_hash);
-    } else {
-        let file_path = "encrypted_data.json";
-        let mut file = File::create(file_path)?;
-        file.write_all(encrypted_hash.as_bytes())?;
-        println!("Password encrypted to '{file_path}'.");
-    }
-    Ok(())
-}
-
-fn handle_decrypt(format: OutputFormat, password: String, private_key_directory: String, key_version: String, data: Option<String>, file: Option<String>) -> Result<(), anyhow::Error> {
-    let encrypted_data = if let Some(s) = data {
-        s
-    } else if let Some(f) = file {
-        std::fs::read_to_string(&f)?
-    } else {
-        return Err(anyhow::anyhow!("please provide encrypted data with --data or --file."));
-    };
-
-    let config = IronCryptConfig::default();
-    let crypt = IronCrypt::new(&private_key_directory, &key_version, config)?;
-    let is_valid = crypt.verify_password(&encrypted_data, &password)?;
-
-    if format == OutputFormat::Json {
-        let response = JsonResponse {
-            status: "success",
-            data: Some(serde_json::json!({
-                "password_correct": is_valid,
-            })),
-        };
-        println!("{}", serde_json::to_string(&response)?);
-    } else {
-        if is_valid {
-            println!("Password correct.");
-        } else {
-            return Err(anyhow::anyhow!("incorrect password or hash not found."));
-        }
-    }
-    Ok(())
-}
-
-fn handle_encrypt_file(format: OutputFormat, input_file: String, output_file: String, public_key_directory: String, key_version: String, password: String) -> Result<(), anyhow::Error> {
-    let file_data = std::fs::read(&input_file)?;
-    let config = IronCryptConfig::default();
-    let crypt = IronCrypt::new(&public_key_directory, &key_version, config)?;
-    let encrypted_json = crypt.encrypt_binary_data(&file_data, &password)?;
-    std::fs::write(&output_file, encrypted_json)?;
-
-    if format == OutputFormat::Json {
-        let response = JsonResponse {
-            status: "success",
-            data: Some(serde_json::json!({
-                "input_file": input_file,
-                "output_file": output_file,
-            })),
-        };
-        println!("{}", serde_json::to_string(&response)?);
-    } else {
-        println!("Binary file encrypted and saved to '{output_file}'.");
-    }
-    Ok(())
-}
-
-fn handle_decrypt_file(format: OutputFormat, input_file: String, output_file: String, private_key_directory: String, key_version: String, password: String) -> Result<(), anyhow::Error> {
-    let encrypted_json = std::fs::read_to_string(&input_file)?;
-    let config = IronCryptConfig::default();
-    let crypt = IronCrypt::new(&private_key_directory, &key_version, config)?;
-    let plaintext_bytes = crypt.decrypt_binary_data(&encrypted_json, &password)?;
-    std::fs::write(&output_file, &plaintext_bytes)?;
-
-    if format == OutputFormat::Json {
-        let response = JsonResponse {
-            status: "success",
-            data: Some(serde_json::json!({
-                "input_file": input_file,
-                "output_file": output_file,
-                "bytes_written": plaintext_bytes.len(),
-            })),
-        };
-        println!("{}", serde_json::to_string(&response)?);
-    } else {
-        println!("Binary file decrypted to '{output_file}'.");
-    }
-    Ok(())
-}
-
-fn handle_encrypt_dir(format: OutputFormat, input_dir: String, output_file: String, public_key_directory: String, key_version: String, password: String) -> Result<(), anyhow::Error> {
-    let mut archive_data = Vec::new();
-    {
-        let encoder = GzEncoder::new(&mut archive_data, Compression::default());
-        let mut builder = Builder::new(encoder);
-        builder.append_dir_all(".", &input_dir)?;
-        builder.into_inner()?;
-    }
-
-    let config = IronCryptConfig::default();
-    let crypt = IronCrypt::new(&public_key_directory, &key_version, config)?;
-    let encrypted_json = crypt.encrypt_binary_data(&archive_data, &password)?;
-    std::fs::write(&output_file, encrypted_json)?;
-
-    if format == OutputFormat::Json {
-        let response = JsonResponse {
-            status: "success",
-            data: Some(serde_json::json!({
-                "input_dir": input_dir,
-                "output_file": output_file,
-            })),
-        };
-        println!("{}", serde_json::to_string(&response)?);
-    } else {
-        println!("Directory encrypted and saved to '{}'.", output_file);
-    }
-    Ok(())
-}
-
-fn handle_decrypt_dir(format: OutputFormat, input_file: String, output_dir: String, private_key_directory: String, key_version: String, password: String) -> Result<(), anyhow::Error> {
-    let encrypted_json = std::fs::read_to_string(&input_file)?;
-    let config = IronCryptConfig::default();
-    let crypt = IronCrypt::new(&private_key_directory, &key_version, config)?;
-    let decrypted_data = crypt.decrypt_binary_data(&encrypted_json, &password)?;
-
-    let gz_decoder = GzDecoder::new(decrypted_data.as_slice());
-    let mut archive = Archive::new(gz_decoder);
-    archive.unpack(&output_dir)?;
-
-    if format == OutputFormat::Json {
-        let response = JsonResponse {
-            status: "success",
-            data: Some(serde_json::json!({
-                "input_file": input_file,
-                "output_dir": output_dir,
-            })),
-        };
-        println!("{}", serde_json::to_string(&response)?);
-    } else {
-        println!("Directory decrypted and extracted to '{}'.", output_dir);
-    }
-    Ok(())
-}
-
-fn handle_rotate_key(format: OutputFormat, old_version: String, new_version: String, key_directory: String, key_size: Option<u32>, file: Option<String>, directory: Option<String>) -> Result<(), anyhow::Error> {
-    let new_key_size = key_size.unwrap_or(2048);
-    let old_config = IronCryptConfig::default();
-    let mut new_config = IronCryptConfig::default();
-    new_config.rsa_key_size = new_key_size;
-
-    let old_crypt = IronCrypt::new(&key_directory, &old_version, old_config)?;
-    let _new_crypt = IronCrypt::new(&key_directory, &new_version, new_config)?;
-
-    let new_public_key_path = format!("{}/public_key_{}.pem", key_directory, new_version);
-    let new_public_key = ironcrypt::load_public_key(&new_public_key_path)?;
-
-    let files_to_process = if let Some(f) = file {
-        vec![f]
-    } else if let Some(d) = directory {
-        std::fs::read_dir(&d)?
-            .filter_map(|entry| {
-                entry.ok().and_then(|e| {
-                    let path = e.path();
-                    if path.is_file() {
-                        path.to_str().map(String::from)
-                    } else {
-                        None
+            // 3. Determine the list of files to process
+            let files_to_process = if let Some(f) = file {
+                vec![f]
+            } else if let Some(d) = directory {
+                match std::fs::read_dir(&d) {
+                    Ok(entries) => entries.filter_map(|entry| {
+                        entry.ok().and_then(|e| {
+                            let path = e.path();
+                            if path.is_file() {
+                                path.to_str().map(String::from)
+                            } else {
+                                None
+                            }
+                        })
+                    }).collect(),
+                    Err(e) => {
+                        eprintln!("error: could not read directory '{}': {}", d, e);
+                        process::exit(1);
                     }
-                })
-            })
-            .collect()
-    } else {
-        return Err(anyhow::anyhow!("please specify a file (--file) or a directory (--directory)."));
-    };
+                }
+            } else {
+                eprintln!("error: please specify a file (--file) or a directory (--directory).");
+                process::exit(1);
+            };
 
-    let mut processed_files = vec![];
-    for file_path in &files_to_process {
-        let encrypted_json = std::fs::read_to_string(file_path)?;
-        let new_json = old_crypt.re_encrypt_data(&encrypted_json, &new_public_key, &new_version)?;
-        std::fs::write(file_path, new_json)?;
-        processed_files.push(file_path);
-    }
+            // 4. Process each file
+            for file_path in files_to_process {
+                println!("Processing file: {}...", file_path);
+                let encrypted_json = match std::fs::read_to_string(&file_path) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        eprintln!("warning: could not read file '{}', skipping. Reason: {}", file_path, e);
+                        continue;
+                    }
+                };
 
-    if format == OutputFormat::Json {
-        let response = JsonResponse {
-            status: "success",
-            data: Some(serde_json::json!({
-                "processed_files": processed_files,
-                "new_key_version": new_version,
-            })),
-        };
-        println!("{}", serde_json::to_string(&response)?);
-    } else {
-        println!("\nKey rotation completed successfully for {} file(s).", processed_files.len());
+                match old_crypt.re_encrypt_data(&encrypted_json, &new_public_key, &new_version) {
+                    Ok(new_json) => {
+                        if let Err(e) = std::fs::write(&file_path, new_json) {
+                            eprintln!("warning: could not rewrite file '{}', skipping. Reason: {}", file_path, e);
+                        }
+                    }
+                    Err(e) => {
+                         eprintln!("warning: could not re-encrypt file '{}', skipping. Reason: {}", file_path, e);
+                    }
+                }
+            }
+
+            println!("\nKey rotation completed successfully.");
+        }
+        Commands::DecryptFile {
+            input_file,
+            output_file,
+            private_key_directory,
+            key_version,
+            password,
+        } => {
+            // Read the encrypted JSON
+            let mut encrypted_json = String::new();
+            match File::open(&input_file) {
+                Ok(mut f) => {
+                    if let Err(e) = f.read_to_string(&mut encrypted_json) {
+                        eprintln!("error: could not read input file '{}': {}", input_file, e);
+                        process::exit(1);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("error: could not open input file '{}': {}", input_file, e);
+                    process::exit(1);
+                }
+            }
+
+            let config = IronCryptConfig::default();
+            let crypt = match IronCrypt::new(&private_key_directory, &key_version, config) {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!("error: could not initialize encryption module: {}", e);
+                    process::exit(1);
+                }
+            };
+
+            // Decrypt
+            match crypt.decrypt_binary_data(&encrypted_json, &password) {
+                Ok(plaintext_bytes) => {
+                    // Write the decrypted binary
+                    match File::create(&output_file) {
+                        Ok(mut f) => {
+                            if let Err(e) = f.write_all(&plaintext_bytes) {
+                                eprintln!("error: could not write decrypted file '{}': {}", output_file, e);
+                                process::exit(1);
+                            } else {
+                                println!("Binary file decrypted to '{output_file}'.");
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("error: could not create output file '{}': {}", output_file, e);
+                            process::exit(1);
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("error: could not decrypt file: {}", e);
+                    process::exit(1);
+                }
+            }
+        }
     }
-    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+
     use ironcrypt::config::IronCryptConfig;
     use ironcrypt::ironcrypt::IronCrypt;
     use std::fs;
@@ -564,23 +670,29 @@ mod tests {
             fs::create_dir_all(key_directory).unwrap();
         }
 
+        // Configuration
         let mut config = IronCryptConfig::default();
         config.rsa_key_size = 2048;
 
-        let crypt = IronCrypt::new(key_directory, "v1", config).expect("Failed to call IronCrypt::new");
+        // Build IronCrypt
+        // Here we use "v1" in the test, but it's just an example of usage
+        let crypt = IronCrypt::new(key_directory, "v1", config).expect("IronCrypt::new error");
 
+        // Encrypt the password
         let password = "Str0ngP@ssw0rd!";
         let encrypted = crypt
             .encrypt_password(password)
-            .expect("Failed to call encrypt_password");
+            .expect("encrypt_password error");
 
         println!("Encrypted data JSON = {}", encrypted);
 
+        // Verify
         let ok = crypt
             .verify_password(&encrypted, password)
-            .expect("Failed to call verify_password");
+            .expect("verify_password error");
         assert!(ok, "The password should be correct");
 
+        // Verify a bad password
         let bad_ok = crypt.verify_password(&encrypted, "bad_password");
         assert!(
             bad_ok.is_err(),
