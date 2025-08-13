@@ -3,6 +3,7 @@ services:
   ironcrypt:
     build: .
     container_name: ironcrypt
+    command: sh -c "ironcrypt --help && tail -f /dev/null"
     ports:
       - "${IRONCRYPT_PORT}:${IRONCRYPT_PORT}"
       - "${IRONCRYPT_METRICS_PORT}:${IRONCRYPT_METRICS_PORT}"
@@ -45,7 +46,6 @@ services:
     entrypoint: /entrypoint.sh
     ports:
       - "3100:3100"
-
 
   alertmanager:
     image: prom/alertmanager
