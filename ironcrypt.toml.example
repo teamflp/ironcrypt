@@ -1,28 +1,50 @@
-# Example configuration file for IronCrypt.
-# You can copy this file to ironcrypt.toml and customize it.
+# ===================================================================
+# IronCrypt Example Configuration
+# ===================================================================
+# Copy this file to 'ironcrypt.toml' and customize it for your needs.
 
-# RSA key size in bits.
-# Recommended values are 2048 or 4096.
+# -------------------------------------------------------------------
+# Cryptography Settings
+# -------------------------------------------------------------------
+[cryptography]
+# RSA key size in bits. Recommended: 2048 or 4096.
 rsa_key_size = 2048
 
-# Argon2 parameters for password hashing.
+# -------------------------------------------------------------------
+# Password Hashing (Argon2)
+# -------------------------------------------------------------------
 # These values control the computational cost of hashing.
 # Higher values are more secure but slower.
-argon2_memory_cost = 65536  # in KiB (64 MiB)
-argon2_time_cost = 3       # number of iterations
-argon2_parallelism = 1     # number of parallel threads
+[hashing]
+# Memory cost in KiB (e.g., 65536 = 64 MiB).
+argon2_memory_cost = 65536
+# Time cost (number of iterations).
+argon2_time_cost = 3
+# Parallelism (number of parallel threads).
+argon2_parallelism = 1
 
-# Password strength criteria.
-[password_criteria]
+# -------------------------------------------------------------------
+# Password Strength Policy
+# -------------------------------------------------------------------
+[password_policy]
+# --- Length Requirements ---
 min_length = 12
 max_length = 128
+
+# --- Character Type Requirements (Booleans) ---
+# Set to 'true' to enforce the presence of these character types.
 require_uppercase = true
 require_numbers = true
 require_special_chars = true
-# You can add disallowed patterns like this:
-# disallowed_patterns = ["password", "123456", "qwerty"]
+
+# --- Minimum Character Counts ---
+# Minimum number of characters of each type required if the above is true.
+uppercase_count = 1
+lowercase_count = 1
+digits_count = 1
+special_chars_count = 1
+
+# --- Disallowed Patterns ---
+# A list of common or weak patterns to forbid.
+# Example: disallowed_patterns = ["password", "123456", "qwerty"]
 disallowed_patterns = []
-special_chars = 1 # Minimum number of special characters
-uppercase = 1     # Minimum number of uppercase letters
-lowercase = 1     # Minimum number of lowercase letters
-digits = 1        # Minimum number of digits
