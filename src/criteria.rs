@@ -4,7 +4,7 @@ use unicode_general_category::{get_general_category, GeneralCategory};
 
 /// Defines the criteria for validating password strength.
 ///
-/// This struct is used to configure the minimum requirements a password must meet.
+/// This struct specifies the minimum and optional requirements a password must meet.
 ///
 /// # Examples
 ///
@@ -18,11 +18,29 @@ use unicode_general_category::{get_general_category, GeneralCategory};
 ///     lowercase: Some(2),
 ///     digits: Some(2),
 ///     special_chars: Some(2),
-///     disallowed_patterns: vec!["123".to_string()],
+///     disallowed_patterns: vec!["abc".to_string()],
 /// };
 ///
-/// assert!(criteria.validate("StrongPassword123!@#").is_ok());
-/// assert!(criteria.validate("weak").is_err());
+/// // ✅ Valid: meets all criteria
+/// assert!(criteria.validate("StrongPassword2024!@").is_ok());
+///
+/// // ❌ Too short
+/// assert!(criteria.validate("Short1!").is_err());
+///
+/// // ❌ Not enough uppercase letters
+/// assert!(criteria.validate("weakpassword2024!@").is_err());
+///
+/// // ❌ Not enough lowercase letters
+/// assert!(criteria.validate("PASSWORD2024!@").is_err());
+///
+/// // ❌ Not enough digits
+/// assert!(criteria.validate("PasswordNoDigits!@").is_err());
+///
+/// // ❌ Not enough special characters
+/// assert!(criteria.validate("PasswordWithDigits2024").is_err());
+///
+/// // ❌ Contains disallowed pattern "abc"
+/// assert!(criteria.validate("abcPassword2024!@").is_err());
 /// ```
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PasswordCriteria {

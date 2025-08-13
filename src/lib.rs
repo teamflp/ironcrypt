@@ -59,7 +59,9 @@ pub mod encrypt; // (maps to "encrypt.rs")
 pub mod handle_error; // (maps to "handle_error.rs")
 pub mod hashing; // (maps to "hashing.rs")
 pub mod ironcrypt; // (maps to "ironcrypt.rs")
-pub mod rsa_utils; // (maps to "rsa_utils.rs")
+pub mod metrics;
+pub mod rsa_utils;
+// (maps to "rsa_utils.rs")
 
 // 2) Re-export items you want available at the crate root
 //    The binary (main.rs) can then use `ironcrypt::{ generate_rsa_keys, ... }`

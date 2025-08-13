@@ -45,7 +45,9 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /usr/src/app
 
 # Copier le binaire depuis l'étape de construction
-COPY --from=builder /usr/src/app/target/release/ironcrypt-cli /usr/local/bin/ironcrypt-cli
+COPY --from=builder /usr/src/app/target/release/ironcrypt-cli /usr/local/bin/ironcrypt
+
+EXPOSE 9000
 
 # Définir le point d'entrée
-CMD ["ironcrypt-cli"]
+CMD ["ironcrypt"]
