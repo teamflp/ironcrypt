@@ -3,10 +3,8 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Once;
 use std::time::Instant;
 
-use metrics::histogram; // ✅ import correct
+use metrics::{histogram, counter};
 use metrics_exporter_prometheus::PrometheusBuilder;
-use metrics_macros::increment_counter;
-
 
 static INIT: Once = Once::new();
 
@@ -32,8 +30,8 @@ pub fn init_metrics() {
         let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), port);
 
         match PrometheusBuilder::new().with_http_listener(addr).install() {
-            Ok(_) => println!("✅ Prometheus exporter actif sur {}", addr),
-            Err(e) => eprintln!("❌ Échec du démarrage de l’exporter Prometheus : {}", e),
+            Ok(_) => println!("✅ Prometheus exporter actif sur {addr}"),
+            Err(e) => eprintln!("❌ Échec du démarrage de l’exporter Prometheus : {e}"),
         }
     });
 }
@@ -48,10 +46,8 @@ pub fn metrics_finish(command: &str, payload_bytes: u64, start: Instant, success
     let elapsed = start.elapsed().as_secs_f64();
     let status = if success { "ok" } else { "error" };
 
-    // ✅ On passe les labels sous forme de slice de tuples (compatible metrics 0.24.2)
-    let labels = [("command", command), ("status", status)];
-
-    histogram!("command_duration_seconds", elapsed, &labels);
-    histogram!("payload_size_bytes", payload_bytes as f64, &labels);
-    increment_counter!("commands_executed_total", &labels);
+    let labels = [("command", command.to_string()), ("status", status.to_string())];
+    histogram!("command_duration_seconds", &labels).record(elapsed);
+    histogram!("payload_size_bytes", &labels).record(payload_bytes as f64);
+    counter!("commands_executed_total", &labels).increment(1);
 }

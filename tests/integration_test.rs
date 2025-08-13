@@ -1,8 +1,15 @@
+// tests/integration_test.rs
+
 use ironcrypt::{IronCrypt, IronCryptConfig};
-use rsa::pkcs1::EncodeRsaPublicKey;
+use rsa::{RsaPrivateKey, RsaPublicKey};
+use rsa::pkcs1::{EncodeRsaPrivateKey, EncodeRsaPublicKey};
+use rsa::pkcs8::EncodePrivateKey;
 use std::fs;
 use std::io::Write;
 use std::path::Path;
+use aes_gcm::aead::OsRng;
+
+const STRONG_PASSWORD: &str = "Str0ngP@ssw0rd42!";
 
 fn setup_test_dir(dir: &str) {
     if Path::new(dir).exists() {
@@ -28,7 +35,7 @@ fn test_file_encryption_decryption() {
 
     // Encrypt
     let encrypted_json = crypt
-        .encrypt_binary_data(&fs::read(input_file).unwrap(), "file_password")
+        .encrypt_binary_data(&fs::read(input_file).unwrap(), STRONG_PASSWORD)
         .unwrap();
     fs::write(output_enc_file, encrypted_json).unwrap();
 
@@ -36,7 +43,7 @@ fn test_file_encryption_decryption() {
     let decrypted_data = crypt
         .decrypt_binary_data(
             &fs::read_to_string(output_enc_file).unwrap(),
-            "file_password",
+            STRONG_PASSWORD,
         )
         .unwrap();
     fs::write(output_dec_file, &decrypted_data).unwrap();
@@ -70,20 +77,25 @@ fn test_directory_encryption_decryption() {
     let config = IronCryptConfig::default();
     let crypt = IronCrypt::new(key_dir, "v1", config).unwrap();
 
+    // Create tar.gz archive of the directory (preserve top-level folder)
+    let archive_data: Vec<u8> = {
+        let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        {
+            let mut tar_builder = tar::Builder::new(&mut encoder);
+            // Important: store entries under `source_dir/` instead of at the root
+            tar_builder.append_dir_all(source_dir, source_dir).unwrap();
+            tar_builder.finish().unwrap();
+        }
+        encoder.finish().unwrap()
+    };
+
     // Encrypt directory
-    let mut archive_data = Vec::new();
-    {
-        let enc = flate2::write::GzEncoder::new(&mut archive_data, flate2::Compression::default());
-        let mut tar_builder = tar::Builder::new(enc);
-        tar_builder.append_dir_all(".", source_dir).unwrap();
-        tar_builder.into_inner().unwrap();
-    }
-    let encrypted_json = crypt.encrypt_binary_data(&archive_data, "").unwrap();
+    let encrypted_json = crypt.encrypt_binary_data(&archive_data, STRONG_PASSWORD).unwrap();
     fs::write(encrypted_file, encrypted_json).unwrap();
 
     // Decrypt directory
     let encrypted_content = fs::read_to_string(encrypted_file).unwrap();
-    let decrypted_data = crypt.decrypt_binary_data(&encrypted_content, "").unwrap();
+    let decrypted_data = crypt.decrypt_binary_data(&encrypted_content, STRONG_PASSWORD).unwrap();
 
     let dec = flate2::read::GzDecoder::new(decrypted_data.as_slice());
     let mut archive = tar::Archive::new(dec);
@@ -97,7 +109,6 @@ fn test_directory_encryption_decryption() {
     let original_file2 = fs::read_to_string(Path::new(source_dir).join("subdir/file2.txt")).unwrap();
     let restored_file2 = fs::read_to_string(Path::new(restored_dir).join(source_dir).join("subdir/file2.txt")).unwrap();
     assert_eq!(original_file2, restored_file2);
-
 
     // Cleanup
     fs::remove_dir_all(key_dir).unwrap();
@@ -114,7 +125,7 @@ fn test_key_rotation() {
     // 1. Create initial version (v1)
     let config_v1 = IronCryptConfig::default();
     let crypt_v1 = IronCrypt::new(key_dir, "v1", config_v1).unwrap();
-    let encrypted_data_v1 = crypt_v1.encrypt_password("my_password").unwrap();
+    let encrypted_data_v1 = crypt_v1.encrypt_password(STRONG_PASSWORD).unwrap();
 
     // 2. Create a new key version (v2)
     let mut config_v2 = IronCryptConfig::default();
@@ -122,7 +133,7 @@ fn test_key_rotation() {
     let _crypt_v2 = IronCrypt::new(key_dir, "v2", config_v2).unwrap();
 
     // 3. Load the new public key
-    let new_pub_key_path = format!("{}/public_key_v2.pem", key_dir);
+    let new_pub_key_path = format!("{key_dir}/public_key_v2.pem");
     let new_pub_key = ironcrypt::load_public_key(&new_pub_key_path).unwrap();
 
     // 4. Re-encrypt the data from v1 to v2
@@ -133,7 +144,7 @@ fn test_key_rotation() {
     // 5. Verify with the new key
     let crypt_v2_verify = IronCrypt::new(key_dir, "v2", IronCryptConfig::default()).unwrap();
     let is_valid = crypt_v2_verify
-        .verify_password(&re_encrypted_data, "my_password")
+        .verify_password(&re_encrypted_data, STRONG_PASSWORD)
         .unwrap();
     assert!(is_valid);
 
@@ -146,31 +157,36 @@ fn test_load_pkcs1_and_pkcs8_keys() {
     let key_dir = "test_keys_format";
     setup_test_dir(key_dir);
 
-    // Copy fixtures
-    fs::copy("tests/fixtures/pkcs1_v1_private.pem", format!("{}/private_key_v1.pem", key_dir)).unwrap();
-    fs::copy("tests/fixtures/pkcs8_v1_private.pem", format!("{}/private_key_v2.pem", key_dir)).unwrap();
+    // Generate PKCS#1 (v1) private key and write to PEM
+    let mut rng = OsRng;
+    let pkcs1_priv = RsaPrivateKey::new(&mut rng, 2048).unwrap();
+    let pkcs1_priv_pem = pkcs1_priv.to_pkcs1_pem(Default::default()).unwrap();
+    fs::write(format!("{key_dir}/private_key_v1.pem"), pkcs1_priv_pem.as_bytes()).unwrap();
 
-    // Manually create public keys for them to be sure they match
-    let pkcs1_priv = ironcrypt::load_private_key(&format!("{}/private_key_v1.pem", key_dir)).unwrap();
-    let pkcs1_pub = rsa::RsaPublicKey::from(&pkcs1_priv);
+    // Generate matching public key (PKCS#1) for v1
+    let pkcs1_pub = RsaPublicKey::from(&pkcs1_priv);
     let pkcs1_pub_pem = pkcs1_pub.to_pkcs1_pem(Default::default()).unwrap();
-    fs::write(format!("{}/public_key_v1.pem", key_dir), pkcs1_pub_pem).unwrap();
+    fs::write(format!("{key_dir}/public_key_v1.pem"), pkcs1_pub_pem.as_bytes()).unwrap();
 
-    let pkcs8_priv = ironcrypt::load_private_key(&format!("{}/private_key_v2.pem", key_dir)).unwrap();
-    let pkcs8_pub = rsa::RsaPublicKey::from(&pkcs8_priv);
+    // Generate PKCS#8 (v2) private key and write to PEM
+    let pkcs8_priv = RsaPrivateKey::new(&mut rng, 2048).unwrap();
+    let pkcs8_priv_pem = pkcs8_priv.to_pkcs8_pem(Default::default()).unwrap();
+    fs::write(format!("{key_dir}/private_key_v2.pem"), pkcs8_priv_pem.as_bytes()).unwrap();
+
+    // Generate matching public key (PKCS#1) for v2
+    let pkcs8_pub = RsaPublicKey::from(&pkcs8_priv);
     let pkcs8_pub_pem = pkcs8_pub.to_pkcs1_pem(Default::default()).unwrap();
-    fs::write(format!("{}/public_key_v2.pem", key_dir), pkcs8_pub_pem).unwrap();
-
+    fs::write(format!("{key_dir}/public_key_v2.pem"), pkcs8_pub_pem.as_bytes()).unwrap();
 
     // Test PKCS#1
     let crypt_v1 = IronCrypt::new(key_dir, "v1", IronCryptConfig::default()).unwrap();
-    let encrypted_v1 = crypt_v1.encrypt_password("test_pkcs1").unwrap();
-    assert!(crypt_v1.verify_password(&encrypted_v1, "test_pkcs1").unwrap());
+    let encrypted_v1 = crypt_v1.encrypt_password(STRONG_PASSWORD).unwrap();
+    assert!(crypt_v1.verify_password(&encrypted_v1, STRONG_PASSWORD).unwrap());
 
     // Test PKCS#8
     let crypt_v2 = IronCrypt::new(key_dir, "v2", IronCryptConfig::default()).unwrap();
-    let encrypted_v2 = crypt_v2.encrypt_password("test_pkcs8").unwrap();
-    assert!(crypt_v2.verify_password(&encrypted_v2, "test_pkcs8").unwrap());
+    let encrypted_v2 = crypt_v2.encrypt_password(STRONG_PASSWORD).unwrap();
+    assert!(crypt_v2.verify_password(&encrypted_v2, STRONG_PASSWORD).unwrap());
 
     // Cleanup
     fs::remove_dir_all(key_dir).unwrap();

@@ -15,6 +15,8 @@ use std::process;
 use std::time::Duration;
 use tar::{Archive, Builder};
 
+mod metrics;
+
 #[derive(Parser)]
 #[command(
     name = "ironcrypt",
@@ -207,6 +209,7 @@ enum Commands {
 }
 
 fn main() {
+    metrics::init_metrics();
     let args = Cli::parse();
 
     match args.command {
@@ -265,11 +268,15 @@ fn main() {
             public_key_directory,
             key_version,
         } => {
+            let start = metrics::metrics_start();
+            let payload_size = password.len() as u64;
+
             let config = IronCryptConfig::default();
             let crypt = match IronCrypt::new(&public_key_directory, &key_version, config) {
                 Ok(c) => c,
                 Err(e) => {
                     eprintln!("error: could not initialize encryption module: {}", e);
+                    metrics::metrics_finish("encrypt", payload_size, start, false);
                     process::exit(1);
                 }
             };
@@ -280,19 +287,23 @@ fn main() {
                         Ok(mut file) => {
                             if let Err(e) = file.write_all(encrypted_hash.as_bytes()) {
                                 eprintln!("error: could not write encrypted data to file '{}': {}", file_path, e);
+                                metrics::metrics_finish("encrypt", payload_size, start, false);
                                 process::exit(1);
                             } else {
                                 println!("Password encrypted to '{file_path}'.");
+                                metrics::metrics_finish("encrypt", payload_size, start, true);
                             }
                         }
                         Err(e) => {
                             eprintln!("error: could not create output file '{}': {}", file_path, e);
+                            metrics::metrics_finish("encrypt", payload_size, start, false);
                             process::exit(1);
                         }
                     }
                 }
                 Err(e) => {
                     eprintln!("error: could not encrypt password: {}", e);
+                    metrics::metrics_finish("encrypt", payload_size, start, false);
                     process::exit(1);
                 }
             }
@@ -308,6 +319,7 @@ fn main() {
             data,
             file,
         } => {
+            let start = metrics::metrics_start();
             let encrypted_data = if let Some(s) = data {
                 s
             } else if let Some(f) = file {
@@ -315,19 +327,24 @@ fn main() {
                     Ok(content) => content,
                     Err(e) => {
                         eprintln!("error: could not read file '{}': {}", f, e);
+                        metrics::metrics_finish("decrypt", 0, start, false);
                         process::exit(1);
                     }
                 }
             } else {
                 eprintln!("error: please provide encrypted data with --data or --file.");
+                metrics::metrics_finish("decrypt", 0, start, false);
                 process::exit(1);
             };
+
+            let payload_size = encrypted_data.len() as u64;
 
             let config = IronCryptConfig::default();
             let crypt = match IronCrypt::new(&private_key_directory, &key_version, config) {
                 Ok(c) => c,
                 Err(e) => {
                     eprintln!("error: could not initialize encryption module: {}", e);
+                    metrics::metrics_finish("decrypt", payload_size, start, false);
                     process::exit(1);
                 }
             };
@@ -336,13 +353,16 @@ fn main() {
                 Ok(ok) => {
                     if ok {
                         println!("Password correct.");
+                        metrics::metrics_finish("decrypt", payload_size, start, true);
                     } else {
                         eprintln!("error: incorrect password or hash not found.");
+                        metrics::metrics_finish("decrypt", payload_size, start, false);
                         process::exit(1);
                     }
                 }
                 Err(e) => {
                     eprintln!("error: could not verify password: {}", e);
+                    metrics::metrics_finish("decrypt", payload_size, start, false);
                     process::exit(1);
                 }
             }
@@ -358,20 +378,25 @@ fn main() {
             key_version,
             password,
         } => {
+            let start = metrics::metrics_start();
             // Read the binary file
             let mut file_data = vec![];
             match File::open(&input_file) {
                 Ok(mut f) => {
                     if let Err(e) = f.read_to_end(&mut file_data) {
                         eprintln!("error: could not read input file '{}': {}", input_file, e);
+                        metrics::metrics_finish("encrypt_file", 0, start, false);
                         process::exit(1);
                     }
                 }
                 Err(e) => {
                     eprintln!("error: could not open input file '{}': {}", input_file, e);
+                    metrics::metrics_finish("encrypt_file", 0, start, false);
                     process::exit(1);
                 }
             }
+
+            let payload_size = file_data.len() as u64;
 
             // Build IronCrypt
             let config = IronCryptConfig::default();
@@ -379,6 +404,7 @@ fn main() {
                 Ok(c) => c,
                 Err(e) => {
                     eprintln!("error: could not initialize encryption module: {}", e);
+                    metrics::metrics_finish("encrypt_file", payload_size, start, false);
                     process::exit(1);
                 }
             };
@@ -391,19 +417,23 @@ fn main() {
                         Ok(mut f) => {
                             if let Err(e) = f.write_all(encrypted_json.as_bytes()) {
                                 eprintln!("error: could not write encrypted file '{}': {}", output_file, e);
+                                metrics::metrics_finish("encrypt_file", payload_size, start, false);
                                 process::exit(1);
                             } else {
                                 println!("Binary file encrypted and saved to '{output_file}'.");
+                                metrics::metrics_finish("encrypt_file", payload_size, start, true);
                             }
                         }
                         Err(e) => {
                             eprintln!("error: could not create output file '{}': {}", output_file, e);
+                            metrics::metrics_finish("encrypt_file", payload_size, start, false);
                             process::exit(1);
                         }
                     }
                 }
                 Err(e) => {
                     eprintln!("error: could not encrypt file: {}", e);
+                    metrics::metrics_finish("encrypt_file", payload_size, start, false);
                     process::exit(1);
                 }
             }
@@ -419,6 +449,7 @@ fn main() {
             key_version,
             password,
         } => {
+            let start = metrics::metrics_start();
             // 1. Archive and compress the directory in memory
             let mut archive_data = Vec::new();
             {
@@ -426,14 +457,18 @@ fn main() {
                 let mut builder = Builder::new(encoder);
                 if let Err(e) = builder.append_dir_all(".", &input_dir) {
                     eprintln!("error: could not archive directory '{}': {}", input_dir, e);
+                    metrics::metrics_finish("encrypt_dir", 0, start, false);
                     process::exit(1);
                 }
                 // Finalize the archive
                 if let Err(e) = builder.into_inner() {
-                     eprintln!("error: could not finalize archive: {}", e);
+                    eprintln!("error: could not finalize archive: {}", e);
+                    metrics::metrics_finish("encrypt_dir", 0, start, false);
                     process::exit(1);
                 }
             }
+
+            let payload_size = archive_data.len() as u64;
 
             // 2. Encrypt the archive data
             let config = IronCryptConfig::default();
@@ -441,6 +476,7 @@ fn main() {
                 Ok(c) => c,
                 Err(e) => {
                     eprintln!("error: could not initialize encryption module: {}", e);
+                    metrics::metrics_finish("encrypt_dir", payload_size, start, false);
                     process::exit(1);
                 }
             };
@@ -448,14 +484,17 @@ fn main() {
             match crypt.encrypt_binary_data(&archive_data, &password) {
                 Ok(encrypted_json) => {
                     if let Err(e) = std::fs::write(&output_file, encrypted_json) {
-                         eprintln!("error: could not write encrypted file '{}': {}", output_file, e);
+                        eprintln!("error: could not write encrypted file '{}': {}", output_file, e);
+                        metrics::metrics_finish("encrypt_dir", payload_size, start, false);
                         process::exit(1);
                     } else {
                         println!("Directory encrypted and saved to '{}'.", output_file);
+                        metrics::metrics_finish("encrypt_dir", payload_size, start, true);
                     }
                 }
                 Err(e) => {
                     eprintln!("error: could not encrypt directory archive: {}", e);
+                    metrics::metrics_finish("encrypt_dir", payload_size, start, false);
                     process::exit(1);
                 }
             }
@@ -467,20 +506,25 @@ fn main() {
             key_version,
             password,
         } => {
+            let start = metrics::metrics_start();
             // 1. Read and decrypt the file
             let encrypted_json = match std::fs::read_to_string(&input_file) {
                 Ok(c) => c,
                 Err(e) => {
                     eprintln!("error: could not read encrypted file '{}': {}", input_file, e);
+                    metrics::metrics_finish("decrypt_dir", 0, start, false);
                     process::exit(1);
                 }
             };
+
+            let payload_size = encrypted_json.len() as u64;
 
             let config = IronCryptConfig::default();
             let crypt = match IronCrypt::new(&private_key_directory, &key_version, config) {
                 Ok(c) => c,
                 Err(e) => {
                     eprintln!("error: could not initialize encryption module: {}", e);
+                    metrics::metrics_finish("decrypt_dir", payload_size, start, false);
                     process::exit(1);
                 }
             };
@@ -489,6 +533,7 @@ fn main() {
                 Ok(d) => d,
                 Err(e) => {
                     eprintln!("error: could not decrypt data: {}", e);
+                    metrics::metrics_finish("decrypt_dir", payload_size, start, false);
                     process::exit(1);
                 }
             };
@@ -498,10 +543,12 @@ fn main() {
             let mut archive = Archive::new(gz_decoder);
             if let Err(e) = archive.unpack(&output_dir) {
                 eprintln!("error: could not extract archive to '{}': {}", output_dir, e);
+                metrics::metrics_finish("decrypt_dir", payload_size, start, false);
                 process::exit(1);
             }
 
             println!("Directory decrypted and extracted to '{}'.", output_dir);
+            metrics::metrics_finish("decrypt_dir", payload_size, start, true);
         }
         Commands::RotateKey {
             old_version,
@@ -511,6 +558,9 @@ fn main() {
             file,
             directory,
         } => {
+            let start = metrics::metrics_start();
+            let payload_size = 0; // Key rotation is a management op
+
             // 1. Determine the new key size
             let new_key_size = key_size.unwrap_or(2048);
 
@@ -523,24 +573,27 @@ fn main() {
                 Ok(c) => c,
                 Err(e) => {
                     eprintln!("error: could not load old key (version {}): {}", old_version, e);
+                    metrics::metrics_finish("rotate_key", payload_size, start, false);
                     process::exit(1);
                 }
             };
 
             // Creating `new_crypt` will generate the new key pair if it doesn't exist
             let _new_crypt = match IronCrypt::new(&key_directory, &new_version, new_config) {
-                 Ok(c) => c,
+                Ok(c) => c,
                 Err(e) => {
                     eprintln!("error: could not create new key (version {}): {}", new_version, e);
+                    metrics::metrics_finish("rotate_key", payload_size, start, false);
                     process::exit(1);
                 }
             };
 
             let new_public_key_path = format!("{}/public_key_{}.pem", key_directory, new_version);
             let new_public_key = match ironcrypt::load_public_key(&new_public_key_path) {
-                 Ok(k) => k,
+                Ok(k) => k,
                 Err(e) => {
                     eprintln!("error: could not load new public key '{}': {}", new_public_key_path, e);
+                    metrics::metrics_finish("rotate_key", payload_size, start, false);
                     process::exit(1);
                 }
             };
@@ -550,23 +603,27 @@ fn main() {
                 vec![f]
             } else if let Some(d) = directory {
                 match std::fs::read_dir(&d) {
-                    Ok(entries) => entries.filter_map(|entry| {
-                        entry.ok().and_then(|e| {
-                            let path = e.path();
-                            if path.is_file() {
-                                path.to_str().map(String::from)
-                            } else {
-                                None
-                            }
+                    Ok(entries) => entries
+                        .filter_map(|entry| {
+                            entry.ok().and_then(|e| {
+                                let path = e.path();
+                                if path.is_file() {
+                                    path.to_str().map(String::from)
+                                } else {
+                                    None
+                                }
+                            })
                         })
-                    }).collect(),
+                        .collect(),
                     Err(e) => {
                         eprintln!("error: could not read directory '{}': {}", d, e);
+                        metrics::metrics_finish("rotate_key", payload_size, start, false);
                         process::exit(1);
                     }
                 }
             } else {
                 eprintln!("error: please specify a file (--file) or a directory (--directory).");
+                metrics::metrics_finish("rotate_key", payload_size, start, false);
                 process::exit(1);
             };
 
@@ -576,7 +633,10 @@ fn main() {
                 let encrypted_json = match std::fs::read_to_string(&file_path) {
                     Ok(c) => c,
                     Err(e) => {
-                        eprintln!("warning: could not read file '{}', skipping. Reason: {}", file_path, e);
+                        eprintln!(
+                            "warning: could not read file '{}', skipping. Reason: {}",
+                            file_path, e
+                        );
                         continue;
                     }
                 };
@@ -584,16 +644,23 @@ fn main() {
                 match old_crypt.re_encrypt_data(&encrypted_json, &new_public_key, &new_version) {
                     Ok(new_json) => {
                         if let Err(e) = std::fs::write(&file_path, new_json) {
-                            eprintln!("warning: could not rewrite file '{}', skipping. Reason: {}", file_path, e);
+                            eprintln!(
+                                "warning: could not rewrite file '{}', skipping. Reason: {}",
+                                file_path, e
+                            );
                         }
                     }
                     Err(e) => {
-                         eprintln!("warning: could not re-encrypt file '{}', skipping. Reason: {}", file_path, e);
+                        eprintln!(
+                            "warning: could not re-encrypt file '{}', skipping. Reason: {}",
+                            file_path, e
+                        );
                     }
                 }
             }
 
             println!("\nKey rotation completed successfully.");
+            metrics::metrics_finish("rotate_key", payload_size, start, true);
         }
         Commands::DecryptFile {
             input_file,
@@ -602,26 +669,32 @@ fn main() {
             key_version,
             password,
         } => {
+            let start = metrics::metrics_start();
             // Read the encrypted JSON
             let mut encrypted_json = String::new();
             match File::open(&input_file) {
                 Ok(mut f) => {
                     if let Err(e) = f.read_to_string(&mut encrypted_json) {
                         eprintln!("error: could not read input file '{}': {}", input_file, e);
+                        metrics::metrics_finish("decrypt_file", 0, start, false);
                         process::exit(1);
                     }
                 }
                 Err(e) => {
                     eprintln!("error: could not open input file '{}': {}", input_file, e);
+                    metrics::metrics_finish("decrypt_file", 0, start, false);
                     process::exit(1);
                 }
             }
+
+            let payload_size = encrypted_json.len() as u64;
 
             let config = IronCryptConfig::default();
             let crypt = match IronCrypt::new(&private_key_directory, &key_version, config) {
                 Ok(c) => c,
                 Err(e) => {
                     eprintln!("error: could not initialize encryption module: {}", e);
+                    metrics::metrics_finish("decrypt_file", payload_size, start, false);
                     process::exit(1);
                 }
             };
@@ -634,19 +707,23 @@ fn main() {
                         Ok(mut f) => {
                             if let Err(e) = f.write_all(&plaintext_bytes) {
                                 eprintln!("error: could not write decrypted file '{}': {}", output_file, e);
+                                metrics::metrics_finish("decrypt_file", payload_size, start, false);
                                 process::exit(1);
                             } else {
                                 println!("Binary file decrypted to '{output_file}'.");
+                                metrics::metrics_finish("decrypt_file", payload_size, start, true);
                             }
                         }
                         Err(e) => {
                             eprintln!("error: could not create output file '{}': {}", output_file, e);
+                            metrics::metrics_finish("decrypt_file", payload_size, start, false);
                             process::exit(1);
                         }
                     }
                 }
                 Err(e) => {
                     eprintln!("error: could not decrypt file: {}", e);
+                    metrics::metrics_finish("decrypt_file", payload_size, start, false);
                     process::exit(1);
                 }
             }
