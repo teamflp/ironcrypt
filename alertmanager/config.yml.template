@@ -1,0 +1,14 @@
+global:
+  smtp_smarthost: '${SMTP_SMARTHOST}'
+  smtp_from: '${SMTP_FROM}'
+  smtp_auth_username: '${SMTP_AUTH_USERNAME}'
+  smtp_auth_password: '${SMTP_AUTH_PASSWORD}'
+
+route:
+  receiver: 'gmail'
+
+receivers:
+  - name: 'gmail'
+    email_configs:
+      - to: 'destinataire@example.com'  # Remplace par ton email cible
+        send_resolved: true

@@ -1,16 +1,15 @@
-version: '3.9'
-
 services:
 
   ironcrypt:
     build: .
     container_name: ironcrypt
     ports:
-      - "8080:8080"
-      - "9000:9000"
+      - "${IRONCRYPT_PORT}:${IRONCRYPT_PORT}"
+      - "${IRONCRYPT_METRICS_PORT}:${IRONCRYPT_METRICS_PORT}"
     environment:
-      IRONCRYPT_METRICS_ENABLED: "true"
-      IRONCRYPT_METRICS_PORT: "9000"
+      IRONCRYPT_PORT: "${IRONCRYPT_PORT}"
+      IRONCRYPT_METRICS_ENABLED: "${IRONCRYPT_METRICS_ENABLED}"
+      IRONCRYPT_METRICS_PORT: "${IRONCRYPT_METRICS_PORT}"
     logging:
       driver: loki
       options:
@@ -35,14 +34,28 @@ services:
 
   loki:
     image: grafana/loki:2.9.4
-    ports:
-      - "3100:3100"
-    volumes:
-      - ./loki/loki-config.yml:/etc/loki/local-config.yaml
+    command: -config.file=/etc/loki/local-config.yml.template
+    env_file: .env
+      volumes:
+        - ./loki/loki-config.yml.template:/etc/loki/local-config.yml.template:ro
+        - ./loki/loki-data/chunks:/loki/chunks
+        - ./loki/loki-data/index:/loki/index
+        - ./loki/loki-data/cache:/loki/boltdb-cache
+        - ./loki/loki-data/compactor:/loki/compactor
+        - ./loki/entrypoint.sh:/entrypoint.sh:ro
+      entrypoint: /entrypoint.sh
+      ports:
+        - "3100:3100"
 
   alertmanager:
     image: prom/alertmanager
+    container_name: alertmanager
+    env_file: .env
+    volumes:
+      - ./alertmanager/config.yml.template:/etc/alertmanager/config.yml.template:ro
+      - ./alertmanager/entrypoint.sh:/entrypoint.sh:ro
+    entrypoint: /entrypoint.sh
     ports:
       - "9093:9093"
-    volumes:
-      - ./alertmanager/config.yml:/etc/alertmanager/config.yml
+
+
