@@ -5,3 +5,9 @@
 /demo
 /Zpoubelle
 encrypted_data.json
+
+# Ignorer les fichiers d'environnement
+.env
+
+# Ignorer le fichier de configuration local
+ironcrypt.toml
