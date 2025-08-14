@@ -1,5 +1,0 @@
-server:
-  http_listen_port: 3100
-
-promtail:
-  enabled: false

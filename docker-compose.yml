@@ -25,13 +25,14 @@ services:
 
   grafana:
     image: grafana/grafana
-    ports:
-      - "3000:3000"
+    env_file: .env
     depends_on:
       - prometheus
       - loki
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning
+    expose:
+      - "3000"
 
   loki:
     image: grafana/loki:2.9.4
@@ -58,4 +59,20 @@ services:
     ports:
       - "9093:9093"
 
+  nginx:
+    image: nginx:alpine
+    container_name: grafana-proxy
+    env_file: .env
+    depends_on:
+      - grafana
+    ports:
+      - "${GRAFANA_PUBLIC_PORT}:443"
+      - "8081:80" # accès HTTP en clair si besoin mais redirection auto vers HTTPS
+    volumes:
+      - ./nginx/nginx.conf.template:/etc/nginx/nginx.conf.template:ro
+      - ./nginx/entrypoint.sh:/entrypoint.sh:ro
+      - ./certs:/etc/nginx/certs:ro
+    entrypoint: /entrypoint.sh
 
+volumes:
+  grafana-data:
