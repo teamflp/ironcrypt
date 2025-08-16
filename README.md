@@ -89,6 +89,7 @@ Ici, l'objectif est de vérifier si le mot de passe fourni par l'utilisateur cor
 
 Ce workflow garantit que même si votre base de données était compromise, les mots de passe des utilisateurs resteraient inutilisables par un attaquant, car le mot de passe original n'y est jamais stocké.
 
+
 ### File Encryption/Decryption
 
 ![File Workflow](images/workflow-file.png)
@@ -116,6 +117,7 @@ Ce processus utilise également un chiffrement d'enveloppe (AES + RSA) pour gara
 ### Directory Encryption/Decryption
 
 ![Directory Workflow](images/workflow-directory.png)
+
 
 Le chiffrement d'un répertoire entier se base sur le workflow de chiffrement de fichier, avec une étape de préparation supplémentaire.
 
@@ -314,8 +316,182 @@ You can also use `ironcrypt` as a library in your Rust projects. Add it to your 
 ```toml
 [dependencies]
 ironcrypt = "0.1.0" # Replace with the desired version from crates.io
+
 ```
 
+#### Encrypting and Verifying a Password
+```rust
+use ironcrypt::{IronCrypt, IronCryptConfig, IronCryptError};
+
+fn main() -> Result<(), IronCryptError> {
+    // Initialize IronCrypt
+    let config = IronCryptConfig::default();
+    let crypt = IronCrypt::new("keys", "v1", config)?;
+
+    // Encrypt a password
+    let password = "My$ecureP@ssw0rd!";
+    let encrypted_data = crypt.encrypt_password(password)?;
+    println!("Password encrypted!");
+
+    // Verify the password
+    let is_valid = crypt.verify_password(&encrypted_data, password)?;
+    assert!(is_valid);
+    println!("Password verification successful!");
+
+    // Clean up keys for this example
+    std::fs::remove_dir_all("keys")?;
+    Ok(())
+}
+```
+
+#### Encrypting and Decrypting a File
+```rust
+use ironcrypt::{IronCrypt, IronCryptConfig, IronCryptError};
+use std::fs;
+
+fn main() -> Result<(), IronCryptError> {
+    // Initialize IronCrypt
+    let config = IronCryptConfig::default();
+    let crypt = IronCrypt::new("keys", "v1", config)?;
+
+    // Encrypt a file
+    let file_data = b"This is the content of my secret file.";
+    let encrypted_file = crypt.encrypt_binary_data(file_data, "file_password")?;
+    fs::write("secret.enc", encrypted_file).unwrap();
+    println!("File encrypted!");
+
+    // Decrypt the file
+    let encrypted_content = fs::read_to_string("secret.enc").unwrap();
+    let decrypted_data = crypt.decrypt_binary_data(&encrypted_content, "file_password")?;
+    assert_eq!(file_data, &decrypted_data[..]);
+    println!("File decrypted successfully!");
+
+    // Clean up
+    std::fs::remove_dir_all("keys")?;
+    std::fs::remove_file("secret.enc")?;
+    Ok(())
+}
+```
+
+---
+
+## Database Integration Examples
+
+Here are some examples of how to use `ironcrypt` with popular web frameworks and a PostgreSQL database. These examples use the `sqlx` crate for database interaction.
+
+### Actix-web Example
+
+This example shows how to create a simple web service with `actix-web` that can register and log in users.
+
+**Dependencies:**
+```toml
+[dependencies]
+ironcrypt = "0.1.0"
+actix-web = "4"
+sqlx = { version = "0.7", features = ["runtime-async-std-native-tls", "postgres"] }
+serde = { version = "1.0", features = ["derive"] }
+```
+
+**Code:**
+```rust
+use actix_web::{web, App, HttpServer, Responder, HttpResponse};
+use sqlx::postgres::PgPoolOptions;
+use sqlx::PgPool;
+use ironcrypt::{IronCrypt, IronCryptConfig};
+use serde::Deserialize;
+
+#[derive(Deserialize)]
+struct User {
+    username: String,
+    password: String,
+}
+
+async fn register(user: web::Json<User>, pool: web::Data<PgPool>, crypt: web::Data<IronCrypt>) -> impl Responder {
+    let encrypted_password = match crypt.encrypt_password(&user.password) {
+        Ok(p) => p,
+        Err(_) => return HttpResponse::InternalServerError().finish(),
+    };
+
+    let result = sqlx::query("INSERT INTO users (username, password) VALUES ($1, $2)")
+        .bind(&user.username)
+        .bind(&encrypted_password)
+        .execute(pool.get_ref())
+        .await;
+
+    match result {
+        Ok(_) => HttpResponse::Ok().body("User created"),
+        Err(_) => HttpResponse::InternalServerError().finish(),
+    }
+}
+
+async fn login(user: web::Json<User>, pool: web::Data<PgPool>, crypt: web::Data<IronCrypt>) -> impl Responder {
+    let result: Result<(String,), sqlx::Error> = sqlx::query_as("SELECT password FROM users WHERE username = $1")
+        .bind(&user.username)
+        .fetch_one(pool.get_ref())
+        .await;
+
+    let stored_password = match result {
+        Ok((p,)) => p,
+        Err(_) => return HttpResponse::Unauthorized().finish(),
+    };
+
+    match crypt.verify_password(&stored_password, &user.password) {
+        Ok(true) => HttpResponse::Ok().body("Login successful"),
+        Ok(false) => HttpResponse::Unauthorized().finish(),
+        Err(_) => HttpResponse::InternalServerError().finish(),
+    }
+}
+
+#[actix_web::main]
+async fn main() -> std::io::Result<()> {
+    let database_url = "postgres://user:password@localhost/database";
+    let pool = PgPoolOptions::new()
+        .max_connections(5)
+        .connect(&database_url)
+        .await
+        .expect("Failed to create pool.");
+
+    let config = IronCryptConfig::default();
+    let crypt = IronCrypt::new("keys", "v1", config).expect("Failed to initialize IronCrypt");
+
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS users (
+            id SERIAL PRIMARY KEY,
+            username TEXT NOT NULL UNIQUE,
+            password TEXT NOT NULL
+        )"
+    )
+    .execute(&pool)
+    .await
+    .expect("Failed to create table.");
+
+    HttpServer::new(move || {
+        App::new()
+            .app_data(web::Data::new(pool.clone()))
+            .app_data(web::Data::new(crypt.clone()))
+            .route("/register", web::post().to(register))
+            .route("/login", web::post().to(login))
+    })
+    .bind("127.0.0.1:8080")?
+    .run()
+    .await
+}
+```
+
+### Rocket Example
+
+This example shows how to achieve the same functionality using the `rocket` framework.
+
+**Dependencies:**
+```toml
+[dependencies]
+ironcrypt = "0.1.0"
+rocket = { version = "0.5.0-rc.2", features = ["json"] }
+sqlx = { version = "0.7", features = ["runtime-tokio-native-tls", "postgres"] }
+serde = { version = "1.0", features = ["derive"] }
+```
+
+```
 #### Encrypting and Verifying a Password
 ```rust
 use ironcrypt::{IronCrypt, IronCryptConfig, IronCryptError};
