@@ -178,7 +178,7 @@ impl IronCrypt {
     }
 
     /// Decrypts a JSON (base64) representing binary data
-    /// and returns a Vec<u8> (the original binary).
+    /// and returns a `Vec<u8>` (the original binary).
     pub fn decrypt_binary_data(
         &self,
         encrypted_json: &str,
