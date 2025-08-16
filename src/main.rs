@@ -282,24 +282,9 @@ fn main() {
             };
             match crypt.encrypt_password(&password) {
                 Ok(encrypted_hash) => {
-                    let file_path = "encrypted_data.json";
-                    match File::create(file_path) {
-                        Ok(mut file) => {
-                            if let Err(e) = file.write_all(encrypted_hash.as_bytes()) {
-                                eprintln!("error: could not write encrypted data to file '{}': {}", file_path, e);
-                                metrics::metrics_finish("encrypt", payload_size, start, false);
-                                process::exit(1);
-                            } else {
-                                println!("Password encrypted to '{file_path}'.");
-                                metrics::metrics_finish("encrypt", payload_size, start, true);
-                            }
-                        }
-                        Err(e) => {
-                            eprintln!("error: could not create output file '{}': {}", file_path, e);
-                            metrics::metrics_finish("encrypt", payload_size, start, false);
-                            process::exit(1);
-                        }
-                    }
+                    // Print the encrypted JSON to standard output
+                    println!("{}", encrypted_hash);
+                    metrics::metrics_finish("encrypt", payload_size, start, true);
                 }
                 Err(e) => {
                     eprintln!("error: could not encrypt password: {}", e);
