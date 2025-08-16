@@ -1,6 +1,12 @@
 server:
   http_listen_port: 3100
 
+clients:
+  - url: ${GRAFANA_CLOUD_LOKI_URL}
+    basic_auth:
+      username: ${GRAFANA_CLOUD_LOKI_USER}
+      password: ${GRAFANA_CLOUD_LOKI_API_KEY}
+
 ingester:
   lifecycler:
     ring:

@@ -15,54 +15,54 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    # Installer Rust
-    - name: Set up Rust
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: stable
-        override: true
+      # Installer Rust
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
 
-    # Installer les dépendances système
-    - name: Install Dependencies
-      run: sudo apt-get update && sudo apt-get install -y pkg-config libssl-dev
+      # Installer les dépendances système
+      - name: Install Dependencies
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libssl-dev
 
-    # Mettre en cache le dossier cargo registry
-    - name: Cache cargo registry
-      uses: actions/cache@v3
-      with:
-        path: ~/.cargo/registry
-        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-cargo-registry-
+      # Mettre en cache le dossier cargo registry
+      - name: Cache cargo registry
+        uses: actions/cache@v3
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-registry-
 
-    # Mettre en cache le dossier target
-    - name: Cache cargo build
-      uses: actions/cache@v3
-      with:
-        path: target
-        key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-cargo-build-
+      # Mettre en cache le dossier target
+      - name: Cache cargo build
+        uses: actions/cache@v3
+        with:
+          path: target
+          key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-build-
 
-    # Construire et tester l'application
-    - name: Build and Test
-      run: |
-        cargo build --release
-        cargo test --release
+      # Construire et tester l'application
+      - name: Build and Test
+        run: |
+          cargo build --release
+          cargo test --release
 
-    # Construire l'image Docker
-    - name: Build Docker Image
-      run: docker build -t ironcrypt .
+      # Construire l'image Docker
+      - name: Build Docker Image
+        run: docker build -t ironcrypt.
 
-    # Pousser l'image Docker vers DockerHub
-    - name: Push Docker Image to DockerHub
-      if: success()
-      env:
-        DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
-        DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
-      run: |
-        echo "${DOCKER_PASSWORD}" | docker login -u "${DOCKER_USERNAME}" --password-stdin
-        docker tag ironcrypt ${{ secrets.DOCKER_USERNAME }}/ironcrypt:latest
-        docker push ${{ secrets.DOCKER_USERNAME }}/ironcrypt:latest
+      # Pousser l'image Docker vers DockerHub
+      - name: Push Docker Image to DockerHub
+        if: success()
+        env:
+          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+        run: |
+          echo "${DOCKER_PASSWORD}" | docker login -u "${DOCKER_USERNAME}" --password-stdin
+          docker tag ironcrypt ${{ secrets.DOCKER_USERNAME }}/ironcrypt:latest
+          docker push ${{ secrets.DOCKER_USERNAME }}/ironcrypt:latest

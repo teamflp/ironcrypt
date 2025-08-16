@@ -4,7 +4,10 @@ global:
 scrape_configs:
   - job_name: 'ironcrypt'
     static_configs:
-      - targets: ['ironcrypt:9400']
-  - job_name: 'prometheus'
-    static_configs:
-      - targets: ['localhost:9090']
+      - targets: ['localhost:9400']
+
+remote_write:
+  - url: "https://prometheus-prod-24-prod-eu-west-2.grafana.net/api/prom/push"
+    basic_auth:
+      username: "2556095"
+      password: "glc_eyJvIjoiMTQ4MTc3OCIsIm4iOiJzdGFjay0xMzE1OTMwLWhsLXJlYWQtbG9raV9pcm9uY3J5cHRfa2V5IiwiayI6IjhudXE3WEw4VXBXbzc2MzcyODFnYWVLYSIsIm0iOnsiciI6InByb2QtZXUtd2VzdC0yIn19"

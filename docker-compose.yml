@@ -8,71 +8,64 @@ services:
       - "${IRONCRYPT_PORT}:${IRONCRYPT_PORT}"
       - "${IRONCRYPT_METRICS_PORT}:${IRONCRYPT_METRICS_PORT}"
     environment:
-      IRONCRYPT_PORT: "${IRONCRYPT_PORT}"
-      IRONCRYPT_METRICS_ENABLED: "${IRONCRYPT_METRICS_ENABLED}"
-      IRONCRYPT_METRICS_PORT: "${IRONCRYPT_METRICS_PORT}"
+      - IRONCRYPT_PORT=${IRONCRYPT_PORT}
+      - IRONCRYPT_METRICS_ENABLED=${IRONCRYPT_METRICS_ENABLED}
+      - IRONCRYPT_METRICS_PORT=${IRONCRYPT_METRICS_PORT}
     logging:
       driver: loki
       options:
-        loki-url: "http://loki:3100/loki/api/v1/push"
+        loki-url: "https://${GRAFANA_CLOUD_LOKI_USER}:${GRAFANA_CLOUD_LOKI_API_KEY}@logs-prod-eu-west-0.grafana.net/loki/api/v1/push"
+    labels:
+      env: prod
+      app: monitoring
+    networks:
+      - monitoring_net
 
   prometheus:
     image: prom/prometheus
+    env_file: .env
     ports:
-      - "9090:9090"
+      - "${PROMETHEUS_PORT}"
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
-
-  grafana:
-    image: grafana/grafana
-    env_file: .env
-    depends_on:
-      - prometheus
-      - loki
-    volumes:
-      - ./grafana/provisioning:/etc/grafana/provisioning
-    expose:
-      - "3000"
+    labels:
+      env: prod
+      app: monitoring
+    networks:
+      - monitoring_net
 
   loki:
     image: grafana/loki:2.9.4
     env_file: .env
     volumes:
       - ./loki/loki-config.yml.template:/etc/loki/local-config.yml.template:ro
-      - ./loki/loki-data/chunks:/loki/chunks
-      - ./loki/loki-data/index:/loki/index
-      - ./loki/loki-data/cache:/loki/boltdb-cache
-      - ./loki/loki-data/compactor:/loki/compactor
       - ./loki/entrypoint.sh:/entrypoint.sh:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
     entrypoint: /entrypoint.sh
     ports:
-      - "3100:3100"
+      - "${PROMETHEUS_PORT}"
+    labels:
+      env: prod
+      app: monitoring
+    networks:
+      - monitoring_net
 
   alertmanager:
     image: prom/alertmanager
-    container_name: alertmanager
     env_file: .env
     volumes:
       - ./alertmanager/config.yml.template:/etc/alertmanager/config.yml.template:ro
       - ./alertmanager/entrypoint.sh:/entrypoint.sh:ro
     entrypoint: /entrypoint.sh
     ports:
-      - "9093:9093"
+      - "${ALERTMANAGER_PORT}"
+    labels:
+      env: prod
+      app: monitoring
+    networks:
+      - monitoring_net
 
-  nginx:
-    image: nginx:alpine
-    container_name: grafana-proxy
-    env_file: .env
-    depends_on:
-      - grafana
-    ports:
-      - "${GRAFANA_PUBLIC_PORT}:443"
-      - "8081:80" # accès HTTP en clair si besoin mais redirection auto vers HTTPS
-    volumes:
-      - ./nginx/nginx.conf.template:/etc/nginx/nginx.conf.template:ro
-      - ./nginx/entrypoint.sh:/entrypoint.sh:ro
-      - ./certs:/etc/nginx/certs:ro
-    entrypoint: /entrypoint.sh
-
-volumes:
-  grafana-data:
+# Réseau dédié pour la communication entre les services
+networks:
+  monitoring_net:
+    driver: bridge

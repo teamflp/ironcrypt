@@ -10,5 +10,5 @@ route:
 receivers:
   - name: 'gmail'
     email_configs:
-      - to: 'destinataire@example.com'  # Remplace par ton email cible
+      - to: '${SMTP_TO}'
         send_resolved: true
