@@ -63,20 +63,12 @@ fn test_encrypt_decrypt_password() {
         .arg("-v")
         .arg("v_test_enc");
 
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::contains(
-            "Password encrypted to 'encrypted_data.json'.",
-        ));
-    assert!(fs::metadata(p(&cwd, "encrypted_data.json")).is_ok());
-
-    // Renomme pour éviter tout conflit
-    fs::rename(
-        p(&cwd, "encrypted_data.json"),
-        p(&cwd, "encrypted_data_cli.json"),
-    )
-        .unwrap();
-    assert!(fs::metadata(p(&cwd, "encrypted_data_cli.json")).is_ok());
+    // Capture the output (which is the JSON) and write it to a file
+    let output = cmd.output().unwrap();
+    assert!(output.status.success());
+    let encrypted_json_path = p(&cwd, "encrypted_data_cli.json");
+    fs::write(&encrypted_json_path, output.stdout).unwrap();
+    assert!(fs::metadata(&encrypted_json_path).is_ok());
 
     // 3) Decrypt with correct password
     let mut cmd = Command::cargo_bin("ironcrypt").unwrap();
@@ -232,6 +224,7 @@ fn test_rotate_key() {
     let td = tempdir().unwrap();
     let cwd = td.path().to_path_buf();
     let keys_dir = p(&cwd, "test_keys_rotate");
+    let encrypted_file_path = p(&cwd, "encrypted_data_rotate.json");
     let v1 = "v1_rotate";
     let v2 = "v2_rotate";
 
@@ -245,7 +238,7 @@ fn test_rotate_key() {
         .arg(&keys_dir);
     cmd.assert().success();
 
-    // 2) Encrypt with v1
+    // 2) Encrypt with v1 and save output
     let mut cmd = Command::cargo_bin("ironcrypt").unwrap();
     cmd.current_dir(&cwd)
         .arg("encrypt")
@@ -255,16 +248,10 @@ fn test_rotate_key() {
         .arg(&keys_dir)
         .arg("-v")
         .arg(v1);
-    cmd.assert().success();
-    assert!(fs::metadata(p(&cwd, "encrypted_data.json")).is_ok());
-
-    // Isoler le fichier
-    fs::rename(
-        p(&cwd, "encrypted_data.json"),
-        p(&cwd, "encrypted_data_rotate.json"),
-    )
-        .unwrap();
-    assert!(fs::metadata(p(&cwd, "encrypted_data_rotate.json")).is_ok());
+    let output = cmd.output().unwrap();
+    assert!(output.status.success());
+    fs::write(&encrypted_file_path, output.stdout).unwrap();
+    assert!(fs::metadata(&encrypted_file_path).is_ok());
 
     // 3) Rotate v1 -> v2
     let mut cmd = Command::cargo_bin("ironcrypt").unwrap();
@@ -277,35 +264,14 @@ fn test_rotate_key() {
         .arg("-k")
         .arg(&keys_dir)
         .arg("-f")
-        .arg(p(&cwd, "encrypted_data_rotate.json"));
+        .arg(&encrypted_file_path);
     cmd.assert().success();
 
     // 4) v2 keys exist
     assert!(fs::metadata(p(&cwd, "test_keys_rotate/private_key_v2_rotate.pem")).is_ok());
     assert!(fs::metadata(p(&cwd, "test_keys_rotate/public_key_v2_rotate.pem")).is_ok());
 
-    // 5) Re-encrypt with v2
-    let mut cmd = Command::cargo_bin("ironcrypt").unwrap();
-    cmd.current_dir(&cwd)
-        .arg("encrypt")
-        .arg("-w")
-        .arg(STRONG_PWD)
-        .arg("-d")
-        .arg(&keys_dir)
-        .arg("-v")
-        .arg(v2);
-    cmd.assert().success();
-    assert!(fs::metadata(p(&cwd, "encrypted_data.json")).is_ok());
-
-    // Remplacer la version cible
-    fs::remove_file(p(&cwd, "encrypted_data_rotate.json")).ok();
-    fs::rename(
-        p(&cwd, "encrypted_data.json"),
-        p(&cwd, "encrypted_data_rotate.json"),
-    )
-        .unwrap();
-
-    // 6) Decrypt with v2 (success)
+    // 5) Decrypt with v2 (success)
     let mut cmd = Command::cargo_bin("ironcrypt").unwrap();
     cmd.current_dir(&cwd)
         .arg("decrypt")
@@ -316,10 +282,10 @@ fn test_rotate_key() {
         .arg("-v")
         .arg(v2)
         .arg("-f")
-        .arg(p(&cwd, "encrypted_data_rotate.json"));
+        .arg(&encrypted_file_path);
     cmd.assert().success();
 
-    // 7) Decrypt with v1 (should fail)
+    // 6) Decrypt with v1 (should fail)
     let mut cmd = Command::cargo_bin("ironcrypt").unwrap();
     cmd.current_dir(&cwd)
         .arg("decrypt")
@@ -330,6 +296,6 @@ fn test_rotate_key() {
         .arg("-v")
         .arg(v1)
         .arg("-f")
-        .arg(p(&cwd, "encrypted_data_rotate.json"));
+        .arg(&encrypted_file_path);
     cmd.assert().failure();
 }
