@@ -21,7 +21,7 @@ use zeroize::Zeroize;
 use crate::config::IronCryptConfig;
 use crate::criteria::PasswordCriteria;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Copy)]
 pub struct Argon2Config {
     pub memory_cost: u32,
     pub time_cost: u32,
@@ -47,6 +47,15 @@ pub struct EncryptedData {
     pub ciphertext: String,
     /// Optional, if `hash_password` is `true`.
     pub password_hash: Option<String>,
+}
+
+/// Groups arguments for the encryption process to simplify function signatures.
+struct EncryptionContext<'a> {
+    public_key: &'a RsaPublicKey,
+    criteria: &'a PasswordCriteria,
+    key_version: &'a str,
+    argon_cfg: Argon2Config,
+    hash_password: bool,
 }
 
 /// The `IronCrypt` struct manages key generation/loading
@@ -106,15 +115,19 @@ impl IronCrypt {
             parallelism: self.config.argon2_parallelism,
         };
 
+        let context = EncryptionContext {
+            public_key: &public_key,
+            criteria,
+            key_version: &self.key_version,
+            argon_cfg,
+            hash_password: true,
+        };
+
         // We encrypt empty data (b""), hashing the password (hash_password = true).
-        let enc_data = self.encrypt_data_with_criteria(
+        let enc_data = self.encrypt_data_with_context(
             b"",
             &mut pwd_string,
-            &public_key,
-            criteria,
-            &self.key_version,
-            argon_cfg,
-            true,
+            &context,
         )?;
 
         let json_str = serde_json::to_string(&enc_data)
@@ -161,14 +174,17 @@ impl IronCrypt {
         //    If you want Argon2, set to "true" and adapt "criteria" etc.
         let hash_it = !password.is_empty();
 
-        let enc_data = self.encrypt_data_with_criteria(
+        let context = EncryptionContext {
+            public_key: &public_key,
+            criteria: &self.config.password_criteria,
+            key_version: &self.key_version,
+            argon_cfg: Argon2Config::default(),
+            hash_password: hash_it,
+        };
+        let enc_data = self.encrypt_data_with_context(
             data,
             &mut pwd_string,
-            &public_key,
-            &self.config.password_criteria,
-            &self.key_version,
-            Argon2Config::default(),
-            hash_it,
+            &context,
         )?;
 
         // 4) Serialize to JSON
@@ -292,28 +308,23 @@ impl IronCrypt {
     // --------------------------------------------------------------------
     //                          Existing internal methods
     // --------------------------------------------------------------------
-
-    fn encrypt_data_with_criteria(
+    fn encrypt_data_with_context(
         &self,
         data: &[u8],
         password: &mut String,
-        public_key: &RsaPublicKey,
-        criteria: &PasswordCriteria,
-        key_version: &str,
-        argon_cfg: Argon2Config,
-        hash_password: bool,
+        context: &EncryptionContext,
     ) -> Result<EncryptedData, IronCryptError> {
         // 1) Check strength if needed
-        if hash_password {
-            criteria.validate(password)?;
+        if context.hash_password {
+            context.criteria.validate(password)?;
         }
 
         // 2) Optional hashing
-        let password_hash = if hash_password {
+        let password_hash = if context.hash_password {
             let params = Params::new(
-                argon_cfg.memory_cost,
-                argon_cfg.time_cost,
-                argon_cfg.parallelism,
+                context.argon_cfg.memory_cost,
+                context.argon_cfg.time_cost,
+                context.argon_cfg.parallelism,
                 None,
             )?;
             let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
@@ -344,14 +355,15 @@ impl IronCrypt {
 
         // 5) RSA encryption of the symmetric key
         let padding = Oaep::new::<Sha256>();
-        let encrypted_symmetric_key = public_key
+        let encrypted_symmetric_key = context
+            .public_key
             .encrypt(&mut OsRng, padding, &symmetric_key)
             .map_err(|e| IronCryptError::EncryptionError(format!("RSA encryption: {e}")))?;
 
         let result = EncryptedData {
-            key_version: key_version.to_string(),
+            key_version: context.key_version.to_string(),
             encrypted_symmetric_key: base64_standard.encode(&encrypted_symmetric_key),
-            nonce: base64_standard.encode(&nonce_bytes),
+            nonce: base64_standard.encode(nonce_bytes),
             ciphertext: base64_standard.encode(&ciphertext),
             password_hash,
         };

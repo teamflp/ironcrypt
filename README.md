@@ -34,8 +34,7 @@
 ## Workflows
 
 ### Password Encryption/Decryption
-
-![Password Workflow](images/workflow-password.png)
+![workflow-password.png](images/workflow-password.png)
 
 This process ensures maximum security by combining robust hashing with **Argon2** and hybrid encryption (called "envelope encryption") with **AES** and **RSA**.
 
@@ -90,8 +89,7 @@ The goal here is to verify if the password provided by the user matches the stor
 This workflow ensures that even if your database were compromised, the users' passwords would remain unusable by an attacker, as the original password is never stored there.
 
 ### File Encryption/Decryption
-
-![File Workflow](images/workflow-file.png)
+![workflow File](images/workflow-file.png)
 
 This process also uses envelope encryption (AES + RSA) to ensure both performance and security.
 
@@ -115,7 +113,7 @@ This process also uses envelope encryption (AES + RSA) to ensure both performanc
 
 ### Directory Encryption/Decryption
 
-![Directory Workflow](images/workflow-directory.png)
+![img.png](images/workflow-directory.png)
 
 Encrypting an entire directory is based on the file encryption workflow, with an additional preparation step.
 

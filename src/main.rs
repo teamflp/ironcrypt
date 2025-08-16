@@ -566,9 +566,10 @@ fn main() {
 
             // 2. Create IronCrypt instances for the old and new versions
             let old_config = IronCryptConfig::default();
-            let mut new_config = IronCryptConfig::default();
-            new_config.rsa_key_size = new_key_size;
-
+            let new_config = IronCryptConfig {
+                rsa_key_size: new_key_size,
+                ..Default::default()
+            };
             let old_crypt = match IronCrypt::new(&key_directory, &old_version, old_config) {
                 Ok(c) => c,
                 Err(e) => {
@@ -748,9 +749,10 @@ mod tests {
         }
 
         // Configuration
-        let mut config = IronCryptConfig::default();
-        config.rsa_key_size = 2048;
-
+        let config = IronCryptConfig {
+            rsa_key_size: 2048,
+            ..Default::default()
+        };
         // Build IronCrypt
         // Here we use "v1" in the test, but it's just an example of usage
         let crypt = IronCrypt::new(key_directory, "v1", config).expect("IronCrypt::new error");
