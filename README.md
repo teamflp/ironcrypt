@@ -89,7 +89,8 @@ The goal here is to verify if the password provided by the user matches the stor
 This workflow ensures that even if your database were compromised, the users' passwords would remain unusable by an attacker, as the original password is never stored there.
 
 ### File Encryption/Decryption
-![workflow File](images/workflow-file.png)
+
+![img.png](images/img-1.png)
 
 This process also uses envelope encryption (AES + RSA) to ensure both performance and security.
 
