@@ -184,6 +184,7 @@ ironcrypt --help
 
 ### Command-Line Interface (CLI)
 
+
 Here is a summary table of all available commands:
 
 | Command       | Alias                  | Description                                 | Key Options                                                                                                                                               |
