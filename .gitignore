@@ -1,19 +1,26 @@
+# Rust & Cargo
 /target/
+
+# IDEs & Éditeurs
 /.idea/
 /.vscode/
-/keys/
-/demo/
-/Zpoubelle/
-encrypted_data.json
+*.swp
+*~
+.DS_Store
 
+# Secrets - NE JAMAIS COMMIT
+/keys/
 /test_keys/
 /test_keys_config/
 /test_keys_env/
 
-# Ignorer les fichiers d'environnement
+# Fichier d'environnement
 .env
 
-# Ignorer le fichier de configuration local
+# Fichier de configuration local (le .example est commit)
 ironcrypt.toml
-Makefile
-run.sh
+
+# Fichiers temporaires ou de démonstration
+/demo/
+/Zpoubelle/
+encrypted_data.json
