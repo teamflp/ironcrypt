@@ -184,18 +184,19 @@ ironcrypt --help
 
 ### Command-Line Interface (CLI)
 
-Voici un tableau récapitulatif de toutes les commandes disponibles :
 
-| Commande      | Alias                  | Description                                            | Options Clés                                                                                                                                              |
-| :------------ | :--------------------- | :----------------------------------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `generate`    |                        | Génère une nouvelle paire de clés RSA.                 | `-v, --version <VERSION>` <br> `-d, --directory <DIR>` <br> `-s, --key-size <SIZE>`                                                                        |
-| `encrypt`     |                        | Chiffre un mot de passe.                               | `-w, --password <PASSWORD>` <br> `-d, --public-key-directory <DIR>` <br> `-v, --key-version <VERSION>`                                                      |
-| `decrypt`     |                        | Vérifie un mot de passe chiffré.                       | `-w, --password <PASSWORD>` <br> `-k, --private-key-directory <DIR>` <br> `-v, --key-version <VERSION>` <br> `-f, --file <FILE>`                               |
-| `encrypt-file`| `encfile`, `efile`, `ef` | Chiffre un fichier binaire.                            | `-i, --input-file <INPUT>` <br> `-o, --output-file <OUTPUT>` <br> `-d, --public-key-directory <DIR>` <br> `-v, --key-version <VERSION>` <br> `[-w, --password <PASSWORD>]` |
-| `decrypt-file`| `decfile`, `dfile`, `df` | Déchiffre un fichier binaire.                          | `-i, --input-file <INPUT>` <br> `-o, --output-file <OUTPUT>` <br> `-k, --private-key-directory <DIR>` <br> `-v, --key-version <VERSION>` <br> `[-w, --password <PASSWORD>]` |
-| `encrypt-dir` | `encdir`                 | Chiffre un répertoire complet.                         | `-i, --input-dir <INPUT>` <br> `-o, --output-file <OUTPUT>` <br> `-d, --public-key-directory <DIR>` <br> `-v, --key-version <VERSION>` <br> `[-w, --password <PASSWORD>]` |
-| `decrypt-dir` | `decdir`                 | Déchiffre un répertoire complet.                       | `-i, --input-file <INPUT>` <br> `-o, --output-dir <OUTPUT>` <br> `-k, --private-key-directory <DIR>` <br> `-v, --key-version <VERSION>` <br> `[-w, --password <PASSWORD>]` |
-| `rotate-key`  | `rk`                     | Applique une rotation de clé sur des données chiffrées. | `--old-version <OLD_V>` <br> `--new-version <NEW_V>` <br> `-k, --key-directory <DIR>` <br> `--file <FILE>` or `--directory <DIR>`                               |
+Here is a summary table of all available commands:
+
+| Command       | Alias                  | Description                                 | Key Options                                                                                                                                               |
+| :------------ | :--------------------- | :------------------------------------------ | :-------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `generate`    |                        | Generates a new RSA key pair.               | `-v, --version <VERSION>` <br> `-d, --directory <DIR>` <br> `-s, --key-size <SIZE>`                                                                        |
+| `encrypt`     |                        | Hashes and encrypts a password.             | `-w, --password <PASSWORD>` <br> `-d, --public-key-directory <DIR>` <br> `-v, --key-version <VERSION>`                                                      |
+| `decrypt`     |                        | Verifies an encrypted password.             | `-w, --password <PASSWORD>` <br> `-k, --private-key-directory <DIR>` <br> `-v, --key-version <VERSION>` <br> `-f, --file <FILE>`                               |
+| `encrypt-file`| `encfile`, `efile`, `ef` | Encrypts a binary file.                     | `-i, --input-file <INPUT>` <br> `-o, --output-file <OUTPUT>` <br> `-d, --public-key-directory <DIR>` <br> `-v, --key-version <VERSION>` <br> `[-w, --password <PASSWORD>]` |
+| `decrypt-file`| `decfile`, `dfile`, `df` | Decrypts a binary file.                     | `-i, --input-file <INPUT>` <br> `-o, --output-file <OUTPUT>` <br> `-k, --private-key-directory <DIR>` <br> `-v, --key-version <VERSION>` <br> `[-w, --password <PASSWORD>]` |
+| `encrypt-dir` | `encdir`                 | Encrypts an entire directory.               | `-i, --input-dir <INPUT>` <br> `-o, --output-file <OUTPUT>` <br> `-d, --public-key-directory <DIR>` <br> `-v, --key-version <VERSION>` <br> `[-w, --password <PASSWORD>]` |
+| `decrypt-dir` | `decdir`                 | Decrypts an entire directory.               | `-i, --input-file <INPUT>` <br> `-o, --output-dir <OUTPUT>` <br> `-k, --private-key-directory <DIR>` <br> `-v, --key-version <VERSION>` <br> `[-w, --password <PASSWORD>]` |
+| `rotate-key`  | `rk`                     | Rotates encryption keys for encrypted data. | `--old-version <OLD_V>` <br> `--new-version <NEW_V>` <br> `-k, --key-directory <DIR>` <br> `--file <FILE>` or `--directory <DIR>`                               |
 
 A full list of commands and their arguments can be viewed by running `ironcrypt --help`. To get help for a specific command, run `ironcrypt <command> --help`.
 
