@@ -8,7 +8,7 @@ keywords = ["cryptography", "RSA", "AES", "security", "Rust"]
 categories = ["cryptography"]
 readme = "README.md"
 license = "MIT"
-documentation = "https://github.com/teamflp/ironcrypt#readme"
+documentation = "https://docs.rs/ironcrypt"
 repository = "https://github.com/teamflp/ironcrypt"
 
 [dependencies]
