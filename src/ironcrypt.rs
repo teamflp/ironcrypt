@@ -80,13 +80,16 @@ impl IronCrypt {
             match secrets_config.provider.as_str() {
                 "vault" => {
                     let vault_config = secrets_config.vault.as_ref().ok_or_else(|| {
+
                         IronCryptError::ConfigurationError(
                             "Vault provider selected but no vault config provided".to_string(),
                         )
+
                     })?;
                     let store = VaultStore::new(vault_config, &vault_config.mount)?;
                     Some(Box::new(store) as Box<dyn SecretStore + Send + Sync>)
                 }
+
                 "aws" => {
                     let aws_config = secrets_config.aws.as_ref().ok_or_else(|| {
                         IronCryptError::ConfigurationError(
