@@ -208,12 +208,13 @@ enum Commands {
     }
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     metrics::init_metrics();
     let args = Cli::parse();
 
     // The main logic is wrapped in a closure to handle errors easily
-    let result = (|| -> Result<(), String> {
+    let result = (|| async {
         match args.command {
             Commands::Generate {
                 version,
@@ -260,7 +261,7 @@ fn main() {
                 key_version,
             } => {
                 let config = IronCryptConfig::default();
-                let crypt = IronCrypt::new(&public_key_directory, &key_version, config)
+                let crypt = IronCrypt::new(&public_key_directory, &key_version, config).await
                     .map_err(|e| format!("could not initialize encryption module: {}", e))?;
                 let encrypted_hash = crypt
                     .encrypt_password(&password)
@@ -284,7 +285,7 @@ fn main() {
                 };
 
                 let config = IronCryptConfig::default();
-                let crypt = IronCrypt::new(&private_key_directory, &key_version, config)
+                let crypt = IronCrypt::new(&private_key_directory, &key_version, config).await
                     .map_err(|e| format!("could not initialize encryption module: {}", e))?;
 
                 if crypt.verify_password(&encrypted_data, &password).map_err(|e| e.to_string())? {
@@ -531,7 +532,7 @@ fn main() {
             }
         }
         Ok(())
-    })();
+    })().await;
 
     if let Err(e) = result {
         eprintln!("error: {}", e);
@@ -547,8 +548,8 @@ mod tests {
     use std::fs;
     use std::path::Path;
 
-    #[test]
-    fn test_encrypt_and_verify() {
+    #[tokio::test]
+    async fn test_encrypt_and_verify() {
         let key_directory = "test_keys";
 
         if !Path::new(key_directory).exists() {
@@ -562,7 +563,7 @@ mod tests {
         };
         // Build IronCrypt
         // Here we use "v1" in the test, but it's just an example of usage
-        let crypt = IronCrypt::new(key_directory, "v1", config).expect("IronCrypt::new error");
+        let crypt = IronCrypt::new(key_directory, "v1", config).await.expect("IronCrypt::new error");
 
         // Encrypt the password
         let password = "Str0ngP@ssw0rd!";

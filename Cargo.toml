@@ -38,6 +38,12 @@ rand = { version = "0.8.5", default-features = false, features = ["std_rng", "ge
 vaultrs = "0.7.4"
 tokio = { version = "1", features = ["full"] }
 async-trait = "0.1"
+aws-config = "1.1.7"
+aws-sdk-secretsmanager = "1.2.0"
+azure_security_keyvault_secrets = "0.6.0"
+azure_identity = "0.27.0"
+google-cloud-secretmanager-v1 = "0.4.4"
+google-cloud-auth = "0.9.0"
 
 [dev-dependencies]
 assert_cmd = "2.0"

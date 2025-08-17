@@ -18,13 +18,13 @@ fn setup_test_dir(dir: &str) {
     fs::create_dir_all(dir).unwrap();
 }
 
-#[test]
-fn test_file_encryption_decryption() {
+#[tokio::test]
+async fn test_file_encryption_decryption() {
     let key_dir = "test_keys_file_enc";
     setup_test_dir(key_dir);
 
     let config = IronCryptConfig::default();
-    let crypt = IronCrypt::new(key_dir, "v1", config).expect("Failed to create IronCrypt instance");
+    let crypt = IronCrypt::new(key_dir, "v1", config).await.expect("Failed to create IronCrypt instance");
 
     // Create a dummy file
     let input_file = "test_input.bin";
@@ -58,8 +58,8 @@ fn test_file_encryption_decryption() {
     fs::remove_dir_all(key_dir).unwrap();
 }
 
-#[test]
-fn test_directory_encryption_decryption() {
+#[tokio::test]
+async fn test_directory_encryption_decryption() {
     let key_dir = "test_keys_dir_enc";
     let source_dir = "test_source_dir";
     let encrypted_file = "test_dir.enc";
@@ -75,7 +75,7 @@ fn test_directory_encryption_decryption() {
     fs::write(Path::new(source_dir).join("subdir/file2.txt"), "world").unwrap();
 
     let config = IronCryptConfig::default();
-    let crypt = IronCrypt::new(key_dir, "v1", config).unwrap();
+    let crypt = IronCrypt::new(key_dir, "v1", config).await.unwrap();
 
     // Create tar.gz archive of the directory (preserve top-level folder)
     let archive_data: Vec<u8> = {
@@ -117,20 +117,20 @@ fn test_directory_encryption_decryption() {
     fs::remove_dir_all(restored_dir).unwrap();
 }
 
-#[test]
-fn test_key_rotation() {
+#[tokio::test]
+async fn test_key_rotation() {
     let key_dir = "test_keys_rotation";
     setup_test_dir(key_dir);
 
     // 1. Create initial version (v1)
     let config_v1 = IronCryptConfig::default();
-    let crypt_v1 = IronCrypt::new(key_dir, "v1", config_v1).unwrap();
+    let crypt_v1 = IronCrypt::new(key_dir, "v1", config_v1).await.unwrap();
     let encrypted_data_v1 = crypt_v1.encrypt_password(STRONG_PASSWORD).unwrap();
 
     // 2. Create a new key version (v2)
     let mut config_v2 = IronCryptConfig::default();
     config_v2.rsa_key_size = 2048; // Can be different
-    let _crypt_v2 = IronCrypt::new(key_dir, "v2", config_v2).unwrap();
+    let _crypt_v2 = IronCrypt::new(key_dir, "v2", config_v2).await.unwrap();
 
     // 3. Load the new public key
     let new_pub_key_path = format!("{key_dir}/public_key_v2.pem");
@@ -142,7 +142,7 @@ fn test_key_rotation() {
         .unwrap();
 
     // 5. Verify with the new key
-    let crypt_v2_verify = IronCrypt::new(key_dir, "v2", IronCryptConfig::default()).unwrap();
+    let crypt_v2_verify = IronCrypt::new(key_dir, "v2", IronCryptConfig::default()).await.unwrap();
     let is_valid = crypt_v2_verify
         .verify_password(&re_encrypted_data, STRONG_PASSWORD)
         .unwrap();
@@ -239,8 +239,8 @@ fn test_stream_encryption_large_file() {
     fs::remove_dir_all(key_dir).unwrap();
 }
 
-#[test]
-fn test_load_pkcs1_and_pkcs8_keys() {
+#[tokio::test]
+async fn test_load_pkcs1_and_pkcs8_keys() {
     let key_dir = "test_keys_format";
     setup_test_dir(key_dir);
 
@@ -266,12 +266,12 @@ fn test_load_pkcs1_and_pkcs8_keys() {
     fs::write(format!("{key_dir}/public_key_v2.pem"), pkcs8_pub_pem.as_bytes()).unwrap();
 
     // Test PKCS#1
-    let crypt_v1 = IronCrypt::new(key_dir, "v1", IronCryptConfig::default()).unwrap();
+    let crypt_v1 = IronCrypt::new(key_dir, "v1", IronCryptConfig::default()).await.unwrap();
     let encrypted_v1 = crypt_v1.encrypt_password(STRONG_PASSWORD).unwrap();
     assert!(crypt_v1.verify_password(&encrypted_v1, STRONG_PASSWORD).unwrap());
 
     // Test PKCS#8
-    let crypt_v2 = IronCrypt::new(key_dir, "v2", IronCryptConfig::default()).unwrap();
+    let crypt_v2 = IronCrypt::new(key_dir, "v2", IronCryptConfig::default()).await.unwrap();
     let encrypted_v2 = crypt_v2.encrypt_password(STRONG_PASSWORD).unwrap();
     assert!(crypt_v2.verify_password(&encrypted_v2, STRONG_PASSWORD).unwrap());
 

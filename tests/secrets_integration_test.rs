@@ -1,4 +1,4 @@
-use ironcrypt::{IronCrypt, IronCryptConfig, SecretStore};
+use ironcrypt::{AwsConfig, IronCrypt, IronCryptConfig, SecretStore, SecretsConfig};
 use mockall::mock;
 use std::error::Error;
 
@@ -55,4 +55,75 @@ async fn test_secret_store_integration_with_mock() {
 
     // Assert that the retrieved secret is correct.
     assert_eq!(secret_value, retrieved_secret);
+}
+
+#[tokio::test]
+async fn test_aws_provider_initialization() {
+    let key_dir = tempfile::tempdir().unwrap();
+    let config = IronCryptConfig {
+        secrets: Some(SecretsConfig {
+            provider: "aws".to_string(),
+            vault: None,
+            aws: Some(AwsConfig {
+                region: "us-east-1".to_string(),
+            }),
+            azure: None,
+        }),
+        ..Default::default()
+    };
+
+    // This test just checks that the AWS client can be initialized without panicking.
+    // It doesn't make any real calls to AWS.
+    let ironcrypt = IronCrypt::new(key_dir.path().to_str().unwrap(), "v1", config)
+        .await;
+
+    assert!(ironcrypt.is_ok());
+}
+
+#[tokio::test]
+async fn test_google_provider_initialization() {
+    let key_dir = tempfile::tempdir().unwrap();
+    let config = IronCryptConfig {
+        secrets: Some(SecretsConfig {
+            provider: "google".to_string(),
+            vault: None,
+            aws: None,
+            azure: None,
+            google: Some(ironcrypt::GoogleConfig {
+                project_id: "dummy-project".to_string(),
+            }),
+        }),
+        ..Default::default()
+    };
+
+    // This test just checks that the Google client can be initialized without panicking.
+    // It doesn't make any real calls to Google Cloud.
+    let ironcrypt = IronCrypt::new(key_dir.path().to_str().unwrap(), "v1", config)
+        .await;
+
+    assert!(ironcrypt.is_ok());
+}
+
+#[tokio::test]
+async fn test_azure_provider_initialization() {
+    let key_dir = tempfile::tempdir().unwrap();
+    let config = IronCryptConfig {
+        secrets: Some(SecretsConfig {
+            provider: "azure".to_string(),
+            vault: None,
+            aws: None,
+            azure: Some(ironcrypt::AzureConfig {
+                vault_uri: "https://dummy.vault.azure.net".to_string(),
+            }),
+            google: None,
+        }),
+        ..Default::default()
+    };
+
+    // This test just checks that the Azure client can be initialized without panicking.
+    // It doesn't make any real calls to Azure.
+    let ironcrypt = IronCrypt::new(key_dir.path().to_str().unwrap(), "v1", config)
+        .await;
+
+    assert!(ironcrypt.is_ok());
 }

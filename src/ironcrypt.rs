@@ -4,7 +4,7 @@ use crate::{
     generate_rsa_keys,
     handle_error::IronCryptError,
     load_private_key, load_public_key,
-    secrets::{SecretStore, VaultStore},
+    secrets::{aws::AwsStore, azure::AzureStore, google::GoogleStore, vault::VaultStore, SecretStore},
     save_keys_to_files,
 };
 use std::fs;
@@ -71,7 +71,7 @@ pub struct IronCrypt {
 
 impl IronCrypt {
     /// Creates a new IronCrypt instance (generates RSA keys if needed).
-    pub fn new(
+    pub async fn new(
         directory: &str,
         version: &str,
         config: IronCryptConfig,
@@ -80,12 +80,49 @@ impl IronCrypt {
             match secrets_config.provider.as_str() {
                 "vault" => {
                     let vault_config = secrets_config.vault.as_ref().ok_or_else(|| {
-                        IronCryptError::ConfigurationError("Vault provider selected but no vault config provided".to_string())
+
+                        IronCryptError::ConfigurationError(
+                            "Vault provider selected but no vault config provided".to_string(),
+                        )
+
                     })?;
                     let store = VaultStore::new(vault_config, &vault_config.mount)?;
                     Some(Box::new(store) as Box<dyn SecretStore + Send + Sync>)
                 }
-                _ => return Err(IronCryptError::ConfigurationError(format!("Unsupported secrets provider: {}", secrets_config.provider))),
+
+                "aws" => {
+                    let aws_config = secrets_config.aws.as_ref().ok_or_else(|| {
+                        IronCryptError::ConfigurationError(
+                            "AWS provider selected but no AWS config provided".to_string(),
+                        )
+                    })?;
+                    let store = AwsStore::new(aws_config).await?;
+                    Some(Box::new(store) as Box<dyn SecretStore + Send + Sync>)
+                }
+                "azure" => {
+                    let azure_config = secrets_config.azure.as_ref().ok_or_else(|| {
+                        IronCryptError::ConfigurationError(
+                            "Azure provider selected but no Azure config provided".to_string(),
+                        )
+                    })?;
+                    let store = AzureStore::new(azure_config).await?;
+                    Some(Box::new(store) as Box<dyn SecretStore + Send + Sync>)
+                }
+                "google" => {
+                    let google_config = secrets_config.google.as_ref().ok_or_else(|| {
+                        IronCryptError::ConfigurationError(
+                            "Google provider selected but no Google config provided".to_string(),
+                        )
+                    })?;
+                    let store = GoogleStore::new(google_config).await?;
+                    Some(Box::new(store) as Box<dyn SecretStore + Send + Sync>)
+                }
+                _ => {
+                    return Err(IronCryptError::ConfigurationError(format!(
+                        "Unsupported secrets provider: {}",
+                        secrets_config.provider
+                    )))
+                }
             }
         } else {
             None

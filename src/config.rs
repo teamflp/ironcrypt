@@ -11,6 +11,36 @@ pub struct SecretsConfig {
     /// Configuration for HashiCorp Vault.
     #[serde(default)]
     pub vault: Option<VaultConfig>,
+    /// Configuration for AWS Secrets Manager.
+    #[serde(default)]
+    pub aws: Option<AwsConfig>,
+    /// Configuration for Azure Key Vault.
+    #[serde(default)]
+    pub azure: Option<AzureConfig>,
+    /// Configuration for Google Cloud Secret Manager.
+    #[serde(default)]
+    pub google: Option<GoogleConfig>,
+}
+
+/// Configuration for Google Cloud Secret Manager.
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub struct GoogleConfig {
+    /// The Google Cloud project ID.
+    pub project_id: String,
+}
+
+/// Configuration for Azure Key Vault.
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub struct AzureConfig {
+    /// The URI of the Key Vault.
+    pub vault_uri: String,
+}
+
+/// Configuration for AWS Secrets Manager.
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub struct AwsConfig {
+    /// The AWS region.
+    pub region: String,
 }
 
 /// Configuration for HashiCorp Vault.
