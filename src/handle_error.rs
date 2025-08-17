@@ -6,6 +6,7 @@ use base64::DecodeError as Base64DecodeError;
 use cipher::InvalidLength as CipherInvalidLength;
 use rsa::errors::Error as RsaError;
 use serde_json::Error as SerdeJsonError;
+use std::error::Error;
 use std::io::Error as IoError;
 use std::string::FromUtf8Error;
 use thiserror::Error;
@@ -47,6 +48,18 @@ pub enum IronCryptError {
 
     #[error("Argon2 configuration error: {0}")]
     Argon2Error(String),
+
+    #[error("Configuration error: {0}")]
+    ConfigurationError(String),
+
+    #[error("Secret store error: {0}")]
+    SecretStoreError(String),
+}
+
+impl From<Box<dyn Error + Send + Sync>> for IronCryptError {
+    fn from(err: Box<dyn Error + Send + Sync>) -> Self {
+        IronCryptError::SecretStoreError(err.to_string())
+    }
 }
 
 impl From<ArgonError> for IronCryptError {

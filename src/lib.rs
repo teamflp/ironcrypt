@@ -79,6 +79,7 @@ pub mod hashing; // (maps to "hashing.rs")
 pub mod ironcrypt; // (maps to "ironcrypt.rs")
 pub mod metrics;
 pub mod rsa_utils;
+pub mod secrets;
 // (maps to "rsa_utils.rs")
 
 // 2) Re-export items you want available at the crate root
@@ -92,3 +93,4 @@ pub use handle_error::*; // IronCryptError, etc.
 pub use hashing::*; // hash_password (if needed)
 pub use ironcrypt::IronCrypt; // struct IronCrypt
 pub use rsa_utils::*; // generate_rsa_keys, load_public_key, etc.
+pub use secrets::*;

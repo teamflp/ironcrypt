@@ -21,6 +21,19 @@ services:
     networks:
       - monitoring_net
 
+  vault:
+    image: hashicorp/vault:latest
+    container_name: vault
+    ports:
+      - "8200:8200"
+    environment:
+      - VAULT_DEV_ROOT_TOKEN_ID=my-root-token
+      - VAULT_DEV_LISTEN_ADDRESS=0.0.0.0:8200
+    cap_add:
+      - IPC_LOCK
+    networks:
+      - monitoring_net
+
   prometheus:
     image: prom/prometheus
     env_file: .env

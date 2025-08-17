@@ -1,5 +1,11 @@
 use crate::{
-    generate_rsa_keys, load_private_key, load_public_key, save_keys_to_files, IronCryptError,
+    config::IronCryptConfig,
+    criteria::PasswordCriteria,
+    generate_rsa_keys,
+    handle_error::IronCryptError,
+    load_private_key, load_public_key,
+    secrets::{aws::AwsStore, azure::AzureStore, google::GoogleStore, vault::VaultStore, SecretStore},
+    save_keys_to_files,
 };
 use std::fs;
 use std::path::Path;
@@ -12,14 +18,10 @@ use argon2::PasswordVerifier;
 use argon2::{Algorithm, Argon2, Params, Version};
 use base64::engine::general_purpose::STANDARD as base64_standard;
 use base64::Engine;
-// use rand::RngCore as MyRngCore;
 use rsa::{Oaep, RsaPublicKey};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use zeroize::Zeroize;
-
-use crate::config::IronCryptConfig;
-use crate::criteria::PasswordCriteria;
 
 #[derive(Clone, Debug, Copy)]
 pub struct Argon2Config {
@@ -64,22 +66,88 @@ pub struct IronCrypt {
     key_directory: String,
     key_version: String,
     pub config: IronCryptConfig,
+    secret_store: Option<Box<dyn SecretStore + Send + Sync>>,
 }
 
 impl IronCrypt {
     /// Creates a new IronCrypt instance (generates RSA keys if needed).
-    pub fn new(
+    pub async fn new(
         directory: &str,
         version: &str,
         config: IronCryptConfig,
     ) -> Result<Self, IronCryptError> {
+        let secret_store = if let Some(secrets_config) = &config.secrets {
+            match secrets_config.provider.as_str() {
+                "vault" => {
+                    let vault_config = secrets_config.vault.as_ref().ok_or_else(|| {
+                        IronCryptError::ConfigurationError(
+                            "Vault provider selected but no vault config provided".to_string(),
+                        )
+                    })?;
+                    let store = VaultStore::new(vault_config, &vault_config.mount)?;
+                    Some(Box::new(store) as Box<dyn SecretStore + Send + Sync>)
+                }
+                "aws" => {
+                    let aws_config = secrets_config.aws.as_ref().ok_or_else(|| {
+                        IronCryptError::ConfigurationError(
+                            "AWS provider selected but no AWS config provided".to_string(),
+                        )
+                    })?;
+                    let store = AwsStore::new(aws_config).await?;
+                    Some(Box::new(store) as Box<dyn SecretStore + Send + Sync>)
+                }
+                "azure" => {
+                    let azure_config = secrets_config.azure.as_ref().ok_or_else(|| {
+                        IronCryptError::ConfigurationError(
+                            "Azure provider selected but no Azure config provided".to_string(),
+                        )
+                    })?;
+                    let store = AzureStore::new(azure_config).await?;
+                    Some(Box::new(store) as Box<dyn SecretStore + Send + Sync>)
+                }
+                "google" => {
+                    let google_config = secrets_config.google.as_ref().ok_or_else(|| {
+                        IronCryptError::ConfigurationError(
+                            "Google provider selected but no Google config provided".to_string(),
+                        )
+                    })?;
+                    let store = GoogleStore::new(google_config).await?;
+                    Some(Box::new(store) as Box<dyn SecretStore + Send + Sync>)
+                }
+                _ => {
+                    return Err(IronCryptError::ConfigurationError(format!(
+                        "Unsupported secrets provider: {}",
+                        secrets_config.provider
+                    )))
+                }
+            }
+        } else {
+            None
+        };
+
         let instance = Self {
             key_directory: directory.to_string(),
             key_version: version.to_string(),
             config,
+            secret_store,
         };
         instance.ensure_keys_exist()?;
         Ok(instance)
+    }
+
+    #[doc(hidden)]
+    pub fn with_store(
+        directory: &str,
+        version: &str,
+        config: IronCryptConfig,
+        secret_store: Box<dyn SecretStore + Send + Sync>,
+    ) -> Self {
+        Self {
+            key_directory: directory.to_string(),
+            key_version: version.to_string(),
+            config,
+            secret_store: Some(secret_store),
+        }
     }
 
     fn ensure_keys_exist(&self) -> Result<(), IronCryptError> {
@@ -155,6 +223,30 @@ impl IronCrypt {
     // --------------------------------------------------------------------
     //                          NEW METHODS
     // --------------------------------------------------------------------
+
+    /// Stores a secret in the configured secret store.
+    pub async fn store_secret(&self, key: &str, value: &str) -> Result<(), IronCryptError> {
+        if let Some(store) = &self.secret_store {
+            store.set_secret(key, value).await?;
+            Ok(())
+        } else {
+            Err(IronCryptError::ConfigurationError(
+                "No secret store configured".to_string(),
+            ))
+        }
+    }
+
+    /// Retrieves a secret from the configured secret store.
+    pub async fn retrieve_secret(&self, key: &str) -> Result<String, IronCryptError> {
+        if let Some(store) = &self.secret_store {
+            let secret = store.get_secret(key).await?;
+            Ok(secret)
+        } else {
+            Err(IronCryptError::ConfigurationError(
+                "No secret store configured".to_string(),
+            ))
+        }
+    }
 
     /// Encrypts any binary data into JSON (base64).
     /// The `password` can be used (or not) to enforce Argon2; if `hash_password=false`, the hash is ignored.

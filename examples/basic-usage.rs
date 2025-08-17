@@ -2,7 +2,8 @@
 use ironcrypt::{IronCrypt, IronCryptConfig};
 use std::error::Error;
 
-fn main() -> Result<(), Box<dyn Error>> {
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
     // 1. Configure IronCrypt
     let mut config = IronCryptConfig::default();
     config.rsa_key_size = 2048; // Example: Use 2048-bit keys
@@ -10,7 +11,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // 2. Initialize IronCrypt
     // This will create the 'keys/' directory and 'private_key_v1.pem' / 'public_key_v1.pem' if they don't exist.
-    let crypt = IronCrypt::new("keys", "v1", config)?;
+    let crypt = IronCrypt::new("keys", "v1", config).await?;
     println!("IronCrypt initialized for key version 'v1'.");
 
     // 3. Define a password
