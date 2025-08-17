@@ -152,6 +152,93 @@ fn test_key_rotation() {
     fs::remove_dir_all(key_dir).unwrap();
 }
 
+use ironcrypt::{encrypt_stream, decrypt_stream, load_public_key, load_private_key, PasswordCriteria, Argon2Config};
+use rand::RngCore;
+use sha2::{Digest, Sha256};
+use std::io::Read;
+
+#[test]
+fn test_stream_encryption_large_file() {
+    let key_dir = "test_keys_stream";
+    setup_test_dir(key_dir);
+
+    // --- Test file setup ---
+    let input_file_path = "large_input.bin";
+    let encrypted_file_path = "large_input.enc";
+    let decrypted_file_path = "large_input.dec.bin";
+    let file_size = 5 * 1024 * 1024; // 5 MB
+    let mut big_data = vec![0; file_size];
+    rand::thread_rng().fill_bytes(&mut big_data);
+    fs::write(input_file_path, &big_data).unwrap();
+
+    // --- Key setup ---
+    let (private_key, public_key) = ironcrypt::generate_rsa_keys(2048).unwrap();
+    let private_key_path = format!("{}/private_key_v1.pem", key_dir);
+    let public_key_path = format!("{}/public_key_v1.pem", key_dir);
+    ironcrypt::save_keys_to_files(&private_key, &public_key, &private_key_path, &public_key_path).unwrap();
+
+
+    // --- Encryption ---
+    let mut source = fs::File::open(input_file_path).unwrap();
+    let mut dest = fs::File::create(encrypted_file_path).unwrap();
+    let loaded_public_key = load_public_key(&public_key_path).unwrap();
+    let mut password = STRONG_PASSWORD.to_string();
+
+    let criteria = PasswordCriteria::default();
+    let argon_cfg = Argon2Config::default();
+
+    encrypt_stream(
+        &mut source,
+        &mut dest,
+        &mut password,
+        &loaded_public_key,
+        &criteria,
+        "v1",
+        argon_cfg,
+        true,
+    ).unwrap();
+
+    // --- Decryption ---
+    let mut encrypted_source = fs::File::open(encrypted_file_path).unwrap();
+    let mut decrypted_dest = fs::File::create(decrypted_file_path).unwrap();
+    let loaded_private_key = load_private_key(&private_key_path).unwrap();
+
+    decrypt_stream(
+        &mut encrypted_source,
+        &mut decrypted_dest,
+        &loaded_private_key,
+        STRONG_PASSWORD,
+    ).unwrap();
+
+    // --- Verification ---
+    let mut original_hasher = Sha256::new();
+    let mut original_file = fs::File::open(input_file_path).unwrap();
+    let mut buffer = [0; 8192];
+    loop {
+        let n = original_file.read(&mut buffer).unwrap();
+        if n == 0 { break; }
+        original_hasher.update(&buffer[..n]);
+    }
+    let original_hash = original_hasher.finalize();
+
+    let mut decrypted_hasher = Sha256::new();
+    let mut decrypted_file = fs::File::open(decrypted_file_path).unwrap();
+    loop {
+        let n = decrypted_file.read(&mut buffer).unwrap();
+        if n == 0 { break; }
+        decrypted_hasher.update(&buffer[..n]);
+    }
+    let decrypted_hash = decrypted_hasher.finalize();
+
+    assert_eq!(original_hash, decrypted_hash);
+
+    // --- Cleanup ---
+    fs::remove_file(input_file_path).unwrap();
+    fs::remove_file(encrypted_file_path).unwrap();
+    fs::remove_file(decrypted_file_path).unwrap();
+    fs::remove_dir_all(key_dir).unwrap();
+}
+
 #[test]
 fn test_load_pkcs1_and_pkcs8_keys() {
     let key_dir = "test_keys_format";

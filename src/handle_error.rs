@@ -42,6 +42,9 @@ pub enum IronCryptError {
     #[error("Invalid password")]
     InvalidPassword,
 
+    #[error("Password verification failed")]
+    PasswordVerificationError,
+
     #[error("Argon2 configuration error: {0}")]
     Argon2Error(String),
 }
