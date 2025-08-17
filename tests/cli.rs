@@ -136,7 +136,9 @@ fn test_encrypt_decrypt_file() {
         .arg("-d")
         .arg(&keys_dir)
         .arg("-v")
-        .arg("v_test_file");
+        .arg("v_test_file")
+        .arg("-w")
+        .arg(STRONG_PWD);
     cmd.assert().success();
     assert!(fs::metadata(p(&cwd, "test_file.enc")).is_ok());
 
@@ -151,7 +153,9 @@ fn test_encrypt_decrypt_file() {
         .arg("-k")
         .arg(&keys_dir)
         .arg("-v")
-        .arg("v_test_file");
+        .arg("v_test_file")
+        .arg("-w")
+        .arg(STRONG_PWD);
     cmd.assert().success();
     assert!(fs::metadata(p(&cwd, "test_file.dec")).is_ok());
 
@@ -193,7 +197,9 @@ fn test_encrypt_decrypt_dir() {
         .arg("-d")
         .arg(&keys_dir)
         .arg("-v")
-        .arg("v_test_dir");
+        .arg("v_test_dir")
+        .arg("-w")
+        .arg(STRONG_PWD);
     cmd.assert().success();
     assert!(fs::metadata(p(&cwd, "test_dir.enc")).is_ok());
 
@@ -209,7 +215,9 @@ fn test_encrypt_decrypt_dir() {
         .arg("-k")
         .arg(&keys_dir)
         .arg("-v")
-        .arg("v_test_dir");
+        .arg("v_test_dir")
+        .arg("-w")
+        .arg(STRONG_PWD);
     cmd.assert().success();
     assert!(fs::metadata(&output_dir).is_ok());
     assert!(fs::metadata(format!("{}/test.txt", &output_dir)).is_ok());
@@ -224,78 +232,82 @@ fn test_rotate_key() {
     let td = tempdir().unwrap();
     let cwd = td.path().to_path_buf();
     let keys_dir = p(&cwd, "test_keys_rotate");
-    let encrypted_file_path = p(&cwd, "encrypted_data_rotate.json");
+    let file_to_encrypt = p(&cwd, "file_to_rotate.txt");
+    let encrypted_file_path = p(&cwd, "file_to_rotate.enc");
+    let decrypted_file_path = p(&cwd, "file_to_rotate.dec");
     let v1 = "v1_rotate";
     let v2 = "v2_rotate";
 
-    // 1) Generate v1
-    let mut cmd = Command::cargo_bin("ironcrypt").unwrap();
-    cmd.current_dir(&cwd)
-        .arg("generate")
-        .arg("-v")
-        .arg(v1)
-        .arg("-d")
-        .arg(&keys_dir);
-    cmd.assert().success();
+    // 1) Generate v1 keys
+    Command::cargo_bin("ironcrypt").unwrap()
+        .current_dir(&cwd)
+        .args(["generate", "-v", v1, "-d", &keys_dir])
+        .assert()
+        .success();
 
-    // 2) Encrypt with v1 and save output
-    let mut cmd = Command::cargo_bin("ironcrypt").unwrap();
-    cmd.current_dir(&cwd)
-        .arg("encrypt")
-        .arg("-w")
-        .arg(STRONG_PWD)
-        .arg("-d")
-        .arg(&keys_dir)
-        .arg("-v")
-        .arg(v1);
-    let output = cmd.output().unwrap();
-    assert!(output.status.success());
-    fs::write(&encrypted_file_path, output.stdout).unwrap();
-    assert!(fs::metadata(&encrypted_file_path).is_ok());
+    // 2) Create a file and encrypt it with v1
+    let file_content = "This file will be re-keyed.";
+    fs::write(&file_to_encrypt, file_content).unwrap();
+
+    Command::cargo_bin("ironcrypt").unwrap()
+        .current_dir(&cwd)
+        .args([
+            "encrypt-file",
+            "-i", &file_to_encrypt,
+            "-o", &encrypted_file_path,
+            "-d", &keys_dir,
+            "-v", v1,
+            "-w", STRONG_PWD,
+        ])
+        .assert()
+        .success();
 
     // 3) Rotate v1 -> v2
-    let mut cmd = Command::cargo_bin("ironcrypt").unwrap();
-    cmd.current_dir(&cwd)
-        .arg("rotate-key")
-        .arg("--old-version")
-        .arg(v1)
-        .arg("--new-version")
-        .arg(v2)
-        .arg("-k")
-        .arg(&keys_dir)
-        .arg("-f")
-        .arg(&encrypted_file_path);
-    cmd.assert().success();
+    Command::cargo_bin("ironcrypt").unwrap()
+        .current_dir(&cwd)
+        .args([
+            "rotate-key",
+            "--old-version", v1,
+            "--new-version", v2,
+            "-k", &keys_dir,
+            "-f", &encrypted_file_path,
+        ])
+        .assert()
+        .success();
 
-    // 4) v2 keys exist
+    // 4) v2 keys should now exist
     assert!(fs::metadata(p(&cwd, "test_keys_rotate/private_key_v2_rotate.pem")).is_ok());
     assert!(fs::metadata(p(&cwd, "test_keys_rotate/public_key_v2_rotate.pem")).is_ok());
 
-    // 5) Decrypt with v2 (success)
-    let mut cmd = Command::cargo_bin("ironcrypt").unwrap();
-    cmd.current_dir(&cwd)
-        .arg("decrypt")
-        .arg("-w")
-        .arg(STRONG_PWD)
-        .arg("-k")
-        .arg(&keys_dir)
-        .arg("-v")
-        .arg(v2)
-        .arg("-f")
-        .arg(&encrypted_file_path);
-    cmd.assert().success();
+    // 5) Decrypt with v2 (should succeed)
+    Command::cargo_bin("ironcrypt").unwrap()
+        .current_dir(&cwd)
+        .args([
+            "decrypt-file",
+            "-i", &encrypted_file_path,
+            "-o", &decrypted_file_path,
+            "-k", &keys_dir,
+            "-v", v2,
+            "-w", STRONG_PWD,
+        ])
+        .assert()
+        .success();
 
-    // 6) Decrypt with v1 (should fail)
-    let mut cmd = Command::cargo_bin("ironcrypt").unwrap();
-    cmd.current_dir(&cwd)
-        .arg("decrypt")
-        .arg("-w")
-        .arg(STRONG_PWD)
-        .arg("-k")
-        .arg(&keys_dir)
-        .arg("-v")
-        .arg(v1)
-        .arg("-f")
-        .arg(&encrypted_file_path);
-    cmd.assert().failure();
+    // 6) Verify content
+    let decrypted_content = fs::read_to_string(&decrypted_file_path).unwrap();
+    assert_eq!(file_content, decrypted_content);
+
+    // 7) Decrypt with v1 (should fail because key is wrong)
+    Command::cargo_bin("ironcrypt").unwrap()
+        .current_dir(&cwd)
+        .args([
+            "decrypt-file",
+            "-i", &encrypted_file_path,
+            "-o", &decrypted_file_path, // overwrite is fine for test
+            "-k", &keys_dir,
+            "-v", v1,
+            "-w", STRONG_PWD,
+        ])
+        .assert()
+        .failure();
 }

@@ -26,6 +26,7 @@
 - **State-of-the-Art Password Hashing:** For passwords, IronCrypt uses Argon2, currently considered one of the most secure hashing algorithms in the world. It is specifically designed to resist modern GPU-based brute-force attacks, providing much greater security than older algorithms.
 - **Advanced Key Management:** The built-in key versioning system (`-v v1`, `-v v2`) and the dedicated `rotate-key` command allow you to update your encryption keys over time. This automates the process of migrating to a new key without having to manually decrypt and re-encrypt all your data. IronCrypt can load both modern PKCS#8 keys and legacy PKCS#1 keys, ensuring broad compatibility.
 - **Flexible Configuration:** You can finely tune security parameters via the `ironcrypt.toml` file, environment variables, or the `IronCryptConfig` struct in code. This includes RSA key size and the computational "costs" of the Argon2 algorithm, allowing you to balance security and performance to fit your needs.
+- **Streaming Encryption:** For file and directory operations, IronCrypt uses a streaming approach. This means it can encrypt and decrypt very large files without loading them entirely into memory, making it highly efficient for any file size.
 - **Comprehensive Data Encryption:** IronCrypt is built to handle more than just passwords. It can encrypt any file (images, PDFs, documents), entire directories (by archiving them first), or any other data that can be represented as a stream of bytes.
 - **Dual Use (CLI and Library):** IronCrypt is designed from the ground up to be dual-purpose. You can use it as a quick command-line tool for simple tasks, or integrate it as a library (crate) directly into your own Rust applications for more complex logic.
 
@@ -96,21 +97,24 @@ This process also uses envelope encryption (AES + RSA) to ensure both performanc
 
 #### **1. Encryption Process**
 
-1.  **Reading the file**: The content of the file (e.g., an image, a PDF) is read into memory as binary data.
-2.  **Creating the envelope**:
+1.  **Opening File Streams**: IronCrypt opens the input file for reading and the output file for writing, without loading the entire content into memory.
+2.  **Creating the Envelope Header**:
     *   A new one-time use **AES-256** key is randomly generated.
-    *   The binary data of the file is fully encrypted with this AES key.
-3.  **Sealing the envelope**:
-    *   The AES key is encrypted with your **public RSA key**.
-4.  **Storage**: A JSON object is created, containing the encrypted file data, the encrypted AES key, and the necessary metadata. This JSON is then saved to a new file (e.g., `my_document.enc`).
+    *   This AES key is encrypted with your **public RSA key**.
+    *   A JSON header is created containing the encrypted AES key and other necessary metadata (nonce, key version).
+3.  **Streaming Encryption**:
+    *   The JSON header is written to the start of the output file.
+    *   IronCrypt then reads the input file in small chunks, encrypts each chunk with the AES key, and immediately writes the encrypted chunk to the output file.
+4.  **Finalizing**: Once the entire file has been processed, an authentication tag is appended to the end of the output file to ensure its integrity.
 
 #### **2. Decryption Process**
 
-1.  **Reading the encrypted file**: The content of the `.enc` file (the JSON) is read.
-2.  **Opening the envelope**:
-    *   Your **private RSA key** is used to decrypt the AES key.
-    *   The AES key is then used to decrypt the original binary data of the file.
-3.  **Saving the file**: The decrypted binary data is written to a new file, thus restoring the original file.
+1.  **Reading the Header**: IronCrypt reads the JSON header from the start of the encrypted file.
+2.  **Opening the Envelope**:
+    *   Your **private RSA key** is used to decrypt the AES key from the header.
+3.  **Streaming Decryption**:
+    *   With the AES key, IronCrypt reads the rest of the encrypted file in chunks, decrypts each chunk, and writes the plaintext data to the output file.
+4.  **Verification and Saving**: After processing all chunks, it verifies the authentication tag. If valid, the original file is fully restored.
 
 ### Directory Encryption/Decryption
 
@@ -121,10 +125,9 @@ Encrypting an entire directory is based on the file encryption workflow, with an
 #### **1. Encryption Process**
 
 1.  **Archiving and Compression**:
-    *   The target directory is first read, and all its files and subdirectories are compressed into a single in-memory archive (a `.tar.gz` file).
+    *   The target directory is first read, and all its files and subdirectories are compressed into a single `.tar.gz` archive, which is written to a temporary file on disk.
 2.  **Encrypting the archive**:
-    *   This `.tar.gz` archive is then treated as a simple binary file.
-    *   The **file encryption** process described above is applied to the archive.
+    *   This temporary `.tar.gz` archive is then encrypted using the **streaming file encryption** process described above.
 3.  **Storage**: The resulting JSON is saved to a single encrypted file.
 
 #### **2. Decryption Process**
@@ -354,31 +357,54 @@ fn main() -> Result<(), IronCryptError> {
 }
 ```
 
-#### Encrypting and Decrypting a File
+#### Encrypting and Decrypting a File (Streaming)
 ```rust
-use ironcrypt::{IronCrypt, IronCryptConfig, IronCryptError};
-use std::fs;
+use ironcrypt::{encrypt_stream, decrypt_stream, load_public_key, load_private_key, PasswordCriteria, Argon2Config, IronCryptError};
+use std::fs::File;
+use std::io::Cursor;
 
-fn main() -> Result<(), IronCryptError> {
-    // Initialize IronCrypt
-    let config = IronCryptConfig::default();
-    let crypt = IronCrypt::new("keys", "v1", config)?;
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // For this example, we'll generate keys on the fly.
+    // In a real application, you would load them from a secure location.
+    let (private_key, public_key) = ironcrypt::generate_rsa_keys(2048)?;
 
-    // Encrypt a file
-    let file_data = b"This is the content of my secret file.";
-    let encrypted_file = crypt.encrypt_binary_data(file_data, "file_password")?;
-    fs::write("secret.enc", encrypted_file).unwrap();
-    println!("File encrypted!");
+    // --- Source and Destination ---
+    // In a real app, these would be `File::open(...)` and `File::create(...)`.
+    // Here, we use in-memory buffers for a self-contained example.
+    let original_data = "This is the content of my very large secret file that should be streamed.";
+    let mut source = Cursor::new(original_data);
+    let mut encrypted_dest = Cursor::new(Vec::new());
 
-    // Decrypt the file
-    let encrypted_content = fs::read_to_string("secret.enc").unwrap();
-    let decrypted_data = crypt.decrypt_binary_data(&encrypted_content, "file_password")?;
-    assert_eq!(file_data, &decrypted_data[..]);
-    println!("File decrypted successfully!");
+    // --- Encryption ---
+    let mut password = "a_very_Str0ng_P@ssw0rd!".to_string();
+    encrypt_stream(
+        &mut source,
+        &mut encrypted_dest,
+        &mut password,
+        &public_key,
+        &PasswordCriteria::default(),
+        "v1",
+        Argon2Config::default(),
+        true,
+    )?;
+    println!("File encrypted successfully!");
 
-    // Clean up
-    std::fs::remove_dir_all("keys")?;
-    std::fs::remove_file("secret.enc")?;
+    // --- Decryption ---
+    let mut encrypted_source = Cursor::new(encrypted_dest.into_inner());
+    let mut decrypted_dest = Cursor::new(Vec::new());
+
+    decrypt_stream(
+        &mut encrypted_source,
+        &mut decrypted_dest,
+        &private_key,
+        "a_very_Str0ng_P@ssw0rd!",
+    )?;
+
+    // --- Verification ---
+    let decrypted_data = String::from_utf8(decrypted_dest.into_inner())?;
+    assert_eq!(original_data, decrypted_data);
+    println!("File decrypted and verified successfully!");
+
     Ok(())
 }
 ```
