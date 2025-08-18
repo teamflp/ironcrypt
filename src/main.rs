@@ -7,7 +7,6 @@ use ironcrypt::{
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
-use rand;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::process;
@@ -45,26 +44,12 @@ enum Commands {
     Encrypt {
         #[arg(short = 'w', long)]
         password: String,
-
-        #[arg(short = 'd', long, default_value = "keys")]
-        public_key_directory: String,
-
-        /// Version of the public key (no default value)
-        #[arg(short = 'v', long)]
-        key_version: String,
     },
 
     /// Decrypts an encrypted password (existing logic).
     Decrypt {
         #[arg(short = 'w', long)]
         password: String,
-
-        #[arg(short = 'k', long, default_value = "keys")]
-        private_key_directory: String,
-
-        /// Version of the private key (no default value)
-        #[arg(short = 'v', long)]
-        key_version: String,
 
         #[arg(short = 'd', long, conflicts_with = "file")]
         data: Option<String>,
@@ -261,85 +246,111 @@ async fn main() {
     let args = Cli::parse();
 
     // The main logic is wrapped in a closure to handle errors easily
-    let result = (|| async {
+    let result: Result<(), String> = async {
         match args.command {
             Commands::Generate {
                 version,
                 directory,
                 key_size,
             } => {
-                if let Err(e) = std::fs::create_dir_all(&directory) {
-                    return Err(format!(
-                        "could not create key directory '{}': {}",
-                        directory, e
-                    ));
-                }
-                let private_key_path = format!("{}/private_key_{}.pem", directory, version);
-                let public_key_path = format!("{}/public_key_{}.pem", directory, version);
+                let start = metrics::metrics_start();
+                let result: Result<(), String> = (async {
+                    if let Err(e) = std::fs::create_dir_all(&directory) {
+                        return Err(format!(
+                            "could not create key directory '{}': {}",
+                            directory, e
+                        ));
+                    }
+                    let private_key_path = format!("{}/private_key_{}.pem", directory, version);
+                    let public_key_path = format!("{}/public_key_{}.pem", directory, version);
 
-                let spinner = ProgressBar::new_spinner();
-                spinner.set_style(
-                    ProgressStyle::with_template("{spinner} {msg}")
-                        .unwrap()
-                        .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]),
-                );
-                spinner.set_message("Generating RSA keys...");
-                spinner.enable_steady_tick(Duration::from_millis(100));
+                    let spinner = ProgressBar::new_spinner();
+                    spinner.set_style(
+                        ProgressStyle::with_template("{spinner} {msg}")
+                            .unwrap()
+                            .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]),
+                    );
+                    spinner.set_message("Generating RSA keys...");
+                    spinner.enable_steady_tick(Duration::from_millis(100));
 
-                let (private_key, public_key) = generate_rsa_keys(key_size)
-                    .map_err(|e| format!("could not generate RSA key pair: {}", e))?;
-                spinner.finish_with_message("RSA keys generated.");
+                    let (private_key, public_key) = generate_rsa_keys(key_size)
+                        .map_err(|e| format!("could not generate RSA key pair: {}", e))?;
+                    spinner.finish_with_message("RSA keys generated.");
 
-                save_keys_to_files(
-                    &private_key,
-                    &public_key,
-                    &private_key_path,
-                    &public_key_path,
-                )
-                .map_err(|e| format!("could not save keys to files: {}", e))?;
+                    save_keys_to_files(
+                        &private_key,
+                        &public_key,
+                        &private_key_path,
+                        &public_key_path,
+                    )
+                    .map_err(|e| format!("could not save keys to files: {}", e))?;
 
-                println!("RSA keys saved successfully.");
-                println!("Private key: {}", private_key_path);
-                println!("Public key: {}", public_key_path);
+                    println!("RSA keys saved successfully.");
+                    println!("Private key: {}", private_key_path);
+                    println!("Public key: {}", public_key_path);
+                    Ok(())
+                })
+                .await;
+                metrics::metrics_finish("generate", 0, start, result.is_ok());
+                result?;
             }
-            Commands::Encrypt {
-                password,
-                public_key_directory: _,
-                key_version: _,
-            } => {
-                let config = IronCryptConfig::default();
-                let crypt = IronCrypt::new(config, ironcrypt::DataType::Generic).await
-                    .map_err(|e| format!("could not initialize encryption module: {}", e))?;
-                let encrypted_hash = crypt
-                    .encrypt_password(&password)
-                    .map_err(|e| format!("could not encrypt password: {}", e))?;
-                println!("{}", encrypted_hash);
+            Commands::Encrypt { password } => {
+                let start = metrics::metrics_start();
+                let payload_size = password.len() as u64;
+                let result: Result<(), String> = (async {
+                    let config = IronCryptConfig::default();
+                    let crypt = IronCrypt::new(config, ironcrypt::DataType::Generic)
+                        .await
+                        .map_err(|e| format!("could not initialize encryption module: {}", e))?;
+                    let encrypted_hash = crypt
+                        .encrypt_password(&password)
+                        .map_err(|e| format!("could not encrypt password: {}", e))?;
+                    println!("{}", encrypted_hash);
+                    Ok(())
+                })
+                .await;
+                metrics::metrics_finish("encrypt", payload_size, start, result.is_ok());
+                result?;
             }
             Commands::Decrypt {
                 password,
-                private_key_directory: _,
-                key_version: _,
                 data,
                 file,
             } => {
-                let encrypted_data = if let Some(s) = data {
-                    s
-                } else if let Some(f) = file {
-                    std::fs::read_to_string(&f)
-                        .map_err(|e| format!("could not read file '{}': {}", f, e))?
-                } else {
-                    return Err("please provide encrypted data with --data or --file.".into());
+                let start = metrics::metrics_start();
+                let (payload_size, result) = match (async {
+                    let encrypted_data = if let Some(s) = data {
+                        s
+                    } else if let Some(f) = file {
+                        std::fs::read_to_string(&f)
+                            .map_err(|e| format!("could not read file '{}': {}", f, e))?
+                    } else {
+                        return Err("please provide encrypted data with --data or --file.".to_string());
+                    };
+                    let payload_size = encrypted_data.len() as u64;
+
+                    let config = IronCryptConfig::default();
+                    let crypt = IronCrypt::new(config, ironcrypt::DataType::Generic)
+                        .await
+                        .map_err(|e| format!("could not initialize encryption module: {}", e))?;
+
+                    if crypt
+                        .verify_password(&encrypted_data, &password)
+                        .map_err(|e| e.to_string())?
+                    {
+                        println!("Password correct.");
+                    } else {
+                        return Err("incorrect password or hash not found.".into());
+                    }
+                    Ok((payload_size, ()))
+                })
+                .await
+                {
+                    Ok((size, _)) => (size, Ok(())),
+                    Err(e) => (0, Err(e)),
                 };
-
-                let config = IronCryptConfig::default();
-                let crypt = IronCrypt::new(config, ironcrypt::DataType::Generic).await
-                    .map_err(|e| format!("could not initialize encryption module: {}", e))?;
-
-                if crypt.verify_password(&encrypted_data, &password).map_err(|e| e.to_string())? {
-                    println!("Password correct.");
-                } else {
-                    return Err("incorrect password or hash not found.".into());
-                }
+                metrics::metrics_finish("decrypt", payload_size, start, result.is_ok());
+                result?;
             }
             Commands::EncryptFile {
                 input_file,
@@ -348,114 +359,131 @@ async fn main() {
                 key_version,
                 mut password,
             } => {
-                let config = IronCryptConfig::default();
-                let _crypt = IronCrypt::new(config, ironcrypt::DataType::Generic).await
-                    .map_err(|e| format!("could not initialize encryption module: {}", e))?;
+                let start = metrics::metrics_start();
+                let payload_size = std::fs::metadata(&input_file).map(|m| m.len()).unwrap_or(0);
+                let result: Result<(), String> = (async {
+                    let mut source = File::open(&input_file)
+                        .map_err(|e| format!("could not open input file '{}': {}", input_file, e))?;
+                    let mut dest = File::create(&output_file).map_err(|e| {
+                        format!("could not create output file '{}': {}", output_file, e)
+                    })?;
 
-                let mut source = File::open(&input_file)
-                    .map_err(|e| format!("could not open input file '{}': {}", input_file, e))?;
-                let mut dest = File::create(&output_file).map_err(|e| {
-                    format!("could not create output file '{}': {}", output_file, e)
-                })?;
+                    let public_key_path =
+                        format!("{}/public_key_{}.pem", public_key_directory, key_version);
+                    let public_key = load_public_key(&public_key_path).map_err(|e| {
+                        format!("could not load public key '{}': {}", public_key_path, e)
+                    })?;
 
-                let public_key_path =
-                    format!("{}/public_key_{}.pem", public_key_directory, key_version);
-                let public_key = load_public_key(&public_key_path)
-                    .map_err(|e| format!("could not load public key '{}': {}", public_key_path, e))?;
+                    let criteria = PasswordCriteria::default();
+                    let argon_cfg = Argon2Config::default();
 
-                let criteria = PasswordCriteria::default();
-                let argon_cfg = Argon2Config::default();
+                    let hash_password = !password.is_empty();
+                    encrypt_stream(
+                        &mut source,
+                        &mut dest,
+                        &mut password,
+                        &public_key,
+                        &criteria,
+                        &key_version,
+                        argon_cfg,
+                        hash_password,
+                    )
+                    .map_err(|e| format!("could not encrypt file stream: {}", e))?;
 
-                let hash_password = !password.is_empty();
-                encrypt_stream(
-                    &mut source,
-                    &mut dest,
-                    &mut password,
-                    &public_key,
-                    &criteria,
-                    &key_version,
-                    argon_cfg,
-                    hash_password,
-                )
-                .map_err(|e| format!("could not encrypt file stream: {}", e))?;
-
-                println!("File encrypted successfully to '{}'.", output_file);
+                    println!("File encrypted successfully to '{}'.", output_file);
+                    Ok(())
+                })
+                .await;
+                metrics::metrics_finish("encrypt_file", payload_size, start, result.is_ok());
+                result?;
             }
             Commands::EncryptPii {
                 input_file,
                 output_file,
                 mut password,
             } => {
-                let config = IronCryptConfig::default();
-                let crypt = IronCrypt::new(config, ironcrypt::DataType::Pii).await
-                    .map_err(|e| format!("could not initialize encryption module: {}", e))?;
+                let start = metrics::metrics_start();
+                let payload_size = std::fs::metadata(&input_file).map(|m| m.len()).unwrap_or(0);
+                let result: Result<(), String> = (async {
+                    let config = IronCryptConfig::default();
+                    let crypt = IronCrypt::new(config, ironcrypt::DataType::Pii)
+                        .await
+                        .map_err(|e| format!("could not initialize encryption module: {}", e))?;
 
-                let mut source = File::open(&input_file)
-                    .map_err(|e| format!("could not open input file '{}': {}", input_file, e))?;
-                let mut dest = File::create(&output_file).map_err(|e| {
-                    format!("could not create output file '{}': {}", output_file, e)
-                })?;
+                    let mut source = File::open(&input_file)
+                        .map_err(|e| format!("could not open input file '{}': {}", input_file, e))?;
+                    let mut dest = File::create(&output_file).map_err(|e| {
+                        format!("could not create output file '{}': {}", output_file, e)
+                    })?;
 
-                let public_key_path =
-                    format!("{}/public_key_{}.pem", "keys_pii", "v1");
-                let public_key = load_public_key(&public_key_path)
-                    .map_err(|e| format!("could not load public key '{}': {}", public_key_path, e))?;
+                    let public_key = crypt.public_key();
+                    let key_version = crypt.key_version();
+                    let criteria = PasswordCriteria::default();
+                    let argon_cfg = Argon2Config::default();
 
-                let criteria = PasswordCriteria::default();
-                let argon_cfg = Argon2Config::default();
+                    let hash_password = !password.is_empty();
+                    encrypt_stream(
+                        &mut source,
+                        &mut dest,
+                        &mut password,
+                        public_key,
+                        &criteria,
+                        key_version,
+                        argon_cfg,
+                        hash_password,
+                    )
+                    .map_err(|e| format!("could not encrypt file stream: {}", e))?;
 
-                let hash_password = !password.is_empty();
-                encrypt_stream(
-                    &mut source,
-                    &mut dest,
-                    &mut password,
-                    &public_key,
-                    &criteria,
-                    "v1",
-                    argon_cfg,
-                    hash_password,
-                )
-                .map_err(|e| format!("could not encrypt file stream: {}", e))?;
-
-                println!("File encrypted successfully to '{}'.", output_file);
+                    println!("File encrypted successfully to '{}'.", output_file);
+                    Ok(())
+                })
+                .await;
+                metrics::metrics_finish("encrypt_pii", payload_size, start, result.is_ok());
+                result?;
             }
             Commands::EncryptBio {
                 input_file,
                 output_file,
                 mut password,
             } => {
-                let config = IronCryptConfig::default();
-                let crypt = IronCrypt::new(config, ironcrypt::DataType::Biometric).await
-                    .map_err(|e| format!("could not initialize encryption module: {}", e))?;
+                let start = metrics::metrics_start();
+                let payload_size = std::fs::metadata(&input_file).map(|m| m.len()).unwrap_or(0);
+                let result: Result<(), String> = (async {
+                    let config = IronCryptConfig::default();
+                    let crypt = IronCrypt::new(config, ironcrypt::DataType::Biometric)
+                        .await
+                        .map_err(|e| format!("could not initialize encryption module: {}", e))?;
 
-                let mut source = File::open(&input_file)
-                    .map_err(|e| format!("could not open input file '{}': {}", input_file, e))?;
-                let mut dest = File::create(&output_file).map_err(|e| {
-                    format!("could not create output file '{}': {}", output_file, e)
-                })?;
+                    let mut source = File::open(&input_file)
+                        .map_err(|e| format!("could not open input file '{}': {}", input_file, e))?;
+                    let mut dest = File::create(&output_file).map_err(|e| {
+                        format!("could not create output file '{}': {}", output_file, e)
+                    })?;
 
-                let public_key_path =
-                    format!("{}/public_key_{}.pem", "keys_bio", "v1");
-                let public_key = load_public_key(&public_key_path)
-                    .map_err(|e| format!("could not load public key '{}': {}", public_key_path, e))?;
+                    let public_key = crypt.public_key();
+                    let key_version = crypt.key_version();
+                    let criteria = PasswordCriteria::default();
+                    let argon_cfg = Argon2Config::default();
 
-                let criteria = PasswordCriteria::default();
-                let argon_cfg = Argon2Config::default();
+                    let hash_password = !password.is_empty();
+                    encrypt_stream(
+                        &mut source,
+                        &mut dest,
+                        &mut password,
+                        public_key,
+                        &criteria,
+                        key_version,
+                        argon_cfg,
+                        hash_password,
+                    )
+                    .map_err(|e| format!("could not encrypt file stream: {}", e))?;
 
-                let hash_password = !password.is_empty();
-                encrypt_stream(
-                    &mut source,
-                    &mut dest,
-                    &mut password,
-                    &public_key,
-                    &criteria,
-                    "v1",
-                    argon_cfg,
-                    hash_password,
-                )
-                .map_err(|e| format!("could not encrypt file stream: {}", e))?;
-
-                println!("File encrypted successfully to '{}'.", output_file);
+                    println!("File encrypted successfully to '{}'.", output_file);
+                    Ok(())
+                })
+                .await;
+                metrics::metrics_finish("encrypt_bio", payload_size, start, result.is_ok());
+                result?;
             }
             Commands::DecryptFile {
                 input_file,
@@ -464,22 +492,31 @@ async fn main() {
                 key_version,
                 password,
             } => {
-                let mut source = File::open(&input_file)
-                    .map_err(|e| format!("could not open input file '{}': {}", input_file, e))?;
-                let mut dest = File::create(&output_file).map_err(|e| {
-                    format!("could not create output file '{}': {}", output_file, e)
-                })?;
+                let start = metrics::metrics_start();
+                let payload_size = std::fs::metadata(&input_file).map(|m| m.len()).unwrap_or(0);
+                let result: Result<(), String> = (async {
+                    let mut source = File::open(&input_file).map_err(|e| {
+                        format!("could not open input file '{}': {}", input_file, e)
+                    })?;
+                    let mut dest = File::create(&output_file).map_err(|e| {
+                        format!("could not create output file '{}': {}", output_file, e)
+                    })?;
 
-                let private_key_path =
-                    format!("{}/private_key_{}.pem", private_key_directory, key_version);
-                let private_key = load_private_key(&private_key_path).map_err(|e| {
-                    format!("could not load private key '{}': {}", private_key_path, e)
-                })?;
+                    let private_key_path =
+                        format!("{}/private_key_{}.pem", private_key_directory, key_version);
+                    let private_key = load_private_key(&private_key_path).map_err(|e| {
+                        format!("could not load private key '{}': {}", private_key_path, e)
+                    })?;
 
-                decrypt_stream(&mut source, &mut dest, &private_key, &password)
-                    .map_err(|e| format!("could not decrypt file stream: {}", e))?;
+                    decrypt_stream(&mut source, &mut dest, &private_key, &password)
+                        .map_err(|e| format!("could not decrypt file stream: {}", e))?;
 
-                println!("File decrypted successfully to '{}'.", output_file);
+                    println!("File decrypted successfully to '{}'.", output_file);
+                    Ok(())
+                })
+                .await;
+                metrics::metrics_finish("decrypt_file", payload_size, start, result.is_ok());
+                result?;
             }
             Commands::EncryptDir {
                 input_dir,
@@ -488,51 +525,68 @@ async fn main() {
                 key_version,
                 mut password,
             } => {
-                let temp_tar_file = NamedTempFile::new()
-                    .map_err(|e| format!("could not create temporary file: {}", e))?;
-                let tar_path = temp_tar_file.path().to_path_buf();
+                let start = metrics::metrics_start();
+                let closure_result: Result<(u64, ()), String> = (async {
+                    let temp_tar_file = NamedTempFile::new()
+                        .map_err(|e| format!("could not create temporary file: {}", e))?;
+                    let tar_path = temp_tar_file.path().to_path_buf();
 
-                let file = File::create(&tar_path)
-                    .map_err(|e| format!("could not create tar archive: {}", e))?;
-                let encoder = GzEncoder::new(file, Compression::default());
-                let mut builder = Builder::new(encoder);
-                builder
-                    .append_dir_all(".", &input_dir)
-                    .map_err(|e| format!("could not archive directory '{}': {}", input_dir, e))?;
-                builder
-                    .into_inner()
-                    .map_err(|e| format!("could not finalize archive: {}", e))?
-                    .finish()
-                    .map_err(|e| format!("could not finish gzip encoding: {}", e))?;
+                    let file = File::create(&tar_path)
+                        .map_err(|e| format!("could not create tar archive: {}", e))?;
+                    let encoder = GzEncoder::new(file, Compression::default());
+                    let mut builder = Builder::new(encoder);
+                    builder.append_dir_all(".", &input_dir).map_err(|e| {
+                        format!("could not archive directory '{}': {}", input_dir, e)
+                    })?;
+                    builder
+                        .into_inner()
+                        .map_err(|e| format!("could not finalize archive: {}", e))?
+                        .finish()
+                        .map_err(|e| format!("could not finish gzip encoding: {}", e))?;
 
-                let mut source = File::open(&tar_path)
-                    .map_err(|e| format!("could not open temporary archive: {}", e))?;
-                let mut dest = File::create(&output_file).map_err(|e| {
-                    format!("could not create output file '{}': {}", output_file, e)
-                })?;
+                    let payload_size =
+                        std::fs::metadata(&tar_path).map(|m| m.len()).unwrap_or(0);
 
-                let public_key_path =
-                    format!("{}/public_key_{}.pem", public_key_directory, key_version);
-                let public_key = load_public_key(&public_key_path)
-                    .map_err(|e| format!("could not load public key '{}': {}", public_key_path, e))?;
+                    let mut source = File::open(&tar_path)
+                        .map_err(|e| format!("could not open temporary archive: {}", e))?;
+                    let mut dest = File::create(&output_file).map_err(|e| {
+                        format!("could not create output file '{}': {}", output_file, e)
+                    })?;
 
-                let criteria = PasswordCriteria::default();
-                let argon_cfg = Argon2Config::default();
+                    let public_key_path =
+                        format!("{}/public_key_{}.pem", public_key_directory, key_version);
+                    let public_key = load_public_key(&public_key_path).map_err(|e| {
+                        format!("could not load public key '{}': {}", public_key_path, e)
+                    })?;
 
-                let hash_password = !password.is_empty();
-                encrypt_stream(
-                    &mut source,
-                    &mut dest,
-                    &mut password,
-                    &public_key,
-                    &criteria,
-                    &key_version,
-                    argon_cfg,
-                    hash_password,
-                )
-                .map_err(|e| format!("could not encrypt directory stream: {}", e))?;
+                    let criteria = PasswordCriteria::default();
+                    let argon_cfg = Argon2Config::default();
 
-                println!("Directory encrypted successfully to '{}'.", output_file);
+                    let hash_password = !password.is_empty();
+                    encrypt_stream(
+                        &mut source,
+                        &mut dest,
+                        &mut password,
+                        &public_key,
+                        &criteria,
+                        &key_version,
+                        argon_cfg,
+                        hash_password,
+                    )
+                    .map_err(|e| format!("could not encrypt directory stream: {}", e))?;
+
+                    println!("Directory encrypted successfully to '{}'.", output_file);
+                    Ok((payload_size, ()))
+                })
+                .await;
+
+                let (payload_size, op_result) = match closure_result {
+                    Ok((size, ())) => (size, Ok(())),
+                    Err(e) => (0, Err(e)),
+                };
+
+                metrics::metrics_finish("encrypt_dir", payload_size, start, op_result.is_ok());
+                op_result?;
             }
             Commands::DecryptDir {
                 input_file,
@@ -541,35 +595,45 @@ async fn main() {
                 key_version,
                 password,
             } => {
-                let temp_tar_file = NamedTempFile::new()
-                    .map_err(|e| format!("could not create temporary file: {}", e))?;
-                let tar_path = temp_tar_file.path().to_path_buf();
+                let start = metrics::metrics_start();
+                let payload_size = std::fs::metadata(&input_file).map(|m| m.len()).unwrap_or(0);
+                let result: Result<(), String> = (async {
+                    let temp_tar_file = NamedTempFile::new()
+                        .map_err(|e| format!("could not create temporary file: {}", e))?;
+                    let tar_path = temp_tar_file.path().to_path_buf();
 
-                let mut source = File::open(&input_file)
-                    .map_err(|e| format!("could not open input file '{}': {}", input_file, e))?;
-                let mut dest = File::create(&tar_path)
-                    .map_err(|e| format!("could not create temporary archive: {}", e))?;
+                    let mut source = File::open(&input_file).map_err(|e| {
+                        format!("could not open input file '{}': {}", input_file, e)
+                    })?;
+                    let mut dest = File::create(&tar_path)
+                        .map_err(|e| format!("could not create temporary archive: {}", e))?;
 
-                let private_key_path =
-                    format!("{}/private_key_{}.pem", private_key_directory, key_version);
-                let private_key = load_private_key(&private_key_path).map_err(|e| {
-                    format!("could not load private key '{}': {}", private_key_path, e)
-                })?;
+                    let private_key_path =
+                        format!("{}/private_key_{}.pem", private_key_directory, key_version);
+                    let private_key = load_private_key(&private_key_path).map_err(|e| {
+                        format!("could not load private key '{}': {}", private_key_path, e)
+                    })?;
 
-                decrypt_stream(&mut source, &mut dest, &private_key, &password)
-                    .map_err(|e| format!("could not decrypt directory stream: {}", e))?;
+                    decrypt_stream(&mut source, &mut dest, &private_key, &password)
+                        .map_err(|e| format!("could not decrypt directory stream: {}", e))?;
 
-                let tar_gz = File::open(&tar_path)
-                    .map_err(|e| format!("could not open decrypted archive: {}", e))?;
-                let gz_decoder = GzDecoder::new(tar_gz);
-                let mut archive = Archive::new(gz_decoder);
-                std::fs::create_dir_all(&output_dir)
-                    .map_err(|e| format!("could not create output directory '{}': {}", output_dir, e))?;
-                archive
-                    .unpack(&output_dir)
-                    .map_err(|e| format!("could not extract archive to '{}': {}", output_dir, e))?;
+                    let tar_gz = File::open(&tar_path)
+                        .map_err(|e| format!("could not open decrypted archive: {}", e))?;
+                    let gz_decoder = GzDecoder::new(tar_gz);
+                    let mut archive = Archive::new(gz_decoder);
+                    std::fs::create_dir_all(&output_dir).map_err(|e| {
+                        format!("could not create output directory '{}': {}", output_dir, e)
+                    })?;
+                    archive.unpack(&output_dir).map_err(|e| {
+                        format!("could not extract archive to '{}': {}", output_dir, e)
+                    })?;
 
-                println!("Directory decrypted successfully to '{}'.", output_dir);
+                    println!("Directory decrypted successfully to '{}'.", output_dir);
+                    Ok(())
+                })
+                .await;
+                metrics::metrics_finish("decrypt_dir", payload_size, start, result.is_ok());
+                result?;
             }
             Commands::RotateKey {
                 old_version,
@@ -579,10 +643,13 @@ async fn main() {
                 file,
                 directory,
             } => {
+                let start = metrics::metrics_start();
+                let result: Result<(), String> = (async {
                 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
                 use ironcrypt::EncryptedStreamHeader;
                 use base64::Engine;
                 use rsa::Oaep;
+                use rsa::rand_core::OsRng;
                 use sha2::Sha256;
 
                 if directory.is_some() {
@@ -634,7 +701,7 @@ async fn main() {
                 // 5. Re-encrypt symmetric key
                 let sym_key_ciphertxt = base64::engine::general_purpose::STANDARD.decode(&old_header.encrypted_symmetric_key).map_err(|e| e.to_string())?;
                 let sym_key_plaintxt = old_private_key.decrypt(Oaep::new::<Sha256>(), &sym_key_ciphertxt).map_err(|e| e.to_string())?;
-                let new_sym_key_ciphertxt = new_public_key.encrypt(&mut rand::rngs::OsRng, Oaep::new::<Sha256>(), &sym_key_plaintxt).map_err(|e| e.to_string())?;
+                let new_sym_key_ciphertxt = new_public_key.encrypt(&mut OsRng, Oaep::new::<Sha256>(), &sym_key_plaintxt).map_err(|e| e.to_string())?;
 
                 // 6. Write new header and copy ciphertext
                 let new_header = EncryptedStreamHeader {
@@ -656,12 +723,19 @@ async fn main() {
                 temp_dest_file.persist(&file_path).map_err(|e| e.to_string())?;
 
                 println!("Key for file '{}' rotated successfully to version '{}'.", file_path, new_version);
+                    Ok(())
+                })
+                .await;
+                metrics::metrics_finish("rotate_key", 0, start, result.is_ok());
+                result?;
             }
             Commands::Daemon {
                 port,
                 key_directory,
                 key_version,
             } => {
+                let start = metrics::metrics_start();
+                let result: Result<(), String> = (async {
                 println!("Starting daemon...");
                 let mut daemon_path = std::env::current_exe()
                     .map_err(|e| format!("Could not find current executable path: {}", e))?;
@@ -680,10 +754,15 @@ async fn main() {
 
                 println!("Daemon started with PID: {}", child.id());
                 child.wait().map_err(|e| format!("Daemon process failed: {}", e))?;
+                    Ok(())
+                })
+                .await;
+                metrics::metrics_finish("daemon_launch", 0, start, result.is_ok());
+                result?;
             }
         }
         Ok(())
-    })().await;
+    }.await;
 
     if let Err(e) = result {
         eprintln!("error: {}", e);

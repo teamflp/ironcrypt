@@ -4,7 +4,6 @@ use ironcrypt::{
     config::{DataType, DataTypeConfig, IronCryptConfig, KeyManagementConfig},
     IronCrypt,
 };
-use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 

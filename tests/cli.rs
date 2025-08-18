@@ -40,28 +40,25 @@ fn test_generate_keys() {
 fn test_encrypt_decrypt_password() {
     let td = tempdir().unwrap();
     let cwd = td.path().to_path_buf();
-    let keys_dir = p(&cwd, "test_keys_cli_enc");
+    // The default key directory for Generic data is "keys"
+    let keys_dir = p(&cwd, "keys");
 
-    // 1) Generate keys
+    // 1) Generate keys into the default location that `encrypt` and `decrypt` will use.
     let mut cmd = Command::cargo_bin("ironcrypt").unwrap();
     cmd.current_dir(&cwd)
         .arg("generate")
         .arg("-v")
-        .arg("v_test_enc")
+        .arg("v1")
         .arg("-d")
         .arg(&keys_dir);
     cmd.assert().success();
 
-    // 2) Encrypt
+    // 2) Encrypt. It should use the keys from the default path ("keys/v1").
     let mut cmd = Command::cargo_bin("ironcrypt").unwrap();
     cmd.current_dir(&cwd)
         .arg("encrypt")
         .arg("-w")
-        .arg(STRONG_PWD)
-        .arg("-d")
-        .arg(&keys_dir)
-        .arg("-v")
-        .arg("v_test_enc");
+        .arg(STRONG_PWD);
 
     // Capture the output (which is the JSON) and write it to a file
     let output = cmd.output().unwrap();
@@ -76,31 +73,23 @@ fn test_encrypt_decrypt_password() {
         .arg("decrypt")
         .arg("-w")
         .arg(STRONG_PWD)
-        .arg("-k")
-        .arg(&keys_dir)
-        .arg("-v")
-        .arg("v_test_enc")
         .arg("-f")
         .arg(p(&cwd, "encrypted_data_cli.json"));
     cmd.assert()
         .success()
         .stdout(predicate::str::contains("Password correct."));
 
-    // 4) Decrypt with incorrect password (mais fort)
+    // 4) Decrypt with incorrect password
     let mut cmd = Command::cargo_bin("ironcrypt").unwrap();
     cmd.current_dir(&cwd)
         .arg("decrypt")
         .arg("-w")
         .arg(WRONG_STRONG_PWD)
-        .arg("-k")
-        .arg(&keys_dir)
-        .arg("-v")
-        .arg("v_test_enc")
         .arg("-f")
         .arg(p(&cwd, "encrypted_data_cli.json"));
 
     cmd.assert().failure().stderr(
-        predicate::str::contains("could not verify password")
+        predicate::str::contains("incorrect password or hash not found")
             .or(predicate::str::contains("Invalid password")),
     );
 }

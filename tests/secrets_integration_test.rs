@@ -1,6 +1,9 @@
-use ironcrypt::{AwsConfig, IronCrypt, IronCryptConfig, SecretStore, SecretsConfig};
+use ironcrypt::{
+    AwsConfig, DataType, IronCrypt, IronCryptConfig, KeyManagementConfig, SecretStore, SecretsConfig,
+};
 use mockall::mock;
 use std::error::Error;
+use std::collections::HashMap;
 
 mock! {
     pub SecretStore {}
@@ -39,11 +42,12 @@ async fn test_secret_store_integration_with_mock() {
     // Create an IronCrypt instance with the mock store.
     let ironcrypt = IronCrypt::with_store(
         config,
-        ironcrypt::DataType::Generic,
+        DataType::Generic,
         Box::new(mock_store),
         key_dir.path().to_str().unwrap().to_string(),
         "v1".to_string(),
     );
+    let ironcrypt = ironcrypt.expect("Failed to create IronCrypt instance with mock store");
 
     // Store the secret.
     ironcrypt
@@ -61,6 +65,15 @@ async fn test_secret_store_integration_with_mock() {
 #[tokio::test]
 async fn test_aws_provider_initialization() {
     let key_dir = tempfile::tempdir().unwrap();
+    let mut data_type_config = HashMap::new();
+    data_type_config.insert(
+        DataType::Generic,
+        KeyManagementConfig {
+            key_directory: key_dir.path().to_str().unwrap().to_string(),
+            key_version: "v1".to_string(),
+        },
+    );
+
     let config = IronCryptConfig {
         secrets: Some(SecretsConfig {
             provider: "aws".to_string(),
@@ -70,12 +83,13 @@ async fn test_aws_provider_initialization() {
             }),
             azure: None,
         }),
+        data_type_config: Some(data_type_config),
         ..Default::default()
     };
 
     // This test just checks that the AWS client can be initialized without panicking.
     // It doesn't make any real calls to AWS.
-    let ironcrypt = IronCrypt::new(config, ironcrypt::DataType::Generic)
+    let ironcrypt = IronCrypt::new(config, DataType::Generic)
         .await;
 
     assert!(ironcrypt.is_ok());
@@ -109,6 +123,15 @@ async fn test_aws_provider_initialization() {
 #[tokio::test]
 async fn test_azure_provider_initialization() {
     let key_dir = tempfile::tempdir().unwrap();
+    let mut data_type_config = HashMap::new();
+    data_type_config.insert(
+        DataType::Generic,
+        KeyManagementConfig {
+            key_directory: key_dir.path().to_str().unwrap().to_string(),
+            key_version: "v1".to_string(),
+        },
+    );
+
     let config = IronCryptConfig {
         secrets: Some(SecretsConfig {
             provider: "azure".to_string(),
@@ -118,12 +141,13 @@ async fn test_azure_provider_initialization() {
                 vault_uri: "https://dummy.vault.azure.net".to_string(),
             }),
         }),
+        data_type_config: Some(data_type_config),
         ..Default::default()
     };
 
     // This test just checks that the Azure client can be initialized without panicking.
     // It doesn't make any real calls to Azure.
-    let ironcrypt = IronCrypt::new(config, ironcrypt::DataType::Generic)
+    let ironcrypt = IronCrypt::new(config, DataType::Generic)
         .await;
 
     assert!(ironcrypt.is_ok());
