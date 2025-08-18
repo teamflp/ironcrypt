@@ -1,5 +1,7 @@
+use crate::{IronCryptError, PasswordCriteria};
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{AeadCore, Aes256Gcm};
+use aes_gcm_stream::{Aes256GcmStreamDecryptor, Aes256GcmStreamEncryptor};
 use argon2::password_hash::rand_core::{OsRng, RngCore};
 use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
 use argon2::{Algorithm, Argon2, Params, Version};
@@ -12,15 +14,15 @@ use sha2::Sha256;
 use std::io::{Read, Write};
 use zeroize::Zeroize;
 
-use crate::{IronCryptError, PasswordCriteria};
-use aes_gcm_stream::{Aes256GcmStreamDecryptor, Aes256GcmStreamEncryptor};
-
-/// Configuration of Argon2 parameters for hashing.
+/// Represents the configuration for the Argon2 hashing algorithm.
 #[derive(Clone, Debug)]
 pub struct Argon2Config {
-    pub memory_cost: u32, // per ex. 65536 (64 Mo)
-    pub time_cost: u32,   // per ex. 3
-    pub parallelism: u32, // per ex. 1
+    /// Memory cost (in KiB). Recommended: 65536 (64 MB).
+    pub memory_cost: u32,
+    /// Time cost (number of iterations). Recommended: 3.
+    pub time_cost: u32,
+    /// Degree of parallelism. Recommended: 1.
+    pub parallelism: u32,
 }
 
 impl Default for Argon2Config {
@@ -33,36 +35,36 @@ impl Default for Argon2Config {
     }
 }
 
-/// Serializable return structure containing encryption information.
+/// Serializable struct containing encryption information.
 #[derive(Serialize, Debug)]
 pub struct EncryptedData {
     pub key_version: String,
     pub encrypted_symmetric_key: String,
     pub nonce: String,
     pub ciphertext: String,
-    /// Optional, if `hash_password` is `true` and we want to return the hash.
+    /// Optional, if `hash_password` is `true`.
     pub password_hash: Option<String>,
 }
 
-/// Encrypts binary data using AES-256-GCM + RSA,
-/// and optionally hashes the password with Argon2id.
+/// Encrypts binary data using AES-256-GCM + RSA.
+///
+/// **Warning:** This function is deprecated and loads the entire data into memory.
+/// For encrypting large files or streams, prefer `encrypt_stream`.
 #[deprecated(
     since = "0.2.0",
-    note = "use `encrypt_stream` instead for better memory management"
+    note = "Use `encrypt_stream` for better memory management."
 )]
 pub fn encrypt_data_with_criteria(
     data: &[u8],
-    password: &mut String, // mut to allow zeroizing it later
+    password: &mut String,
     public_key: &RsaPublicKey,
     criteria: &PasswordCriteria,
     key_version: &str,
     argon_cfg: Argon2Config,
     hash_password: bool,
 ) -> Result<EncryptedData, IronCryptError> {
-    // 1) Check password strength
     criteria.validate(password)?;
 
-    // Argon2 hashing (if hash_password == true)
     let password_hash = if hash_password {
         let params = Params::new(
             argon_cfg.memory_cost,
@@ -71,40 +73,23 @@ pub fn encrypt_data_with_criteria(
             None,
         )?;
         let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
-
-        // Use the same OsRng from argon2::password_hash::rand_core
         let salt = SaltString::generate(&mut OsRng);
-
-        let hash_str = argon2
-            .hash_password(password.as_bytes(), &salt)?
-            .to_string();
+        let hash_str = argon2.hash_password(password.as_bytes(), &salt)?.to_string();
         Some(base64_standard.encode(hash_str))
     } else {
         None
     };
 
-    // Generate AES key
     let mut symmetric_key = [0u8; 32];
-    // still safe, because we re-imported RngCore from argon2's rand_core
     OsRng.fill_bytes(&mut symmetric_key);
 
-    // 4) Encrypt data with AES-256-GCM
-    let cipher = Aes256Gcm::new_from_slice(&symmetric_key)
-        .map_err(|e| IronCryptError::EncryptionError(e.to_string()))?;
-    let nonce = Aes256Gcm::generate_nonce(&mut OsRng); // 96 bits = 12 bytes
-    let ciphertext = cipher
-        .encrypt(&nonce, data)
-        .map_err(|e| IronCryptError::EncryptionError(format!("AES encryption error: {e}")))?;
+    let cipher = Aes256Gcm::new_from_slice(&symmetric_key)?;
+    let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
+    let ciphertext = cipher.encrypt(&nonce, data)?;
 
-    // 5) Encrypt the symmetric key with RSA (OAEP/SHA-256)
     let padding = Oaep::new::<Sha256>();
-    let encrypted_symmetric_key = public_key
-        .encrypt(&mut OsRng, padding, &symmetric_key)
-        .map_err(|e| {
-            IronCryptError::EncryptionError(format!("RSA symmetric key encryption error: {e}"))
-        })?;
+    let encrypted_symmetric_key = public_key.encrypt(&mut OsRng, padding, &symmetric_key)?;
 
-    // 6) Build the return structure
     let result = EncryptedData {
         key_version: key_version.to_string(),
         encrypted_symmetric_key: base64_standard.encode(&encrypted_symmetric_key),
@@ -113,23 +98,18 @@ pub fn encrypt_data_with_criteria(
         password_hash,
     };
 
-    // Clear the symmetric key from memory (good practice)
     symmetric_key.zeroize();
-
-    // Clear the plaintext password to avoid keeping it in memory longer than necessary
     password.zeroize();
 
     Ok(result)
 }
 
-// ---------------------------------------------------------------------------------
-// Streaming API
-// ---------------------------------------------------------------------------------
+// --- Streaming API ---
 
 const BUFFER_SIZE: usize = 8192; // 8 KB buffer
 
-/// Serializable structure for stream headers.
-/// Same as EncryptedData, but without the ciphertext.
+/// Serializable header for encrypted streams.
+/// Contains the metadata needed for decryption.
 #[derive(Serialize, Deserialize, Debug)]
 pub struct EncryptedStreamHeader {
     pub key_version: String,
@@ -138,25 +118,46 @@ pub struct EncryptedStreamHeader {
     pub password_hash: Option<String>,
 }
 
-/// Encrypts a stream of data using AES-256-GCM + RSA.
+/// Encrypts a data stream using AES-256-GCM and RSA.
 ///
-/// This function reads from a `Read` source, encrypts the data in chunks, and
-/// writes the encrypted data to a `Write` destination. It's designed for large files
-/// to avoid loading the entire content into memory.
+/// This function reads from a `Read` source, encrypts the data in chunks,
+/// and writes the result to a `Write` destination. Ideal for large files.
 ///
-/// # File Format
-/// 1. `header_len` (u64, Big Endian): 8-byte integer specifying the length of the JSON header.
-/// 2. `header` (JSON string): The `EncryptedStreamHeader` serialized to JSON.
-/// 3. `encrypted_data` (stream): The raw AES-GCM encrypted stream.
+/// # Encrypted Stream Format
+/// 1. `header_length` (u64, Big Endian): The size of the JSON header.
+/// 2. `header` (JSON): The serialized `EncryptedStreamHeader` struct.
+/// 3. `encrypted_data` (binary): The AES-GCM encrypted stream.
 ///
-/// # Parameters
-/// - `source`: The `Read` trait object to read plaintext data from.
-/// - `destination`: The `Write` trait object to write ciphertext to.
-/// - `password`, `public_key`, etc.: Same as `encrypt_data_with_criteria`.
+/// # Arguments
+/// * `source` - The source of the plaintext data.
+/// * `destination` - The destination for the encrypted data.
+/// * `password` - The password for hashing (will be cleared from memory).
+/// * `public_key` - The RSA public key to encrypt the session key.
+/// * `key_version` - The version of the key being used.
 ///
-/// # Returns
-/// - `Ok(())` on success.
-/// - `Err(IronCryptError)` on failure.
+/// # Example
+///
+/// ```rust
+/// use ironcrypt::{encrypt_stream, decrypt_stream, generate_rsa_keys, PasswordCriteria, Argon2Config};
+/// use std::io::Cursor;
+///
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let (private_key, public_key) = generate_rsa_keys(2048)?;
+/// let mut source = Cursor::new(b"my secret data");
+/// let mut dest = Cursor::new(Vec::new());
+/// let mut password = "a_very_Str0ng_P@ssw0rd!".to_string();
+///
+/// encrypt_stream(&mut source, &mut dest, &mut password, &public_key, &PasswordCriteria::default(), "v1", Argon2Config::default(), true)?;
+///
+/// dest.set_position(0);
+///
+/// let mut decrypted_dest = Cursor::new(Vec::new());
+/// decrypt_stream(&mut dest, &mut decrypted_dest, &private_key, "a_very_Str0ng_P@ssw0rd!")?;
+///
+/// assert_eq!(decrypted_dest.into_inner(), b"my secret data");
+/// # Ok(())
+/// # }
+/// ```
 pub fn encrypt_stream<R: Read, W: Write>(
     source: &mut R,
     destination: &mut W,
@@ -167,7 +168,6 @@ pub fn encrypt_stream<R: Read, W: Write>(
     argon_cfg: Argon2Config,
     hash_password: bool,
 ) -> Result<(), IronCryptError> {
-    // 1. Password validation and hashing (same as before)
     criteria.validate(password)?;
     let password_hash = if hash_password {
         let params = Params::new(
@@ -178,25 +178,20 @@ pub fn encrypt_stream<R: Read, W: Write>(
         )?;
         let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
         let salt = SaltString::generate(&mut OsRng);
-        let hash_str = argon2
-            .hash_password(password.as_bytes(), &salt)?
-            .to_string();
+        let hash_str = argon2.hash_password(password.as_bytes(), &salt)?.to_string();
         Some(base64_standard.encode(hash_str))
     } else {
         None
     };
-    password.zeroize(); // Zeroize password early
+    password.zeroize(); // Early password zeroization
 
-    // 2. Generate AES key and nonce
     let mut symmetric_key = [0u8; 32];
     OsRng.fill_bytes(&mut symmetric_key);
-    let nonce_bytes = Aes256Gcm::generate_nonce(&mut OsRng); // 12-byte nonce
+    let nonce_bytes = Aes256Gcm::generate_nonce(&mut OsRng);
 
-    // 3. Encrypt symmetric key with RSA
     let padding = Oaep::new::<Sha256>();
     let encrypted_symmetric_key = public_key.encrypt(&mut OsRng, padding, &symmetric_key)?;
 
-    // 4. Create and write the header
     let header = EncryptedStreamHeader {
         key_version: key_version.to_string(),
         encrypted_symmetric_key: base64_standard.encode(&encrypted_symmetric_key),
@@ -209,21 +204,19 @@ pub fn encrypt_stream<R: Read, W: Write>(
     destination.write_u64::<BigEndian>(header_len)?;
     destination.write_all(header_json.as_bytes())?;
 
-    // 5. Encrypt the stream
     let mut encryptor = Aes256GcmStreamEncryptor::new(symmetric_key, &nonce_bytes);
-    symmetric_key.zeroize(); // Zeroize key after use
+    symmetric_key.zeroize();
 
     let mut buffer = [0u8; BUFFER_SIZE];
     loop {
         let bytes_read = source.read(&mut buffer)?;
         if bytes_read == 0 {
-            break; // End of stream
+            break;
         }
         let ciphertext_chunk = encryptor.update(&buffer[..bytes_read]);
         destination.write_all(&ciphertext_chunk)?;
     }
 
-    // 6. Finalize encryption and write the tag
     let (final_chunk, tag) = encryptor.finalize();
     destination.write_all(&final_chunk)?;
     destination.write_all(&tag)?;
@@ -231,40 +224,32 @@ pub fn encrypt_stream<R: Read, W: Write>(
     Ok(())
 }
 
-/// Decrypts a stream of data that was encrypted with `encrypt_stream`.
+/// Decrypts a data stream encrypted with `encrypt_stream`.
 ///
-/// This function reads from a `Read` source, decrypts the data in chunks, and
-/// writes the plaintext data to a `Write` destination. It's designed for large files
-/// to avoid loading the entire content into memory.
-///
-/// # Parameters
-/// - `source`: The `Read` trait object to read ciphertext from.
-/// - `destination`: The `Write` trait object to write plaintext to.
-/// - `private_key`: The RSA private key for decrypting the AES key.
-/// - `password`: The password to verify against the stored hash.
+/// # Arguments
+/// * `source` - The source of the encrypted data.
+/// * `destination` - The destination for the plaintext data.
+/// * `private_key` - The RSA private key to decrypt the session key.
+/// * `password` - The password for verification (if used during encryption).
 ///
 /// # Returns
-/// - `Ok(())` on success.
-/// - `Err(IronCryptError)` on failure (e.g., authentication error, password mismatch).
+/// `Ok(())` on success. An `IronCryptError` if authentication fails
+/// or if the password is incorrect.
 pub fn decrypt_stream<R: Read, W: Write>(
     source: &mut R,
     destination: &mut W,
     private_key: &RsaPrivateKey,
     password: &str,
 ) -> Result<(), IronCryptError> {
-    // 1. Read header
     let header_len = source.read_u64::<BigEndian>()?;
     let mut header_bytes = vec![0; header_len as usize];
     source.read_exact(&mut header_bytes)?;
     let header: EncryptedStreamHeader = serde_json::from_slice(&header_bytes)?;
 
-    // 2. Verify password if hash is present
     if let Some(expected_hash_b64) = &header.password_hash {
         let expected_hash_str = String::from_utf8(base64_standard.decode(expected_hash_b64)?)?;
         let parsed_hash = PasswordHash::new(&expected_hash_str)?;
 
-        // Use the default Argon2 instance for verification.
-        // The parameters are encoded in the hash string itself.
         if Argon2::default()
             .verify_password(password.as_bytes(), &parsed_hash)
             .is_err()
@@ -273,35 +258,30 @@ pub fn decrypt_stream<R: Read, W: Write>(
         }
     }
 
-    // 3. Decrypt symmetric key
     let encrypted_symmetric_key = base64_standard.decode(&header.encrypted_symmetric_key)?;
     let padding = Oaep::new::<Sha256>();
     let mut symmetric_key = private_key.decrypt(padding, &encrypted_symmetric_key)?;
 
-    // 4. Decrypt stream
     let nonce_bytes = base64_standard.decode(&header.nonce)?;
-    let key_array: [u8; 32] = symmetric_key.clone()
+    let key_array: [u8; 32] = symmetric_key
+        .clone()
         .try_into()
-        .map_err(|_| IronCryptError::DecryptionError("Decrypted key has incorrect size".to_string()))?;
+        .map_err(|_| IronCryptError::DecryptionError("Decrypted key has incorrect size.".to_string()))?;
 
-    let mut decryptor =
-        Aes256GcmStreamDecryptor::new(key_array, &nonce_bytes);
+    let mut decryptor = Aes256GcmStreamDecryptor::new(key_array, &nonce_bytes);
     symmetric_key.zeroize();
 
     let mut buffer = [0u8; BUFFER_SIZE];
     loop {
         let bytes_read = source.read(&mut buffer)?;
         if bytes_read == 0 {
-            break; // End of stream
+            break;
         }
         let plaintext_chunk = decryptor.update(&buffer[..bytes_read]);
         destination.write_all(&plaintext_chunk)?;
     }
 
-    // 5. Finalize decryption (this performs the authentication tag check)
-    let final_chunk = decryptor
-        .finalize()
-        .map_err(|e| IronCryptError::DecryptionError(e))?;
+    let final_chunk = decryptor.finalize()?;
     destination.write_all(&final_chunk)?;
 
     Ok(())
