@@ -205,7 +205,22 @@ enum Commands {
         /// A directory of files to re-encrypt.
         #[arg(short='d', long, conflicts_with="file")]
         directory: Option<String>,
-    }
+    },
+
+    /// Starts the transparent encryption daemon.
+    Daemon {
+        /// Port to listen on
+        #[arg(short, long, default_value_t = 3000)]
+        port: u16,
+
+        /// Directory where keys are stored
+        #[arg(short = 'd', long, default_value = "keys")]
+        key_directory: String,
+
+        /// Key version to use (e.g., "v1")
+        #[arg(short = 'v', long)]
+        key_version: String,
+    },
 }
 
 #[tokio::main]
@@ -529,6 +544,30 @@ async fn main() {
                 temp_dest_file.persist(&file_path).map_err(|e| e.to_string())?;
 
                 println!("Key for file '{}' rotated successfully to version '{}'.", file_path, new_version);
+            }
+            Commands::Daemon {
+                port,
+                key_directory,
+                key_version,
+            } => {
+                println!("Starting daemon...");
+                let mut daemon_path = std::env::current_exe()
+                    .map_err(|e| format!("Could not find current executable path: {}", e))?;
+                daemon_path.pop();
+                daemon_path.push("ironcryptd");
+
+                let mut child = std::process::Command::new(daemon_path)
+                    .arg("--port")
+                    .arg(port.to_string())
+                    .arg("--key-directory")
+                    .arg(key_directory)
+                    .arg("--key-version")
+                    .arg(key_version)
+                    .spawn()
+                    .map_err(|e| format!("Failed to start daemon: {}", e))?;
+
+                println!("Daemon started with PID: {}", child.id());
+                child.wait().map_err(|e| format!("Daemon process failed: {}", e))?;
             }
         }
         Ok(())

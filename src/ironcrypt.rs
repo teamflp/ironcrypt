@@ -4,7 +4,7 @@ use crate::{
     generate_rsa_keys,
     handle_error::IronCryptError,
     load_private_key, load_public_key,
-    secrets::{aws::AwsStore, azure::AzureStore, google::GoogleStore, vault::VaultStore, SecretStore},
+    secrets::{aws::AwsStore, azure::AzureStore, vault::VaultStore, SecretStore},
     save_keys_to_files,
 };
 use std::fs;
@@ -108,14 +108,11 @@ impl IronCrypt {
                     let store = AzureStore::new(azure_config).await?;
                     Some(Box::new(store) as Box<dyn SecretStore + Send + Sync>)
                 }
+                // TODO: Google provider disabled due to compilation errors after dependency update.
                 "google" => {
-                    let google_config = secrets_config.google.as_ref().ok_or_else(|| {
-                        IronCryptError::ConfigurationError(
-                            "Google provider selected but no Google config provided".to_string(),
-                        )
-                    })?;
-                    let store = GoogleStore::new(google_config).await?;
-                    Some(Box::new(store) as Box<dyn SecretStore + Send + Sync>)
+                    return Err(IronCryptError::ConfigurationError(
+                        "Google provider is temporarily disabled.".to_string(),
+                    ))
                 }
                 _ => {
                     return Err(IronCryptError::ConfigurationError(format!(
