@@ -43,7 +43,13 @@ aws-sdk-secretsmanager = "1.2.0"
 azure_security_keyvault_secrets = "0.6.0"
 azure_identity = "0.27.0"
 google-cloud-secretmanager-v1 = "0.4.4"
-google-cloud-auth = "0.9.0"
+google-cloud-auth = "0.22.3"
+axum = { version = "0.7.5", features = ["ws", "macros", "json"] }
+tower-http = { version = "0.5.2", features = ["cors", "trace"] }
+tokio-util = { version = "0.7.11", features = ["io-util"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt"] }
+futures = "0.3"
 
 [dev-dependencies]
 assert_cmd = "2.0"
@@ -60,3 +66,7 @@ path = "src/lib.rs"
 [[bin]]
 name = "ironcrypt"
 path = "src/main.rs"
+
+[[bin]]
+name = "ironcryptd"
+path = "src/bin/daemon.rs"

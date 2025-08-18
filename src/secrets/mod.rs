@@ -3,7 +3,7 @@ use std::error::Error;
 
 pub mod aws;
 pub mod azure;
-pub mod google;
+// pub mod google; // TODO: Disabled due to compilation errors after dependency update.
 pub mod vault;
 
 /// A trait for a generic secret store.

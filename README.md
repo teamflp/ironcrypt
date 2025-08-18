@@ -409,6 +409,65 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
+### Transparent Encryption Daemon
+
+For seamless integration with applications written in any language, IronCrypt provides a daemon that exposes a simple, high-performance HTTP API for encryption and decryption. This allows you to run IronCrypt as a background service and have your other applications communicate with it locally, without needing to integrate the Rust library directly.
+
+#### Starting the Daemon
+
+You can start the daemon using the `daemon` subcommand. You must specify the key version to use.
+
+```sh
+# Start the daemon using v1 keys from the default 'keys' directory, listening on port 3000
+ironcrypt daemon --key-version v1
+
+# Start the daemon on a different port and with a different key directory
+ironcrypt daemon --key-version v2 --key-directory my_keys --port 8080
+```
+
+The daemon will run in the foreground. For production use, you should run it as a system service (e.g., using `systemd`).
+
+#### API Endpoints
+
+The daemon exposes two streaming endpoints:
+
+*   `POST /encrypt`: Encrypts a stream of data.
+*   `POST /decrypt`: Decrypts a stream of data.
+
+You can optionally provide a password for Argon2id hashing in the `X-Password` HTTP header.
+
+#### `curl` Examples
+
+**Encrypting Data:**
+
+Pipe any data to the `/encrypt` endpoint. The raw, encrypted data will be returned in the response body.
+
+```sh
+# Encrypt the string "my secret data"
+echo "my secret data" | curl --request POST --data-binary @- http://localhost:3000/encrypt > encrypted.bin
+
+# Encrypt a file
+cat my_document.pdf | curl --request POST --data-binary @- http://localhost:3000/encrypt > my_document.enc
+
+# Encrypt with an additional password
+echo "my secret data" | curl --request POST -H "X-Password: MyStrongPassword" --data-binary @- http://localhost:3000/encrypt > encrypted_with_pass.bin
+```
+
+**Decrypting Data:**
+
+Pipe the encrypted data to the `/decrypt` endpoint. The original plaintext data will be returned.
+
+```sh
+# Decrypt the data from the first example
+cat encrypted.bin | curl --request POST --data-binary @- http://localhost:3000/decrypt
+
+# Decrypt a file
+cat my_document.enc | curl --request POST --data-binary @- http://localhost:3000/decrypt > decrypted_document.pdf
+
+# Decrypt data that was encrypted with a password
+cat encrypted_with_pass.bin | curl --request POST -H "X-Password: MyStrongPassword" --data-binary @- http://localhost:3000/decrypt
+```
+
 ---
 
 ## Database Integration Examples
