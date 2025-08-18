@@ -1,5 +1,5 @@
 # Étape 1 : Construction
-FROM rust:beta-bookworm AS builder
+FROM rust:1.81.0-bookworm AS builder
 
 # Installer musl-tools, OpenSSL dev et pkg-config pour la compilation statique
 RUN apt-get update && apt-get install -y \
@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y \
     cmake \
     && rm -rf /var/lib/apt/lists/*
 
-# Ajouter la cible musl pour rustc afin de créer un binaire statique pour Linux
+# Ajouter la cible musl pour rustc
 RUN rustup target add x86_64-unknown-linux-musl
 
 WORKDIR /usr/src/app
