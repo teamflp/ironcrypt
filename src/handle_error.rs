@@ -103,3 +103,9 @@ impl From<argon2::Error> for IronCryptError {
         IronCryptError::Argon2Error(format!("{err}"))
     }
 }
+
+impl From<String> for IronCryptError {
+    fn from(err: String) -> Self {
+        IronCryptError::DecryptionError(err)
+    }
+}
