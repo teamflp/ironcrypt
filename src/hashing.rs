@@ -3,7 +3,6 @@ use argon2::password_hash::SaltString;
 use argon2::{self, Argon2, PasswordHasher};
 
 /// Hashes a password with Argon2id.
-/// Hashes a password using the Argon2 algorithm.
 ///
 /// This function takes a password as a string slice and hashes it
 /// using the Argon2 algorithm, which is considered one of the most secure for password storage.
@@ -31,9 +30,6 @@ use argon2::{self, Argon2, PasswordHasher};
 ///     Err(e) => println!("Error: {}", e),
 /// }
 /// ```
-///
-/// In this example, the password "MySecureP@ssw0rd" is hashed, and the result is displayed
-/// if the operation is successful. In case of failure, an error message is displayed.
 ///
 /// # Remarks
 ///

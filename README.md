@@ -1,4 +1,3 @@
-
 # IronCrypt
 
 - [IronCrypt](#ironcrypt)
@@ -329,29 +328,33 @@ ironcrypt rotate-key --old-version v1 --new-version v2 -k keys -d ./encrypted_fi
 You can also use `ironcrypt` as a library in your Rust projects. Add it to your `Cargo.toml`:
 ```toml
 [dependencies]
-ironcrypt = "0.1.0" # Replace with the desired version from crates.io
+ironcrypt = "0.2.0" # Replace with the desired version from crates.io
 ```
 
 #### Encrypting and Verifying a Password
 ```rust
-use ironcrypt::{IronCrypt, IronCryptConfig, IronCryptError};
+use ironcrypt::{IronCrypt, IronCryptConfig, DataType};
+use std::error::Error;
 
-fn main() -> Result<(), IronCryptError> {
-    // Initialize IronCrypt
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
+    // 1. Initialize IronCrypt with a default configuration.
+    //    Keys will be generated and stored in "keys/v1/" if they don't exist.
     let config = IronCryptConfig::default();
-    let crypt = IronCrypt::new("keys", "v1", config)?;
+    let crypt = IronCrypt::new(config, DataType::Generic).await?;
 
-    // Encrypt a password
-    let password = "My$ecureP@ssw0rd!";
-    let encrypted_data = crypt.encrypt_password(password)?;
-    println!("Password encrypted!");
+    // 2. Encrypt a password.
+    //    The result is a JSON string containing the hash and necessary metadata.
+    let password = "MySecurePassword123!";
+    let encrypted_json = crypt.encrypt_password(password)?;
+    println!("Encrypted password: {}", encrypted_json);
 
-    // Verify the password
-    let is_valid = crypt.verify_password(&encrypted_data, password)?;
+    // 3. Verify the password.
+    let is_valid = crypt.verify_password(&encrypted_json, password)?;
     assert!(is_valid);
     println!("Password verification successful!");
 
-    // Clean up keys for this example
+    // 4. Clean up the generated keys for this example.
     std::fs::remove_dir_all("keys")?;
     Ok(())
 }
@@ -359,51 +362,47 @@ fn main() -> Result<(), IronCryptError> {
 
 #### Encrypting and Decrypting a File (Streaming)
 ```rust
-use ironcrypt::{encrypt_stream, decrypt_stream, load_public_key, load_private_key, PasswordCriteria, Argon2Config, IronCryptError};
-use std::fs::File;
+use ironcrypt::{encrypt_stream, decrypt_stream, generate_rsa_keys, PasswordCriteria, Argon2Config};
 use std::io::Cursor;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // For this example, we'll generate keys on the fly.
-    // In a real application, you would load them from a secure location.
-    let (private_key, public_key) = ironcrypt::generate_rsa_keys(2048)?;
+    // 1. Generate an RSA key pair (in a real application, load them from a file).
+    let (private_key, public_key) = generate_rsa_keys(2048)?;
 
-    // --- Source and Destination ---
-    // In a real app, these would be `File::open(...)` and `File::create(...)`.
-    // Here, we use in-memory buffers for a self-contained example.
-    let original_data = "This is the content of my very large secret file that should be streamed.";
-    let mut source = Cursor::new(original_data);
+    // 2. Prepare the source and destination streams.
+    let original_data = "This is a secret message that will be streamed for encryption.";
+    let mut source = Cursor::new(original_data.as_bytes());
     let mut encrypted_dest = Cursor::new(Vec::new());
 
-    // --- Encryption ---
-    let mut password = "a_very_Str0ng_P@ssw0rd!".to_string();
+    // 3. Encrypt the stream.
+    let mut password = "AnotherStrongPassword!".to_string();
     encrypt_stream(
         &mut source,
         &mut encrypted_dest,
         &mut password,
         &public_key,
         &PasswordCriteria::default(),
-        "v1",
+        "v1", // Key version
         Argon2Config::default(),
-        true,
+        true, // Indicates that the password should be hashed
     )?;
-    println!("File encrypted successfully!");
 
-    // --- Decryption ---
-    let mut encrypted_source = Cursor::new(encrypted_dest.into_inner());
+    // 4. Go back to the beginning of the encrypted stream to read it.
+    encrypted_dest.set_position(0);
+
+    // 5. Decrypt the stream.
     let mut decrypted_dest = Cursor::new(Vec::new());
-
     decrypt_stream(
-        &mut encrypted_source,
+        &mut encrypted_dest,
         &mut decrypted_dest,
         &private_key,
-        "a_very_Str0ng_P@ssw0rd!",
+        "AnotherStrongPassword!",
     )?;
 
-    // --- Verification ---
+    // 6. Verify that the decrypted data matches the original data.
     let decrypted_data = String::from_utf8(decrypted_dest.into_inner())?;
     assert_eq!(original_data, decrypted_data);
-    println!("File decrypted and verified successfully!");
+    println!("Stream encryption and decryption successful!");
 
     Ok(())
 }
@@ -481,10 +480,11 @@ This example shows how to create a simple web service with `actix-web` that can 
 **Dependencies:**
 ```toml
 [dependencies]
-ironcrypt = "0.1.0"
+ironcrypt = "0.2.0"
 actix-web = "4"
 sqlx = { version = "0.7", features = ["runtime-async-std-native-tls", "postgres"] }
 serde = { version = "1.0", features = ["derive"] }
+tokio = { version = "1", features = ["full"] }
 ```
 
 **Code:**
@@ -492,7 +492,7 @@ serde = { version = "1.0", features = ["derive"] }
 use actix_web::{web, App, HttpServer, Responder, HttpResponse};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
-use ironcrypt::{IronCrypt, IronCryptConfig};
+use ironcrypt::{IronCrypt, IronCryptConfig, DataType};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -547,7 +547,7 @@ async fn main() -> std::io::Result<()> {
         .expect("Failed to create pool.");
 
     let config = IronCryptConfig::default();
-    let crypt = IronCrypt::new("keys", "v1", config).expect("Failed to initialize IronCrypt");
+    let crypt = IronCrypt::new(config, DataType::Generic).await.expect("Failed to initialize IronCrypt");
 
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS users (
@@ -580,8 +580,8 @@ This example shows how to achieve the same functionality using the `rocket` fram
 **Dependencies:**
 ```toml
 [dependencies]
-ironcrypt = "0.1.0"
-rocket = { version = "0.5.0-rc.2", features = ["json"] }
+ironcrypt = "0.2.0"
+rocket = { version = "0.5.0", features = ["json"] }
 sqlx = { version = "0.7", features = ["runtime-tokio-native-tls", "postgres"] }
 serde = { version = "1.0", features = ["derive"] }
 ```
@@ -594,7 +594,7 @@ use rocket::serde::json::Json;
 use rocket::State;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
-use ironcrypt::{IronCrypt, IronCryptConfig};
+use ironcrypt::{IronCrypt, IronCryptConfig, DataType};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -644,7 +644,7 @@ async fn rocket() -> _ {
         .expect("Failed to create pool.");
 
     let config = IronCryptConfig::default();
-    let crypt = IronCrypt::new("keys", "v1", config).expect("Failed to initialize IronCrypt");
+    let crypt = IronCrypt::new(config, DataType::Generic).await.expect("Failed to initialize IronCrypt");
 
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS users (
