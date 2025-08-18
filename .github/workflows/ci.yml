@@ -54,7 +54,7 @@ jobs:
 
       # Construire l'image Docker
       - name: Build Docker Image
-        run: docker build -t ironcrypt.
+        run: docker build -t ironcrypt .
 
       # Pousser l'image Docker vers DockerHub
       - name: Push Docker Image to DockerHub
