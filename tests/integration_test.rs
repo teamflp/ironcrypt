@@ -1,6 +1,6 @@
 // tests/integration_test.rs
 
-use ironcrypt::{IronCrypt, IronCryptConfig};
+use ironcrypt::{IronCrypt, IronCryptConfig, config::DataType};
 use rsa::{RsaPrivateKey, RsaPublicKey};
 use rsa::pkcs1::{EncodeRsaPrivateKey, EncodeRsaPublicKey};
 use rsa::pkcs8::EncodePrivateKey;
@@ -23,8 +23,18 @@ async fn test_file_encryption_decryption() {
     let key_dir = "test_keys_file_enc";
     setup_test_dir(key_dir);
 
-    let config = IronCryptConfig::default();
-    let crypt = IronCrypt::new(key_dir, "v1", config).await.expect("Failed to create IronCrypt instance");
+    let mut config = IronCryptConfig::default();
+    let mut data_type_config = ironcrypt::config::DataTypeConfig::new();
+    data_type_config.insert(
+        DataType::Generic,
+        ironcrypt::config::KeyManagementConfig {
+            key_directory: key_dir.to_string(),
+            key_version: "v1".to_string(),
+        },
+    );
+    config.data_type_config = Some(data_type_config);
+
+    let crypt = IronCrypt::new(config, DataType::Generic).await.expect("Failed to create IronCrypt instance");
 
     // Create a dummy file
     let input_file = "test_input.bin";
@@ -74,8 +84,18 @@ async fn test_directory_encryption_decryption() {
     fs::create_dir(Path::new(source_dir).join("subdir")).unwrap();
     fs::write(Path::new(source_dir).join("subdir/file2.txt"), "world").unwrap();
 
-    let config = IronCryptConfig::default();
-    let crypt = IronCrypt::new(key_dir, "v1", config).await.unwrap();
+    let mut config = IronCryptConfig::default();
+    let mut data_type_config = ironcrypt::config::DataTypeConfig::new();
+    data_type_config.insert(
+        DataType::Generic,
+        ironcrypt::config::KeyManagementConfig {
+            key_directory: key_dir.to_string(),
+            key_version: "v1".to_string(),
+        },
+    );
+    config.data_type_config = Some(data_type_config);
+
+    let crypt = IronCrypt::new(config, DataType::Generic).await.unwrap();
 
     // Create tar.gz archive of the directory (preserve top-level folder)
     let archive_data: Vec<u8> = {
@@ -123,14 +143,31 @@ async fn test_key_rotation() {
     setup_test_dir(key_dir);
 
     // 1. Create initial version (v1)
-    let config_v1 = IronCryptConfig::default();
-    let crypt_v1 = IronCrypt::new(key_dir, "v1", config_v1).await.unwrap();
+    let mut config_v1 = IronCryptConfig::default();
+    let mut data_type_config = ironcrypt::config::DataTypeConfig::new();
+    data_type_config.insert(
+        DataType::Generic,
+        ironcrypt::config::KeyManagementConfig {
+            key_directory: key_dir.to_string(),
+            key_version: "v1".to_string(),
+        },
+    );
+    config_v1.data_type_config = Some(data_type_config.clone());
+    let crypt_v1 = IronCrypt::new(config_v1, DataType::Generic).await.unwrap();
     let encrypted_data_v1 = crypt_v1.encrypt_password(STRONG_PASSWORD).unwrap();
 
     // 2. Create a new key version (v2)
     let mut config_v2 = IronCryptConfig::default();
     config_v2.rsa_key_size = 2048; // Can be different
-    let _crypt_v2 = IronCrypt::new(key_dir, "v2", config_v2).await.unwrap();
+    data_type_config.insert(
+        DataType::Generic,
+        ironcrypt::config::KeyManagementConfig {
+            key_directory: key_dir.to_string(),
+            key_version: "v2".to_string(),
+        },
+    );
+    config_v2.data_type_config = Some(data_type_config.clone());
+    let _crypt_v2 = IronCrypt::new(config_v2, DataType::Generic).await.unwrap();
 
     // 3. Load the new public key
     let new_pub_key_path = format!("{key_dir}/public_key_v2.pem");
@@ -142,7 +179,17 @@ async fn test_key_rotation() {
         .unwrap();
 
     // 5. Verify with the new key
-    let crypt_v2_verify = IronCrypt::new(key_dir, "v2", IronCryptConfig::default()).await.unwrap();
+    let mut config_v2_verify = IronCryptConfig::default();
+    let mut data_type_config = ironcrypt::config::DataTypeConfig::new();
+    data_type_config.insert(
+        DataType::Generic,
+        ironcrypt::config::KeyManagementConfig {
+            key_directory: key_dir.to_string(),
+            key_version: "v2".to_string(),
+        },
+    );
+    config_v2_verify.data_type_config = Some(data_type_config);
+    let crypt_v2_verify = IronCrypt::new(config_v2_verify, DataType::Generic).await.unwrap();
     let is_valid = crypt_v2_verify
         .verify_password(&re_encrypted_data, STRONG_PASSWORD)
         .unwrap();
@@ -266,12 +313,31 @@ async fn test_load_pkcs1_and_pkcs8_keys() {
     fs::write(format!("{key_dir}/public_key_v2.pem"), pkcs8_pub_pem.as_bytes()).unwrap();
 
     // Test PKCS#1
-    let crypt_v1 = IronCrypt::new(key_dir, "v1", IronCryptConfig::default()).await.unwrap();
+    let mut config_v1 = IronCryptConfig::default();
+    let mut data_type_config = ironcrypt::config::DataTypeConfig::new();
+    data_type_config.insert(
+        DataType::Generic,
+        ironcrypt::config::KeyManagementConfig {
+            key_directory: key_dir.to_string(),
+            key_version: "v1".to_string(),
+        },
+    );
+    config_v1.data_type_config = Some(data_type_config.clone());
+    let crypt_v1 = IronCrypt::new(config_v1, DataType::Generic).await.unwrap();
     let encrypted_v1 = crypt_v1.encrypt_password(STRONG_PASSWORD).unwrap();
     assert!(crypt_v1.verify_password(&encrypted_v1, STRONG_PASSWORD).unwrap());
 
     // Test PKCS#8
-    let crypt_v2 = IronCrypt::new(key_dir, "v2", IronCryptConfig::default()).await.unwrap();
+    let mut config_v2 = IronCryptConfig::default();
+    data_type_config.insert(
+        DataType::Generic,
+        ironcrypt::config::KeyManagementConfig {
+            key_directory: key_dir.to_string(),
+            key_version: "v2".to_string(),
+        },
+    );
+    config_v2.data_type_config = Some(data_type_config);
+    let crypt_v2 = IronCrypt::new(config_v2, DataType::Generic).await.unwrap();
     let encrypted_v2 = crypt_v2.encrypt_password(STRONG_PASSWORD).unwrap();
     assert!(crypt_v2.verify_password(&encrypted_v2, STRONG_PASSWORD).unwrap());
 

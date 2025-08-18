@@ -11,7 +11,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // 2. Initialize IronCrypt
     // This will create the 'keys/' directory and 'private_key_v1.pem' / 'public_key_v1.pem' if they don't exist.
-    let crypt = IronCrypt::new("keys", "v1", config).await?;
+    let crypt = IronCrypt::new(config, ironcrypt::DataType::Generic).await?;
     println!("IronCrypt initialized for key version 'v1'.");
 
     // 3. Define a password

@@ -1,6 +1,25 @@
 // config.rs
 pub use crate::PasswordCriteria;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+
+/// Enum for classifying data types.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
+pub enum DataType {
+    Generic,
+    Pii,
+    Biometric,
+}
+
+/// Configuration for key management for a specific data type.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct KeyManagementConfig {
+    pub key_directory: String,
+    pub key_version: String,
+}
+
+/// Type alias for a map of data types to their key management configurations.
+pub type DataTypeConfig = HashMap<DataType, KeyManagementConfig>;
 
 /// Configuration for the secret management backend.
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
@@ -85,6 +104,7 @@ fn default_mount() -> String {
 ///         ..Default::default()
 ///     },
 ///     secrets: None,
+///     data_type_config: None,
 /// };
 /// ```
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -108,6 +128,9 @@ pub struct IronCryptConfig {
     /// Configuration for the secret management backend.
     #[serde(default)]
     pub secrets: Option<SecretsConfig>,
+    /// Configuration for data type specific key management.
+    #[serde(default)]
+    pub data_type_config: Option<DataTypeConfig>,
 }
 
 impl Default for IronCryptConfig {
@@ -123,6 +146,7 @@ impl Default for IronCryptConfig {
             argon2_parallelism: 1,
             password_criteria: PasswordCriteria::default(),
             secrets: None,
+            data_type_config: None,
         }
     }
 }

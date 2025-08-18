@@ -60,21 +60,23 @@ struct EncryptionContext<'a> {
     hash_password: bool,
 }
 
+use crate::config::DataType;
+
 /// The `IronCrypt` struct manages key generation/loading
 /// and exposes methods for encrypting/decrypting a password or binary data.
 pub struct IronCrypt {
-    key_directory: String,
-    key_version: String,
     pub config: IronCryptConfig,
     secret_store: Option<Box<dyn SecretStore + Send + Sync>>,
+    data_type: DataType,
+    key_directory: String,
+    key_version: String,
 }
 
 impl IronCrypt {
     /// Creates a new IronCrypt instance (generates RSA keys if needed).
     pub async fn new(
-        directory: &str,
-        version: &str,
         config: IronCryptConfig,
+        data_type: DataType,
     ) -> Result<Self, IronCryptError> {
         let secret_store = if let Some(secrets_config) = &config.secrets {
             match secrets_config.provider.as_str() {
@@ -125,11 +127,26 @@ impl IronCrypt {
             None
         };
 
+        let (key_directory, key_version) =
+            if let Some(data_type_config) = &config.data_type_config {
+                if let Some(key_management_config) = data_type_config.get(&data_type) {
+                    (
+                        key_management_config.key_directory.clone(),
+                        key_management_config.key_version.clone(),
+                    )
+                } else {
+                    ("keys".to_string(), "v1".to_string())
+                }
+            } else {
+                ("keys".to_string(), "v1".to_string())
+            };
+
         let instance = Self {
-            key_directory: directory.to_string(),
-            key_version: version.to_string(),
             config,
             secret_store,
+            data_type,
+            key_directory,
+            key_version,
         };
         instance.ensure_keys_exist()?;
         Ok(instance)
@@ -137,16 +154,18 @@ impl IronCrypt {
 
     #[doc(hidden)]
     pub fn with_store(
-        directory: &str,
-        version: &str,
         config: IronCryptConfig,
+        data_type: DataType,
         secret_store: Box<dyn SecretStore + Send + Sync>,
+        key_directory: String,
+        key_version: String,
     ) -> Self {
         Self {
-            key_directory: directory.to_string(),
-            key_version: version.to_string(),
             config,
             secret_store: Some(secret_store),
+            data_type,
+            key_directory,
+            key_version,
         }
     }
 
