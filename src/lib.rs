@@ -69,28 +69,21 @@
 //!
 //! For more detailed examples, including file encryption and custom configurations,
 //! please see the project's `examples/` directory.
-
-// 1) Module declarations (the files)
-pub mod config; // (maps to "config.rs")
-pub mod criteria; // (maps to "criteria.rs")
-pub mod encrypt; // (maps to "encrypt.rs")
-pub mod handle_error; // (maps to "handle_error.rs")
-pub mod hashing; // (maps to "hashing.rs")
-pub mod ironcrypt; // (maps to "ironcrypt.rs")
+pub mod config;
+pub mod criteria;
+pub mod encrypt;
+pub mod handle_error;
+pub mod hashing;
+pub mod ironcrypt;
 pub mod metrics;
 pub mod rsa_utils;
 pub mod secrets;
-// (maps to "rsa_utils.rs")
 
-// 2) Re-export items you want available at the crate root
-//    The binary (main.rs) can then use `ironcrypt::{ generate_rsa_keys, ... }`
-pub use config::*; // IronCryptConfig, etc.
-pub use criteria::*; // PasswordCriteria
-pub use encrypt::{
-    encrypt_stream, decrypt_stream, EncryptedStreamHeader, Argon2Config, EncryptedData,
-}; // only explicit items
-pub use handle_error::*; // IronCryptError, etc.
-pub use hashing::*; // hash_password (if needed)
-pub use ironcrypt::IronCrypt; // struct IronCrypt
-pub use rsa_utils::*; // generate_rsa_keys, load_public_key, etc.
+pub use config::*;
+pub use criteria::*;
+pub use encrypt::{encrypt_stream, decrypt_stream, EncryptedStreamHeader, Argon2Config, EncryptedData};
+pub use handle_error::*;
+pub use hashing::*;
+pub use ironcrypt::IronCrypt;
+pub use rsa_utils::*;
 pub use secrets::*;
