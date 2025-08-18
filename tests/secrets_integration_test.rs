@@ -38,10 +38,11 @@ async fn test_secret_store_integration_with_mock() {
 
     // Create an IronCrypt instance with the mock store.
     let ironcrypt = IronCrypt::with_store(
-        key_dir.path().to_str().unwrap(),
-        "v1",
         config,
+        ironcrypt::DataType::Generic,
         Box::new(mock_store),
+        key_dir.path().to_str().unwrap().to_string(),
+        "v1".to_string(),
     );
 
     // Store the secret.
@@ -74,7 +75,7 @@ async fn test_aws_provider_initialization() {
 
     // This test just checks that the AWS client can be initialized without panicking.
     // It doesn't make any real calls to AWS.
-    let ironcrypt = IronCrypt::new(key_dir.path().to_str().unwrap(), "v1", config)
+    let ironcrypt = IronCrypt::new(config, ironcrypt::DataType::Generic)
         .await;
 
     assert!(ironcrypt.is_ok());
@@ -122,7 +123,7 @@ async fn test_azure_provider_initialization() {
 
     // This test just checks that the Azure client can be initialized without panicking.
     // It doesn't make any real calls to Azure.
-    let ironcrypt = IronCrypt::new(key_dir.path().to_str().unwrap(), "v1", config)
+    let ironcrypt = IronCrypt::new(config, ironcrypt::DataType::Generic)
         .await;
 
     assert!(ironcrypt.is_ok());

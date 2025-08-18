@@ -102,6 +102,38 @@ enum Commands {
         password: String,
     },
 
+    /// Encrypts a PII file.
+    #[command(about = "Encrypts a PII file (uses AES+RSA with PII keys)")]
+    EncryptPii {
+        /// Path to the binary file to encrypt
+        #[arg(short = 'i', long)]
+        input_file: String,
+
+        /// Path to the output file (encrypted JSON)
+        #[arg(short = 'o', long)]
+        output_file: String,
+
+        /// Optional password (leave empty otherwise)
+        #[arg(short = 'w', long, default_value = "")]
+        password: String,
+    },
+
+    /// Encrypts a biometric file.
+    #[command(about = "Encrypts a biometric file (uses AES+RSA with biometric keys)")]
+    EncryptBio {
+        /// Path to the binary file to encrypt
+        #[arg(short = 'i', long)]
+        input_file: String,
+
+        /// Path to the output file (encrypted JSON)
+        #[arg(short = 'o', long)]
+        output_file: String,
+
+        /// Optional password (leave empty otherwise)
+        #[arg(short = 'w', long, default_value = "")]
+        password: String,
+    },
+
     /// Decrypts a binary file (new command).
     #[command(
         about = "Decrypts a binary file (returns a .tar, .zip, etc.)",
@@ -272,11 +304,11 @@ async fn main() {
             }
             Commands::Encrypt {
                 password,
-                public_key_directory,
-                key_version,
+                public_key_directory: _,
+                key_version: _,
             } => {
                 let config = IronCryptConfig::default();
-                let crypt = IronCrypt::new(&public_key_directory, &key_version, config).await
+                let crypt = IronCrypt::new(config, ironcrypt::DataType::Generic).await
                     .map_err(|e| format!("could not initialize encryption module: {}", e))?;
                 let encrypted_hash = crypt
                     .encrypt_password(&password)
@@ -285,8 +317,8 @@ async fn main() {
             }
             Commands::Decrypt {
                 password,
-                private_key_directory,
-                key_version,
+                private_key_directory: _,
+                key_version: _,
                 data,
                 file,
             } => {
@@ -300,7 +332,7 @@ async fn main() {
                 };
 
                 let config = IronCryptConfig::default();
-                let crypt = IronCrypt::new(&private_key_directory, &key_version, config).await
+                let crypt = IronCrypt::new(config, ironcrypt::DataType::Generic).await
                     .map_err(|e| format!("could not initialize encryption module: {}", e))?;
 
                 if crypt.verify_password(&encrypted_data, &password).map_err(|e| e.to_string())? {
@@ -316,6 +348,10 @@ async fn main() {
                 key_version,
                 mut password,
             } => {
+                let config = IronCryptConfig::default();
+                let _crypt = IronCrypt::new(config, ironcrypt::DataType::Generic).await
+                    .map_err(|e| format!("could not initialize encryption module: {}", e))?;
+
                 let mut source = File::open(&input_file)
                     .map_err(|e| format!("could not open input file '{}': {}", input_file, e))?;
                 let mut dest = File::create(&output_file).map_err(|e| {
@@ -338,6 +374,82 @@ async fn main() {
                     &public_key,
                     &criteria,
                     &key_version,
+                    argon_cfg,
+                    hash_password,
+                )
+                .map_err(|e| format!("could not encrypt file stream: {}", e))?;
+
+                println!("File encrypted successfully to '{}'.", output_file);
+            }
+            Commands::EncryptPii {
+                input_file,
+                output_file,
+                mut password,
+            } => {
+                let config = IronCryptConfig::default();
+                let crypt = IronCrypt::new(config, ironcrypt::DataType::Pii).await
+                    .map_err(|e| format!("could not initialize encryption module: {}", e))?;
+
+                let mut source = File::open(&input_file)
+                    .map_err(|e| format!("could not open input file '{}': {}", input_file, e))?;
+                let mut dest = File::create(&output_file).map_err(|e| {
+                    format!("could not create output file '{}': {}", output_file, e)
+                })?;
+
+                let public_key_path =
+                    format!("{}/public_key_{}.pem", "keys_pii", "v1");
+                let public_key = load_public_key(&public_key_path)
+                    .map_err(|e| format!("could not load public key '{}': {}", public_key_path, e))?;
+
+                let criteria = PasswordCriteria::default();
+                let argon_cfg = Argon2Config::default();
+
+                let hash_password = !password.is_empty();
+                encrypt_stream(
+                    &mut source,
+                    &mut dest,
+                    &mut password,
+                    &public_key,
+                    &criteria,
+                    "v1",
+                    argon_cfg,
+                    hash_password,
+                )
+                .map_err(|e| format!("could not encrypt file stream: {}", e))?;
+
+                println!("File encrypted successfully to '{}'.", output_file);
+            }
+            Commands::EncryptBio {
+                input_file,
+                output_file,
+                mut password,
+            } => {
+                let config = IronCryptConfig::default();
+                let crypt = IronCrypt::new(config, ironcrypt::DataType::Biometric).await
+                    .map_err(|e| format!("could not initialize encryption module: {}", e))?;
+
+                let mut source = File::open(&input_file)
+                    .map_err(|e| format!("could not open input file '{}': {}", input_file, e))?;
+                let mut dest = File::create(&output_file).map_err(|e| {
+                    format!("could not create output file '{}': {}", output_file, e)
+                })?;
+
+                let public_key_path =
+                    format!("{}/public_key_{}.pem", "keys_bio", "v1");
+                let public_key = load_public_key(&public_key_path)
+                    .map_err(|e| format!("could not load public key '{}': {}", public_key_path, e))?;
+
+                let criteria = PasswordCriteria::default();
+                let argon_cfg = Argon2Config::default();
+
+                let hash_password = !password.is_empty();
+                encrypt_stream(
+                    &mut source,
+                    &mut dest,
+                    &mut password,
+                    &public_key,
+                    &criteria,
+                    "v1",
                     argon_cfg,
                     hash_password,
                 )
@@ -582,7 +694,7 @@ async fn main() {
 #[cfg(test)]
 mod tests {
 
-    use ironcrypt::config::IronCryptConfig;
+    use ironcrypt::config::{DataType, IronCryptConfig, KeyManagementConfig};
     use ironcrypt::ironcrypt::IronCrypt;
     use std::fs;
     use std::path::Path;
@@ -596,13 +708,25 @@ mod tests {
         }
 
         // Configuration
-        let config = IronCryptConfig {
+        let mut config = IronCryptConfig {
             rsa_key_size: 2048,
             ..Default::default()
         };
+        let mut data_type_config = ironcrypt::config::DataTypeConfig::new();
+        data_type_config.insert(
+            DataType::Generic,
+            KeyManagementConfig {
+                key_directory: key_directory.to_string(),
+                key_version: "v1".to_string(),
+            },
+        );
+        config.data_type_config = Some(data_type_config);
+
         // Build IronCrypt
         // Here we use "v1" in the test, but it's just an example of usage
-        let crypt = IronCrypt::new(key_directory, "v1", config).await.expect("IronCrypt::new error");
+        let crypt = IronCrypt::new(config, ironcrypt::DataType::Generic)
+            .await
+            .expect("IronCrypt::new error");
 
         // Encrypt the password
         let password = "Str0ngP@ssw0rd!";
