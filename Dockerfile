@@ -6,6 +6,7 @@ RUN apt-get update && apt-get install -y \
     musl-tools \
     pkg-config \
     libssl-dev \
+    cmake \
     && rm -rf /var/lib/apt/lists/*
 
 # Ajouter la cible musl pour rustc
@@ -22,17 +23,10 @@ RUN mkdir -p src/bin && \
     echo "fn main() {}" > src/main.rs
 
 # Créer le dossier .cargo et le fichier config.toml avec les optimisations musl
-RUN mkdir -p .cargo && \
-    echo '[target.x86_64-unknown-linux-musl]' > .cargo/config.toml && \
-    echo 'linker = "musl-gcc"' >> .cargo/config.toml && \
-    echo '[profile.release]' >> .cargo/config.toml && \
-    echo 'lto = "fat"' >> .cargo/config.toml && \
-    echo 'codegen-units = 1' >> .cargo/config.toml && \
-    echo 'opt-level = "z"' >> .cargo/config.toml && \
-    echo 'panic = "abort"' >> .cargo/config.toml
+RUN /bin/bash -c "mkdir -p .cargo && echo -e '[target.x86_64-unknown-linux-musl]\nlinker = \"musl-gcc\"\n\n[profile.release]\nlto = \"fat\"\ncodegen-units = 1\nopt-level = \"z\"\npanic = \"abort\"' > .cargo/config.toml"
 
 # Build initial des dépendances avec target musl
-RUN cargo build --release --target x86_64-unknown-linux-musl
+RUN cargo build --release --target x86_64-unknown-linux-musl --features openssl/vendored
 
 # Supprimer les fichiers temporaires
 RUN rm -f src/lib.rs src/main.rs src/bin/*.rs
@@ -41,7 +35,7 @@ RUN rm -f src/lib.rs src/main.rs src/bin/*.rs
 COPY . .
 
 # Build final optimisé
-RUN cargo build --release --target x86_64-unknown-linux-musl
+RUN cargo build --release --target x86_64-unknown-linux-musl --features openssl/vendored
 
 # Strip du binaire pour réduire la taille
 RUN strip target/x86_64-unknown-linux-musl/release/ironcrypt

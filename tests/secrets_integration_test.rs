@@ -1,9 +1,10 @@
 use ironcrypt::{
-    AwsConfig, DataType, IronCrypt, IronCryptConfig, KeyManagementConfig, SecretStore, SecretsConfig,
+    config::{AwsConfig, AzureConfig, KeyManagementConfig, SecretsConfig},
+    DataType, IronCrypt, IronCryptConfig, SecretStore,
 };
 use mockall::mock;
-use std::error::Error;
 use std::collections::HashMap;
+use std::error::Error;
 
 mock! {
     pub SecretStore {}
@@ -137,7 +138,7 @@ async fn test_azure_provider_initialization() {
             provider: "azure".to_string(),
             vault: None,
             aws: None,
-            azure: Some(ironcrypt::AzureConfig {
+            azure: Some(AzureConfig {
                 vault_uri: "https://dummy.vault.azure.net".to_string(),
             }),
         }),
