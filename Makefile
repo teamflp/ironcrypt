@@ -8,9 +8,24 @@ PROD_ENV_FILE ?=.env.prod
 # Use Docker Compose V2 syntax, which is now standard.
 COMPOSE = docker compose
 
-.PHONY: all build dev prod stop logs clean test coverage
+.PHONY: help all build dev prod stop logs clean test coverage
 
 # --- Main Targets ---
+
+# Help target
+help:
+	@echo "Makefile targets:"
+	@echo "  make, all      -> dev (default)"
+	@echo "  build          Build Docker images"
+	@echo "  dev            Start services in development mode (foreground)"
+	@echo "  prod           Start services in production mode (foreground)"
+	@echo "  stop           Stop containers (docker compose down)"
+	@echo "  logs           Tail logs (docker compose logs -f)"
+	@echo "  clean          Remove containers, volumes, orphans and prune system"
+	@echo "  test           Run tests inside the ironcrypt service"
+	@echo "  coverage       Run tarpaulin coverage inside the ironcrypt service"
+	@echo ""
+	@echo "Usage: make <target>  e.g., 'make dev' or 'make prod'"
 
 # Default target when running 'make'
 all: dev

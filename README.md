@@ -180,6 +180,99 @@ cargo install --path .
 ironcrypt --help
 ```
 
+#### 4. Building a static Linux binary (MUSL)
+Build portable static binaries (no glibc required), useful for minimal containers and Alpine.
+
+Prerequisites (choose your OS):
+
+- Debian/Ubuntu:
+```sh
+sudo apt-get update && sudo apt-get install -y musl-tools lld
+rustup target add x86_64-unknown-linux-musl
+```
+
+- macOS (Homebrew):
+```sh
+brew install FiloSottile/musl-cross/musl-cross
+rustup target add x86_64-unknown-linux-musl
+```
+
+Build the release binaries:
+```sh
+cargo build --locked --release --target x86_64-unknown-linux-musl
+# Binaries:
+#   target/x86_64-unknown-linux-musl/release/ironcrypt
+#   target/x86_64-unknown-linux-musl/release/ironcryptd
+```
+
+Note: The repo’s .cargo/config.toml is already configured for MUSL (musl-gcc + lld). If you see “musl-gcc not found”, install musl-tools (Linux) or musl-cross (macOS) as above.
+
+#### 5. Build and run with Docker
+A multi-stage Dockerfile builds static binaries and ships a tiny runtime image.
+
+Build the image:
+```sh
+docker build -t ironcrypt:latest .
+```
+
+Run the CLI inside the container:
+```sh
+docker run --rm ironcrypt:latest --help
+```
+
+Run the daemon (exposes port 3000, mounts host keys directory):
+```sh
+# Generate or place your keys in ./keys first
+# Note: the daemon currently binds to 127.0.0.1 inside the container.
+# It will be reachable from inside the container. To reach it from the host,
+# bind the server to 0.0.0.0 in code or use an alternative networking setup.
+docker run --rm -p 3000:3000 -v "$PWD/keys:/keys" ironcrypt:latest \
+  ironcryptd -v v1 -d /keys -p 3000
+```
+
+#### 6. Utiliser le Makefile (Docker Compose)
+Le Makefile du projet fournit des raccourcis pour piloter Docker Compose depuis le terminal.
+
+Prérequis:
+- Docker et Docker Compose v2 (commande `docker compose`).
+
+Commandes courantes:
+```sh
+# Aide et liste des cibles
+make help
+
+# Démarrer en développement (utilise .env par défaut)
+make dev
+
+# Démarrer en production (utilise .env.prod)
+make prod
+
+# Construire les images sans démarrer
+make build
+
+# Suivre les logs
+make logs
+
+# Arrêter les conteneurs
+make stop
+
+# Nettoyer (conteneurs, volumes, orphelins) + prune Docker [destructif]
+make clean
+
+# Lancer les tests dans le service ironcrypt
+make test
+
+# Générer la couverture avec tarpaulin
+make coverage
+```
+
+Notes:
+- Vous pouvez changer le fichier d'environnement utilisé par `dev` avec `ENV_FILE`, ex:
+```sh
+make dev ENV_FILE=.env.local
+```
+- La cible par défaut est `all -> dev`, donc un simple `make` équivaut à `make dev`.
+
 ---
 
 ## Usage

@@ -1,56 +1,62 @@
-# Étape 1 : Construction
+# syntax=docker/dockerfile:1
+
+# Stage 1: Build static MUSL binaries
 FROM rust:1.81.0-bookworm AS builder
 
-# Installer musl-tools, OpenSSL dev et pkg-config pour la compilation statique
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     musl-tools \
+    build-essential \
     pkg-config \
     libssl-dev \
     cmake \
-    && rm -rf /var/lib/apt/lists/*
+    perl \
+    binutils \
+    lld \
+ && rm -rf /var/lib/apt/lists/*
 
-# Ajouter la cible musl pour rustc
+# Enable MUSL target
 RUN rustup target add x86_64-unknown-linux-musl
 
 WORKDIR /usr/src/app
 
-# Copier les fichiers Cargo.toml et Cargo.lock
+# Copy manifests and cargo config first to leverage layer caching
 COPY Cargo.toml Cargo.lock ./
+COPY .cargo/ .cargo/
 
-# Fichiers temporaires pour cacher les dépendances
+# Create minimal sources so cargo can resolve and cache dependencies
 RUN mkdir -p src/bin && \
-    echo "" > src/lib.rs && \
-    echo "fn main() {}" > src/main.rs
+    printf "" > src/lib.rs && \
+    echo "fn main() {}" > src/main.rs && \
+    echo "fn main() {}" > src/bin/daemon.rs
 
-# Créer le dossier .cargo et le fichier config.toml avec les optimisations musl
-RUN mkdir -p .cargo && \
-    echo -e '[target.x86_64-unknown-linux-musl]\nlinker = "musl-gcc"\n\n[profile.release]\nlto = "fat"\ncodegen-units = 1\nopt-level = "z"\npanic = "abort"' > .cargo/config.toml
+# Build dependencies (and possibly simple bin) to warm cache
+RUN cargo build --locked --release --target x86_64-unknown-linux-musl
 
-# Build initial des dépendances avec target musl
-RUN cargo build --release --target x86_64-unknown-linux-musl --features openssl/vendored
+# Remove dummy sources
+RUN rm -rf src
 
-# Supprimer les fichiers temporaires
-RUN rm -f src/lib.rs src/main.rs src/bin/*.rs
-
-# Copier le reste des fichiers de l'application
+# Copy the real project sources
 COPY . .
 
-# Build final optimisé
-RUN cargo build --release --target x86_64-unknown-linux-musl --features openssl/vendored
+# Build release binaries for MUSL target and strip them to reduce size
+RUN cargo build --locked --release --target x86_64-unknown-linux-musl && \
+    strip target/x86_64-unknown-linux-musl/release/ironcrypt && \
+    strip target/x86_64-unknown-linux-musl/release/ironcryptd
 
-# Strip du binaire pour réduire la taille
-RUN strip target/x86_64-unknown-linux-musl/release/ironcrypt
+# Stage 2: Minimal runtime image
+FROM alpine:3.20
 
-# Étape 2 : Image finale Alpine minimale
-FROM alpine:latest
+# Certificates for HTTPS (AWS/Azure/GCP, etc.)
+RUN apk add --no-cache ca-certificates
 
-# Installer runtime OpenSSL minimal pour le binaire
-RUN apk add --no-cache openssl
+WORKDIR /usr/local/bin
 
-WORKDIR /usr/src/app
-
-# Copier le binaire statique depuis le builder
+# Copy both binaries from the builder stage
 COPY --from=builder /usr/src/app/target/x86_64-unknown-linux-musl/release/ironcrypt /usr/local/bin/ironcrypt
+COPY --from=builder /usr/src/app/target/x86_64-unknown-linux-musl/release/ironcryptd /usr/local/bin/ironcryptd
 
-# Définir le point d'entrée
-CMD ["ironcrypt"]
+# Default port for the daemon
+EXPOSE 3000
+
+# Default command runs the CLI; to run daemon use: `docker run ... ironcryptd -v v1 -d keys -p 3000`
+ENTRYPOINT ["/usr/local/bin/ironcrypt"]
