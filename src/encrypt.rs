@@ -36,7 +36,7 @@ impl Default for Argon2Config {
 }
 
 /// Serializable struct containing encryption information.
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct EncryptedData {
     pub key_version: String,
     pub encrypted_symmetric_key: String,
@@ -108,63 +108,45 @@ pub fn encrypt_data_with_criteria(
 
 const BUFFER_SIZE: usize = 8192; // 8 KB buffer
 
-/// Serializable header for encrypted streams.
-/// Contains the metadata needed for decryption.
+/// Serializable header for encrypted streams (V1, single-recipient).
 #[derive(Serialize, Deserialize, Debug)]
-pub struct EncryptedStreamHeader {
+pub struct EncryptedStreamHeaderV1 {
     pub key_version: String,
     pub encrypted_symmetric_key: String,
     pub nonce: String,
     pub password_hash: Option<String>,
 }
 
-/// Encrypts a data stream using AES-256-GCM and RSA.
-///
-/// This function reads from a `Read` source, encrypts the data in chunks,
-/// and writes the result to a `Write` destination. Ideal for large files.
-///
-/// # Encrypted Stream Format
-/// 1. `header_length` (u64, Big Endian): The size of the JSON header.
-/// 2. `header` (JSON): The serialized `EncryptedStreamHeader` struct.
-/// 3. `encrypted_data` (binary): The AES-GCM encrypted stream.
-///
-/// # Arguments
-/// * `source` - The source of the plaintext data.
-/// * `destination` - The destination for the encrypted data.
-/// * `password` - The password for hashing (will be cleared from memory).
-/// * `public_key` - The RSA public key to encrypt the session key.
-/// * `key_version` - The version of the key being used.
-///
-/// # Example
-///
-/// ```rust
-/// use ironcrypt::{encrypt_stream, decrypt_stream, generate_rsa_keys, PasswordCriteria, Argon2Config};
-/// use std::io::Cursor;
-///
-/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// let (private_key, public_key) = generate_rsa_keys(2048)?;
-/// let mut source = Cursor::new(b"my secret data");
-/// let mut dest = Cursor::new(Vec::new());
-/// let mut password = "a_very_Str0ng_P@ssw0rd!".to_string();
-///
-/// encrypt_stream(&mut source, &mut dest, &mut password, &public_key, &PasswordCriteria::default(), "v1", Argon2Config::default(), true)?;
-///
-/// dest.set_position(0);
-///
-/// let mut decrypted_dest = Cursor::new(Vec::new());
-/// decrypt_stream(&mut dest, &mut decrypted_dest, &private_key, "a_very_Str0ng_P@ssw0rd!")?;
-///
-/// assert_eq!(decrypted_dest.into_inner(), b"my secret data");
-/// # Ok(())
-/// # }
-/// ```
-pub fn encrypt_stream<R: Read, W: Write>(
+/// Holds the encrypted symmetric key for a single recipient.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct RecipientInfo {
+    pub key_version: String,
+    pub encrypted_symmetric_key: String,
+}
+
+/// Serializable header for encrypted streams (V2, multi-recipient).
+#[derive(Serialize, Deserialize, Debug)]
+pub struct EncryptedStreamHeaderV2 {
+    pub recipients: Vec<RecipientInfo>,
+    pub nonce: String,
+    pub password_hash: Option<String>,
+}
+
+/// An enum to handle different versions of the stream header for backward compatibility.
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(untagged)] // Allows deserializing into the first matching variant
+pub enum StreamHeader {
+    V2(EncryptedStreamHeaderV2),
+    V1(EncryptedStreamHeaderV1),
+}
+
+/// Encrypts a data stream using AES-256-GCM and RSA for multiple recipients.
+pub fn encrypt_stream<'a, R: Read, W: Write>(
     source: &mut R,
     destination: &mut W,
     password: &mut String,
-    public_key: &RsaPublicKey,
+    recipients: impl IntoIterator<Item = (&'a RsaPublicKey, &'a str)>,
     criteria: &PasswordCriteria,
-    key_version: &str,
     argon_cfg: Argon2Config,
     hash_password: bool,
 ) -> Result<(), IronCryptError> {
@@ -183,21 +165,36 @@ pub fn encrypt_stream<R: Read, W: Write>(
     } else {
         None
     };
-    password.zeroize(); // Early password zeroization
+    password.zeroize();
 
     let mut symmetric_key = [0u8; 32];
     OsRng.fill_bytes(&mut symmetric_key);
     let nonce_bytes = Aes256Gcm::generate_nonce(&mut OsRng);
 
-    let padding = Oaep::new::<Sha256>();
-    let encrypted_symmetric_key = public_key.encrypt(&mut OsRng, padding, &symmetric_key)?;
+    let mut recipient_infos = Vec::new();
 
-    let header = EncryptedStreamHeader {
-        key_version: key_version.to_string(),
-        encrypted_symmetric_key: base64_standard.encode(&encrypted_symmetric_key),
+    for (public_key, key_version) in recipients {
+        let padding = Oaep::new::<Sha256>();
+        let encrypted_symmetric_key =
+            public_key.encrypt(&mut OsRng, padding, &symmetric_key)?;
+        recipient_infos.push(RecipientInfo {
+            key_version: key_version.to_string(),
+            encrypted_symmetric_key: base64_standard.encode(&encrypted_symmetric_key),
+        });
+    }
+
+    if recipient_infos.is_empty() {
+        return Err(IronCryptError::EncryptionError(
+            "No recipients provided for encryption.".to_string(),
+        ));
+    }
+
+    let header = StreamHeader::V2(EncryptedStreamHeaderV2 {
+        recipients: recipient_infos,
         nonce: base64_standard.encode(&nonce_bytes),
         password_hash,
-    };
+    });
+
     let header_json = serde_json::to_string(&header)?;
     let header_len = header_json.len() as u64;
 
@@ -225,28 +222,46 @@ pub fn encrypt_stream<R: Read, W: Write>(
 }
 
 /// Decrypts a data stream encrypted with `encrypt_stream`.
-///
-/// # Arguments
-/// * `source` - The source of the encrypted data.
-/// * `destination` - The destination for the plaintext data.
-/// * `private_key` - The RSA private key to decrypt the session key.
-/// * `password` - The password for verification (if used during encryption).
-///
-/// # Returns
-/// `Ok(())` on success. An `IronCryptError` if authentication fails
-/// or if the password is incorrect.
 pub fn decrypt_stream<R: Read, W: Write>(
     source: &mut R,
     destination: &mut W,
     private_key: &RsaPrivateKey,
+    key_version: &str,
     password: &str,
 ) -> Result<(), IronCryptError> {
     let header_len = source.read_u64::<BigEndian>()?;
     let mut header_bytes = vec![0; header_len as usize];
     source.read_exact(&mut header_bytes)?;
-    let header: EncryptedStreamHeader = serde_json::from_slice(&header_bytes)?;
+    let header: StreamHeader = serde_json::from_slice(&header_bytes)?;
 
-    if let Some(expected_hash_b64) = &header.password_hash {
+    let (encrypted_symmetric_key_b64, nonce_b64, password_hash) = match header {
+        StreamHeader::V2(h) => {
+            let recipient_info = h
+                .recipients
+                .iter()
+                .find(|r| r.key_version == key_version)
+                .ok_or(IronCryptError::DecryptionError(format!(
+                    "No key found for recipient version '{}'",
+                    key_version
+                )))?;
+            (
+                recipient_info.encrypted_symmetric_key.clone(),
+                h.nonce,
+                h.password_hash,
+            )
+        }
+        StreamHeader::V1(h) => {
+            if h.key_version != key_version {
+                return Err(IronCryptError::DecryptionError(format!(
+                    "Key version mismatch: expected '{}', found '{}'",
+                    key_version, h.key_version
+                )));
+            }
+            (h.encrypted_symmetric_key, h.nonce, h.password_hash)
+        }
+    };
+
+    if let Some(expected_hash_b64) = &password_hash {
         let expected_hash_str = String::from_utf8(base64_standard.decode(expected_hash_b64)?)?;
         let parsed_hash = PasswordHash::new(&expected_hash_str)?;
 
@@ -258,15 +273,17 @@ pub fn decrypt_stream<R: Read, W: Write>(
         }
     }
 
-    let encrypted_symmetric_key = base64_standard.decode(&header.encrypted_symmetric_key)?;
+    let encrypted_symmetric_key = base64_standard.decode(&encrypted_symmetric_key_b64)?;
     let padding = Oaep::new::<Sha256>();
     let mut symmetric_key = private_key.decrypt(padding, &encrypted_symmetric_key)?;
 
-    let nonce_bytes = base64_standard.decode(&header.nonce)?;
+    let nonce_bytes = base64_standard.decode(&nonce_b64)?;
     let key_array: [u8; 32] = symmetric_key
         .clone()
         .try_into()
-        .map_err(|_| IronCryptError::DecryptionError("Decrypted key has incorrect size.".to_string()))?;
+        .map_err(|_| {
+            IronCryptError::DecryptionError("Decrypted key has incorrect size.".to_string())
+        })?;
 
     let mut decryptor = Aes256GcmStreamDecryptor::new(key_array, &nonce_bytes);
     symmetric_key.zeroize();

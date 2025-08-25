@@ -72,6 +72,7 @@ async fn test_aws_provider_initialization() {
         KeyManagementConfig {
             key_directory: key_dir.path().to_str().unwrap().to_string(),
             key_version: "v1".to_string(),
+            passphrase: None,
         },
     );
 
@@ -130,6 +131,7 @@ async fn test_azure_provider_initialization() {
         KeyManagementConfig {
             key_directory: key_dir.path().to_str().unwrap().to_string(),
             key_version: "v1".to_string(),
+            passphrase: None,
         },
     );
 

@@ -16,6 +16,8 @@ pub enum DataType {
 pub struct KeyManagementConfig {
     pub key_directory: String,
     pub key_version: String,
+    #[serde(default)]
+    pub passphrase: Option<String>,
 }
 
 /// Type alias for a map of data types to their key management configurations.

@@ -42,6 +42,10 @@ struct Args {
     /// Key version to use (e.g., "v1")
     #[arg(short = 'v', long)]
     key_version: String,
+
+    /// Passphrase for the private key
+    #[arg(long)]
+    passphrase: Option<String>,
 }
 
 #[tokio::main]
@@ -66,7 +70,7 @@ async fn main() {
         }
     };
 
-    let private_key = match load_private_key(&private_key_path) {
+    let private_key = match load_private_key(&private_key_path, args.passphrase.as_deref()) {
         Ok(key) => Arc::new(key),
         Err(e) => {
             eprintln!("Failed to load private key from {}: {}", private_key_path, e);
@@ -139,13 +143,13 @@ async fn encrypt_handler(
         let criteria = PasswordCriteria::default();
         let argon_cfg = Argon2Config::default();
 
+        let recipients = vec![(&*public_key, key_version.as_str())];
         if let Err(e) = encrypt_stream(
             &mut request_reader,
             &mut response_writer,
             &mut password,
-            &public_key,
+            recipients,
             &criteria,
-            &key_version,
             argon_cfg,
             hash_password,
         ) {
@@ -191,11 +195,13 @@ async fn decrypt_handler(
 
     // Spawn a blocking task for the synchronous decryption
     let private_key = state.private_key.clone();
+    let key_version = state.key_version.clone();
     tokio::task::spawn_blocking(move || {
         if let Err(e) = decrypt_stream(
             &mut request_reader,
             &mut response_writer,
             &private_key,
+            &key_version,
             &password,
         ) {
             tracing::error!("Decryption failed: {}", e);
