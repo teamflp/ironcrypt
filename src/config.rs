@@ -1,4 +1,5 @@
 // config.rs
+use crate::algorithms::{AsymmetricAlgorithm, SymmetricAlgorithm};
 pub use crate::PasswordCriteria;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -94,10 +95,10 @@ fn default_mount() -> String {
 /// use ironcrypt::config::{IronCryptConfig, PasswordCriteria};
 ///
 /// let custom_config = IronCryptConfig {
+///     symmetric_algorithm: ironcrypt::algorithms::SymmetricAlgorithm::ChaCha20Poly1305,
+///     asymmetric_algorithm: ironcrypt::algorithms::AsymmetricAlgorithm::Ecc,
 ///     rsa_key_size: 4096,
-///     aes_key_size: 256,
 ///     buffer_size: 8192,
-///     pbkdf2_iterations: 300_000,
 ///     argon2_memory_cost: 32768, // 32MB
 ///     argon2_time_cost: 4,
 ///     argon2_parallelism: 2,
@@ -111,14 +112,16 @@ fn default_mount() -> String {
 /// ```
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct IronCryptConfig {
+    /// The symmetric algorithm to use for data encryption.
+    #[serde(default)]
+    pub symmetric_algorithm: SymmetricAlgorithm,
+    /// The asymmetric algorithm to use for key encapsulation.
+    #[serde(default)]
+    pub asymmetric_algorithm: AsymmetricAlgorithm,
     /// The size of the RSA key in bits.
     pub rsa_key_size: u32,
-    /// The size of the AES key in bits.
-    pub aes_key_size: usize,
     /// The size of the buffer to use for streaming operations (in bytes).
     pub buffer_size: usize,
-    /// The number of iterations to use for PBKDF2 key derivation.
-    pub pbkdf2_iterations: u32,
     /// The memory cost (in KiB) for the Argon2 password hashing algorithm.
     pub argon2_memory_cost: u32,
     /// The time cost (or number of iterations) for the Argon2 algorithm.
@@ -139,10 +142,10 @@ impl Default for IronCryptConfig {
     /// Creates a new `IronCryptConfig` with secure and sensible default values.
     fn default() -> Self {
         Self {
+            symmetric_algorithm: SymmetricAlgorithm::default(),
+            asymmetric_algorithm: AsymmetricAlgorithm::default(),
             rsa_key_size: 2048,
-            aes_key_size: 256,
             buffer_size: 4096,
-            pbkdf2_iterations: 100_000,
             argon2_memory_cost: 65536,
             argon2_time_cost: 3,
             argon2_parallelism: 1,
