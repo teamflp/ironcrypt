@@ -92,3 +92,32 @@ async fn test_custom_standard_retains_user_params() {
     assert_eq!(crypt.config.asymmetric_algorithm, config.asymmetric_algorithm);
     assert_eq!(crypt.config.rsa_key_size, config.rsa_key_size);
 }
+
+#[tokio::test]
+async fn test_anssi_standard_applies_correct_params() {
+    // Arrange
+    let temp_dir = tempfile::tempdir().unwrap();
+    let key_dir = temp_dir.path().to_str().unwrap();
+    let mut config = IronCryptConfig::default();
+    config.standard = CryptoStandard::Anssi;
+
+    let mut data_type_config = HashMap::new();
+    data_type_config.insert(
+        DataType::Generic,
+        KeyManagementConfig {
+            key_directory: key_dir.to_string(),
+            key_version: "v1".to_string(),
+            passphrase: None,
+        },
+    );
+    config.data_type_config = Some(data_type_config);
+
+    // Act
+    let crypt = IronCrypt::new(config, DataType::Generic).await.unwrap();
+
+    // Assert
+    let expected_params = CryptoStandard::Anssi.get_params().unwrap();
+    assert_eq!(crypt.config.symmetric_algorithm, expected_params.symmetric_algorithm);
+    assert_eq!(crypt.config.asymmetric_algorithm, expected_params.asymmetric_algorithm);
+    assert_eq!(crypt.config.rsa_key_size, expected_params.rsa_key_size);
+}

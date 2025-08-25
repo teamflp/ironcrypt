@@ -14,6 +14,9 @@ pub enum CryptoStandard {
     /// A standard designed to be compliant with FIPS (Federal Information Processing Standard)
     /// 140-2, often required for U.S. government and other regulated industries.
     Fips140_2,
+    /// A standard based on the recommendations of the French National Agency for
+    /// the Security of Information Systems (ANSSI).
+    Anssi,
 }
 
 use crate::algorithms::{AsymmetricAlgorithm, SymmetricAlgorithm};
@@ -47,6 +50,11 @@ impl CryptoStandard {
                 symmetric_algorithm: SymmetricAlgorithm::Aes256Gcm,
                 asymmetric_algorithm: AsymmetricAlgorithm::Rsa,
                 rsa_key_size: 3072, // FIPS requires a minimum of 2048 for new keys, 3072 is a safe choice
+            }),
+            CryptoStandard::Anssi => Some(StandardConfig {
+                symmetric_algorithm: SymmetricAlgorithm::Aes256Gcm,
+                asymmetric_algorithm: AsymmetricAlgorithm::Rsa,
+                rsa_key_size: 3072, // ANSSI recommends a minimum of 3072 for RSA keys
             }),
             CryptoStandard::Custom => None,
         }
