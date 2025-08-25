@@ -136,6 +136,7 @@ pub mod ecc_utils;
 pub mod keys;
 pub mod rsa_utils;
 pub mod secrets;
+pub mod standards;
 
 // --- Public Re-exports ---
 
@@ -147,6 +148,9 @@ pub use keys::{PrivateKey, PublicKey};
 
 // Password criteria
 pub use criteria::PasswordCriteria;
+
+// Cryptographic standards
+pub use standards::CryptoStandard;
 
 // Streaming encryption and decryption functions
 pub use encrypt::{decrypt_stream, encrypt_stream};

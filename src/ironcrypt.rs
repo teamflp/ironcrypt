@@ -111,9 +111,16 @@ pub struct IronCrypt {
 
 impl IronCrypt {
     pub async fn new(
-        config: IronCryptConfig,
+        mut config: IronCryptConfig,
         data_type: DataType,
     ) -> Result<Self, IronCryptError> {
+        // Apply the selected standard's parameters, if not custom.
+        if let Some(params) = config.standard.get_params() {
+            config.symmetric_algorithm = params.symmetric_algorithm;
+            config.asymmetric_algorithm = params.asymmetric_algorithm;
+            config.rsa_key_size = params.rsa_key_size;
+        }
+
         let secret_store = if let Some(secrets_config) = &config.secrets {
             match secrets_config.provider.as_str() {
                 "vault" => {

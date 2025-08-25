@@ -92,6 +92,11 @@ name = "ironcryptd"
 path = "src/bin/daemon.rs"
 required-features = ["daemon"]
 
+[[test]]
+name = "standards_test"
+path = "tests/standards_test.rs"
+harness = true
+
 [features]
 default = ["full"]
 

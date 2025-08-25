@@ -7,6 +7,19 @@
 # Cryptography Settings
 # -------------------------------------------------------------------
 [cryptography]
+# The cryptographic standard to use.
+# Options: "Nist", "Fips140_2", "Custom"
+# If set to "Custom", you must specify the algorithms and key sizes below.
+standard = "Nist"
+
+# --- Custom Settings (only used if standard = "Custom") ---
+
+# Symmetric algorithm. Options: "Aes256Gcm", "ChaCha20Poly1305"
+symmetric_algorithm = "Aes256Gcm"
+
+# Asymmetric algorithm. Options: "Rsa", "Ecc"
+asymmetric_algorithm = "Rsa"
+
 # RSA key size in bits. Recommended: 2048 or 4096.
 rsa_key_size = 2048
 

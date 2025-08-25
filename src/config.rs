@@ -1,6 +1,7 @@
 // config.rs
 use crate::algorithms::{AsymmetricAlgorithm, SymmetricAlgorithm};
 pub use crate::PasswordCriteria;
+use crate::standards::CryptoStandard;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -112,13 +113,26 @@ fn default_mount() -> String {
 /// ```
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct IronCryptConfig {
+    /// The cryptographic standard to use.
+    ///
+    /// This determines the set of algorithms and key sizes. If set to `Custom`,
+    /// the `symmetric_algorithm`, `asymmetric_algorithm`, and `rsa_key_size` fields
+    /// must be specified manually.
+    #[serde(default)]
+    pub standard: CryptoStandard,
     /// The symmetric algorithm to use for data encryption.
+    ///
+    /// **Note:** This is ignored if `standard` is not `Custom`.
     #[serde(default)]
     pub symmetric_algorithm: SymmetricAlgorithm,
     /// The asymmetric algorithm to use for key encapsulation.
+    ///
+    /// **Note:** This is ignored if `standard` is not `Custom`.
     #[serde(default)]
     pub asymmetric_algorithm: AsymmetricAlgorithm,
     /// The size of the RSA key in bits.
+    ///
+    /// **Note:** This is ignored if `standard` is not `Custom`.
     pub rsa_key_size: u32,
     /// The size of the buffer to use for streaming operations (in bytes).
     pub buffer_size: usize,
@@ -142,6 +156,7 @@ impl Default for IronCryptConfig {
     /// Creates a new `IronCryptConfig` with secure and sensible default values.
     fn default() -> Self {
         Self {
+            standard: CryptoStandard::default(),
             symmetric_algorithm: SymmetricAlgorithm::default(),
             asymmetric_algorithm: AsymmetricAlgorithm::default(),
             rsa_key_size: 2048,

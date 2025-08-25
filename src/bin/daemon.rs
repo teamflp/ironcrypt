@@ -6,13 +6,12 @@ use axum::{
     routing::post,
     Router,
 };
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use futures::StreamExt;
 use ironcrypt::{
-    algorithms::SymmetricAlgorithm,
     decrypt_stream, encrypt_stream,
     keys::{PrivateKey, PublicKey},
-    load_private_key, load_public_key, Argon2Config, PasswordCriteria,
+    load_private_key, load_public_key, Argon2Config, CryptoStandard, IronCryptConfig,
 };
 use std::{net::SocketAddr, sync::Arc};
 use tokio::net::TcpListener;
@@ -26,6 +25,25 @@ struct AppState {
     public_key: Arc<PublicKey>,
     private_key: Arc<PrivateKey>,
     key_version: String,
+    config: Arc<IronCryptConfig>,
+}
+
+/// A `clap`-compatible enum for selecting the cryptographic standard.
+#[derive(ValueEnum, Clone, Debug, Copy)]
+enum CliCryptoStandard {
+    Nist,
+    Fips140_2,
+    Custom,
+}
+
+impl From<CliCryptoStandard> for CryptoStandard {
+    fn from(standard: CliCryptoStandard) -> Self {
+        match standard {
+            CliCryptoStandard::Nist => CryptoStandard::Nist,
+            CliCryptoStandard::Fips140_2 => CryptoStandard::Fips140_2,
+            CliCryptoStandard::Custom => CryptoStandard::Custom,
+        }
+    }
 }
 
 /// Command-line arguments for the daemon.
@@ -47,6 +65,10 @@ struct Args {
     /// Passphrase for the private key
     #[arg(long)]
     passphrase: Option<String>,
+
+    /// The cryptographic standard to use.
+    #[arg(long, value_enum, default_value_t = CliCryptoStandard::Nist)]
+    standard: CliCryptoStandard,
 }
 
 #[tokio::main]
@@ -80,11 +102,23 @@ async fn main() {
         }
     };
 
+    // Create IronCrypt config
+    let mut config = IronCryptConfig::default();
+    config.standard = args.standard.into();
+
+    // Apply the standard's parameters
+    if let Some(params) = config.standard.get_params() {
+        config.symmetric_algorithm = params.symmetric_algorithm;
+        config.asymmetric_algorithm = params.asymmetric_algorithm;
+        config.rsa_key_size = params.rsa_key_size;
+    }
+
     // Create application state
     let state = AppState {
         public_key,
         private_key,
         key_version: args.key_version,
+        config: Arc::new(config),
     };
 
     // Build our application router
@@ -141,9 +175,13 @@ async fn encrypt_handler(
     // Spawn a blocking task for the synchronous encryption
     let public_key = state.public_key.clone();
     let key_version = state.key_version.clone();
+    let config = state.config.clone();
     tokio::task::spawn_blocking(move || {
-        let criteria = PasswordCriteria::default();
-        let argon_cfg = Argon2Config::default();
+        let argon_cfg = Argon2Config {
+            memory_cost: config.argon2_memory_cost,
+            time_cost: config.argon2_time_cost,
+            parallelism: config.argon2_parallelism,
+        };
 
         let recipients = vec![(&*public_key, key_version.as_str())];
         if let Err(e) = encrypt_stream(
@@ -151,10 +189,10 @@ async fn encrypt_handler(
             &mut response_writer,
             &mut password,
             recipients,
-            &criteria,
+            &config.password_criteria,
             argon_cfg,
             hash_password,
-            SymmetricAlgorithm::Aes256Gcm, // Use default for now
+            config.symmetric_algorithm,
         ) {
             tracing::error!("Encryption failed: {}", e);
         }
