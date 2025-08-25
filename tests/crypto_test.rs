@@ -13,6 +13,8 @@ fn test_e2e_encryption(
     private_key: PrivateKey,
     public_key: PublicKey,
     sym_algo: SymmetricAlgorithm,
+    signing_key: Option<(&PrivateKey, &str)>,
+    verifying_key: Option<&PublicKey>,
 ) {
     let original_data = b"This is a top secret message.";
     let mut source = Cursor::new(original_data);
@@ -30,6 +32,7 @@ fn test_e2e_encryption(
         &mut encrypted_dest,
         &mut password,
         recipients,
+        signing_key,
         &PasswordCriteria::default(),
         Argon2Config::default(),
         false,
@@ -46,6 +49,7 @@ fn test_e2e_encryption(
         &private_key,
         key_version,
         "test_password",
+        verifying_key,
     )
     .unwrap();
 
@@ -59,6 +63,8 @@ fn test_e2e_rsa_aes() {
         PrivateKey::Rsa(private_key),
         PublicKey::Rsa(public_key),
         SymmetricAlgorithm::Aes256Gcm,
+        None,
+        None,
     );
 }
 
@@ -69,6 +75,8 @@ fn test_e2e_rsa_chacha() {
         PrivateKey::Rsa(private_key),
         PublicKey::Rsa(public_key),
         SymmetricAlgorithm::ChaCha20Poly1305,
+        None,
+        None,
     );
 }
 
@@ -79,6 +87,8 @@ fn test_e2e_ecc_aes() {
         PrivateKey::Ecc(private_key),
         PublicKey::Ecc(public_key),
         SymmetricAlgorithm::Aes256Gcm,
+        None,
+        None,
     );
 }
 
@@ -89,8 +99,82 @@ fn test_e2e_ecc_chacha() {
         PrivateKey::Ecc(private_key),
         PublicKey::Ecc(public_key),
         SymmetricAlgorithm::ChaCha20Poly1305,
+        None,
+        None,
     );
 }
+
+#[test]
+fn test_e2e_encryption_with_signature() {
+    let (enc_priv_key, enc_pub_key) = rsa_utils::generate_rsa_keys(2048).unwrap();
+    let (sign_priv_key, sign_pub_key) = rsa_utils::generate_rsa_keys(2048).unwrap();
+
+    let enc_private_key = PrivateKey::Rsa(enc_priv_key);
+    let enc_public_key = PublicKey::Rsa(enc_pub_key);
+    let sign_private_key = PrivateKey::Rsa(sign_priv_key);
+    let sign_public_key = PublicKey::Rsa(sign_pub_key);
+
+    test_e2e_encryption(
+        enc_private_key,
+        enc_public_key,
+        SymmetricAlgorithm::Aes256Gcm,
+        Some((&sign_private_key, "v1_signer")),
+        Some(&sign_public_key),
+    );
+}
+
+#[test]
+fn test_e2e_encryption_with_tampered_data() {
+    let (private_key, public_key) = rsa_utils::generate_rsa_keys(2048).unwrap();
+    let (sign_priv_key, sign_pub_key) = rsa_utils::generate_rsa_keys(2048).unwrap();
+    let enc_private_key = PrivateKey::Rsa(private_key);
+    let enc_public_key = PublicKey::Rsa(public_key);
+    let sign_private_key = PrivateKey::Rsa(sign_priv_key);
+    let sign_public_key = PublicKey::Rsa(sign_pub_key);
+
+    let original_data = b"This is a top secret message.";
+    let mut source = Cursor::new(original_data);
+    let mut encrypted_dest = Cursor::new(Vec::new());
+    let mut decrypted_dest = Cursor::new(Vec::new());
+
+    let key_version = "v1";
+    let mut password = "test_password".to_string();
+
+    let recipients = vec![(&enc_public_key, key_version)];
+
+    // Encrypt
+    encrypt_stream(
+        &mut source,
+        &mut encrypted_dest,
+        &mut password,
+        recipients,
+        Some((&sign_private_key, "v1_signer")),
+        &PasswordCriteria::default(),
+        Argon2Config::default(),
+        false,
+        SymmetricAlgorithm::Aes256Gcm,
+    )
+    .unwrap();
+
+    // Tamper with the encrypted data
+    let mut tampered_data = encrypted_dest.into_inner();
+    let last_byte_index = tampered_data.len() - 1;
+    tampered_data[last_byte_index] = tampered_data[last_byte_index].wrapping_add(1);
+    let mut tampered_encrypted_dest = Cursor::new(tampered_data);
+
+    // Decrypt and verify (should fail)
+    let result = ironcrypt::decrypt_stream(
+        &mut tampered_encrypted_dest,
+        &mut decrypted_dest,
+        &enc_private_key,
+        key_version,
+        "test_password",
+        Some(&sign_public_key),
+    );
+
+    assert!(result.is_err());
+}
+
 
 #[test]
 fn test_ecc_key_save_and_load() {

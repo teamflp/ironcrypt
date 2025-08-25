@@ -5,8 +5,8 @@ use ironcrypt::{
     algorithms::SymmetricAlgorithm,
     decrypt_stream, ecc_utils, encrypt_stream, generate_rsa_keys,
     keys::PublicKey,
-    load_private_key, load_public_key, save_keys_to_files, Argon2Config, IronCrypt,
-    IronCryptConfig, PasswordCriteria,
+    load_private_key, load_public_key,
+    save_keys_to_files, Argon2Config, IronCrypt, IronCryptConfig, PasswordCriteria,
 };
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
@@ -122,6 +122,14 @@ enum Commands {
         /// The symmetric algorithm to use for encryption.
         #[arg(long, value_enum, default_value_t = CliSymmetricAlgorithm::Aes)]
         sym_algo: CliSymmetricAlgorithm,
+
+        /// Version of the private key to use for signing
+        #[arg(long)]
+        signing_key_version: Option<String>,
+
+        /// Passphrase for the signing key
+        #[arg(long)]
+        signing_key_passphrase: Option<String>,
     },
 
     /// Encrypts a PII file.
@@ -187,6 +195,10 @@ enum Commands {
         /// Passphrase for the private key
         #[arg(long)]
         passphrase: Option<String>,
+
+        /// Version of the public key to use for signature verification
+        #[arg(long)]
+        verifying_key_version: Option<String>,
     },
 
     /// Encrypts an entire directory.
@@ -466,6 +478,8 @@ async fn main() {
                 key_versions,
                 mut password,
                 sym_algo,
+                signing_key_version,
+                signing_key_passphrase,
             } => {
                 let start = metrics::metrics_start();
                 let payload_size = std::fs::metadata(&input_file).map(|m| m.len()).unwrap_or(0);
@@ -491,6 +505,20 @@ async fn main() {
                         .zip(key_versions.iter().map(|s| s.as_str()))
                         .collect();
 
+                    let signing_key_data;
+                    let signing_key_version_string = signing_key_version;
+                    let signing_key = if let Some(ref version) = signing_key_version_string {
+                        let private_key_path =
+                            format!("{}/private_key_{}.pem", public_key_directory, version);
+                        signing_key_data = ironcrypt::load_any_private_key(&private_key_path, signing_key_passphrase.as_deref())
+                            .map_err(|e| {
+                                format!("could not load signing private key '{}': {}", private_key_path, e)
+                            })?;
+                        Some((&signing_key_data, version.as_str()))
+                    } else {
+                        None
+                    };
+
                     let criteria = PasswordCriteria::default();
                     let argon_cfg = Argon2Config::default();
 
@@ -505,6 +533,7 @@ async fn main() {
                         &mut dest,
                         &mut password,
                         recipients,
+                        signing_key,
                         &criteria,
                         argon_cfg,
                         hash_password,
@@ -551,6 +580,7 @@ async fn main() {
                         &mut dest,
                         &mut password,
                         recipients,
+                        None,
                         &criteria,
                         argon_cfg,
                         hash_password,
@@ -597,6 +627,7 @@ async fn main() {
                         &mut dest,
                         &mut password,
                         recipients,
+                        None,
                         &criteria,
                         argon_cfg,
                         hash_password,
@@ -618,6 +649,7 @@ async fn main() {
                 key_version,
                 password,
                 passphrase,
+                verifying_key_version,
             } => {
                 let start = metrics::metrics_start();
                 let payload_size = std::fs::metadata(&input_file).map(|m| m.len()).unwrap_or(0);
@@ -639,12 +671,26 @@ async fn main() {
                         format!("could not load private key '{}': {}", private_key_path, e)
                     })?;
 
+                    let verifying_key_data;
+                    let verifying_key = if let Some(version) = verifying_key_version {
+                        let public_key_path =
+                            format!("{}/public_key_{}.pem", private_key_directory, version);
+                        verifying_key_data = ironcrypt::load_any_public_key(&public_key_path)
+                            .map_err(|e| {
+                                format!("could not load verifying public key '{}': {}", public_key_path, e)
+                            })?;
+                        Some(&verifying_key_data)
+                    } else {
+                        None
+                    };
+
                     decrypt_stream(
                         &mut source,
                         &mut dest,
                         &private_key,
                         &key_version,
                         &password,
+                        verifying_key,
                     )
                     .map_err(|e| format!("could not decrypt file stream: {}", e))?;
 
@@ -719,6 +765,7 @@ async fn main() {
                         &mut dest,
                         &mut password,
                         recipients,
+                        None,
                         &criteria,
                         argon_cfg,
                         hash_password,
@@ -776,6 +823,7 @@ async fn main() {
                         &private_key,
                         &key_version,
                         &password,
+                        None,
                     )
                     .map_err(|e| format!("could not decrypt directory stream: {}", e))?;
 
@@ -864,6 +912,9 @@ async fn main() {
                     }
                     StreamHeader::V3(_) => {
                         return Err("Key rotation for V3 headers is not yet supported.".into());
+                    }
+                    StreamHeader::V4(_) => {
+                        return Err("Key rotation for V4 headers is not yet supported.".into());
                     }
                 };
 

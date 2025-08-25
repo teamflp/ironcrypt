@@ -64,6 +64,12 @@ pub enum IronCryptError {
 
     #[error("Elliptic curve error: {0}")]
     EllipticCurveError(#[from] p256::elliptic_curve::Error),
+
+    #[error("Signature error: {0}")]
+    SignatureError(String),
+
+    #[error("Signature verification failed: {0}")]
+    SignatureVerificationFailed(String),
 }
 
 impl From<Box<dyn Error + Send + Sync>> for IronCryptError {

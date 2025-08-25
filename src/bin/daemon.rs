@@ -189,6 +189,7 @@ async fn encrypt_handler(
             &mut response_writer,
             &mut password,
             recipients,
+            None,
             &config.password_criteria,
             argon_cfg,
             hash_password,
@@ -244,6 +245,7 @@ async fn decrypt_handler(
             &private_key,
             &key_version,
             &password,
+            None,
         ) {
             tracing::error!("Decryption failed: {}", e);
         }
