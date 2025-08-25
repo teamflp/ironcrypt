@@ -275,6 +275,48 @@ make dev ENV_FILE=.env.local
 ```
 - La cible par défaut est `all -> dev`, donc un simple `make` équivaut à `make dev`.
 
+### Optimized Builds with Feature Flags
+
+For advanced use cases, such as creating minimal binaries for embedded systems or lean Docker containers for specific cloud environments, IronCrypt supports a feature flag system. This allows you to compile only the components you need, significantly reducing binary size and dependencies.
+
+By default, all features are enabled. To create a custom build, you must first disable the default features with `--no-default-features` and then enable the ones you need with `--features <your-features>`.
+
+**Available Features:**
+
+*   `cli`: Builds the `ironcrypt` command-line tool.
+*   `daemon`: Builds the `ironcryptd` daemon and enables the `daemon` subcommand in the CLI.
+*   `interactive`: Enables interactive elements like progress spinners in the CLI. Requires `cli`.
+*   `aws`: Enables support for AWS Secrets Manager.
+*   `azure`: Enables support for Azure Key Vault.
+*   `gcp`: Enables support for Google Cloud Secret Manager. (Note: Currently non-functional, will result in an error at runtime).
+*   `cloud`: A meta-feature that enables all cloud providers (`aws`, `azure`, `gcp`).
+*   `full`: A meta-feature that enables all of the above features. This is the default.
+
+**Local Builds with `cargo`:**
+
+```sh
+# Build a minimal CLI binary without any cloud or daemon features
+cargo build --release --no-default-features --features cli
+
+# Build the CLI with AWS support and interactive spinners
+cargo build --release --no-default-features --features "cli,interactive,aws"
+
+# Build just the daemon with all cloud providers
+cargo build --release --no-default-features --features "daemon,cloud"
+```
+
+**Custom Docker Builds:**
+
+You can pass the features to the Docker build using the `IRONCRYPT_FEATURES` build argument.
+
+```sh
+# Build a minimal Docker image with only the CLI tool
+docker build --build-arg IRONCRYPT_FEATURES="cli" -t ironcrypt:cli .
+
+# Build a Docker image with the daemon and Azure support
+docker build --build-arg IRONCRYPT_FEATURES="daemon,azure" -t ironcrypt:daemon-azure .
+```
+
 ---
 
 ## Usage

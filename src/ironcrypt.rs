@@ -4,8 +4,12 @@ use crate::{
     generate_rsa_keys,
     handle_error::IronCryptError,
     load_private_key, load_public_key, save_keys_to_files,
-    secrets::{aws::AwsStore, azure::AzureStore, vault::VaultStore, SecretStore},
+    secrets::{vault::VaultStore, SecretStore},
 };
+#[cfg(feature = "aws")]
+use crate::secrets::aws::AwsStore;
+#[cfg(feature = "azure")]
+use crate::secrets::azure::AzureStore;
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes256Gcm, Nonce};
 use argon2::password_hash::rand_core::{OsRng, RngCore};
@@ -156,6 +160,7 @@ impl IronCrypt {
                     let store = VaultStore::new(vault_config, &vault_config.mount)?;
                     Some(Box::new(store) as Box<dyn SecretStore + Send + Sync>)
                 }
+                #[cfg(feature = "aws")]
                 "aws" => {
                     let aws_config = secrets_config.aws.as_ref().ok_or_else(|| {
                         IronCryptError::ConfigurationError(
@@ -165,6 +170,7 @@ impl IronCrypt {
                     let store = AwsStore::new(aws_config).await?;
                     Some(Box::new(store) as Box<dyn SecretStore + Send + Sync>)
                 }
+                #[cfg(feature = "azure")]
                 "azure" => {
                     let azure_config = secrets_config.azure.as_ref().ok_or_else(|| {
                         IronCryptError::ConfigurationError(
@@ -174,9 +180,10 @@ impl IronCrypt {
                     let store = AzureStore::new(azure_config).await?;
                     Some(Box::new(store) as Box<dyn SecretStore + Send + Sync>)
                 }
+                #[cfg(feature = "gcp")]
                 "google" => {
                     return Err(IronCryptError::ConfigurationError(
-                        "Google provider is temporarily disabled.".to_string(),
+                        "Google Cloud provider is not yet supported due to breaking changes in its library.".to_string(),
                     ))
                 }
                 other => {

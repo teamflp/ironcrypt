@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+#[cfg(feature = "interactive")]
 use indicatif::{ProgressBar, ProgressStyle};
 use ironcrypt::{
     decrypt_stream, encrypt_stream, generate_rsa_keys, load_private_key, load_public_key,
@@ -11,6 +12,7 @@ use flate2::Compression;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::process;
+#[cfg(feature = "interactive")]
 use std::time::Duration;
 use tar::{Archive, Builder};
 use tempfile::NamedTempFile;
@@ -249,6 +251,7 @@ enum Commands {
     },
 
     /// Starts the transparent encryption daemon.
+    #[cfg(feature = "daemon")]
     Daemon {
         /// Port to listen on
         #[arg(short, long, default_value_t = 3000)]
@@ -289,18 +292,28 @@ async fn main() {
                     let private_key_path = format!("{}/private_key_{}.pem", directory, version);
                     let public_key_path = format!("{}/public_key_{}.pem", directory, version);
 
-                    let spinner = ProgressBar::new_spinner();
-                    spinner.set_style(
-                        ProgressStyle::with_template("{spinner} {msg}")
-                            .unwrap()
-                            .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]),
-                    );
-                    spinner.set_message("Generating RSA keys...");
-                    spinner.enable_steady_tick(Duration::from_millis(100));
+                    #[cfg(feature = "interactive")]
+                    let spinner = {
+                        let s = ProgressBar::new_spinner();
+                        s.set_style(
+                            ProgressStyle::with_template("{spinner} {msg}")
+                                .unwrap()
+                                .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]),
+                        );
+                        s.set_message("Generating RSA keys...");
+                        s.enable_steady_tick(Duration::from_millis(100));
+                        s
+                    };
+                    #[cfg(not(feature = "interactive"))]
+                    println!("Generating RSA keys...");
 
                     let (private_key, public_key) = generate_rsa_keys(key_size)
                         .map_err(|e| format!("could not generate RSA key pair: {}", e))?;
+
+                    #[cfg(feature = "interactive")]
                     spinner.finish_with_message("RSA keys generated.");
+                    #[cfg(not(feature = "interactive"))]
+                    println!("RSA keys generated.");
 
                     save_keys_to_files(
                         &private_key,
@@ -803,6 +816,7 @@ async fn main() {
                 metrics::metrics_finish("rotate_key", 0, start, result.is_ok());
                 result?;
             }
+            #[cfg(feature = "daemon")]
             Commands::Daemon {
                 port,
                 key_directory,
