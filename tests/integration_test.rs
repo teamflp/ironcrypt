@@ -1,7 +1,7 @@
 // tests/integration_test.rs
 
 use ironcrypt::{
-    algorithms::SymmetricAlgorithm, config::DataType, keys::PrivateKey, IronCrypt, IronCryptConfig,
+    algorithms::SymmetricAlgorithm, config::DataType, keys::PrivateKey, decrypt_stream, encrypt_stream, load_public_key, load_private_key, IronCrypt, IronCryptConfig, PasswordCriteria, Argon2Config
 };
 use rsa::{RsaPrivateKey, RsaPublicKey};
 use rsa::pkcs1::{EncodeRsaPrivateKey, EncodeRsaPublicKey};
@@ -10,6 +10,8 @@ use std::fs;
 use std::io::Write;
 use std::path::Path;
 use aes_gcm::aead::OsRng;
+use sha2::{Digest, Sha256};
+use std::io::Read;
 
 const STRONG_PASSWORD: &str = "Str0ngP@ssw0rd42!";
 
@@ -211,10 +213,7 @@ async fn test_key_rotation() {
     fs::remove_dir_all(key_dir).unwrap();
 }
 
-use ironcrypt::{encrypt_stream, decrypt_stream, load_public_key, load_private_key, PasswordCriteria, Argon2Config};
 use rand::RngCore;
-use sha2::{Digest, Sha256};
-use std::io::Read;
 
 #[test]
 fn test_stream_encryption_large_file() {
@@ -253,6 +252,7 @@ fn test_stream_encryption_large_file() {
         &mut dest,
         &mut password,
         recipients,
+        None,
         &criteria,
         argon_cfg,
         true,
@@ -271,6 +271,7 @@ fn test_stream_encryption_large_file() {
         &PrivateKey::Rsa(loaded_private_key),
         "v1",
         STRONG_PASSWORD,
+        None,
     )
     .unwrap();
 
@@ -395,6 +396,7 @@ fn test_passphrase_encryption_decryption() {
         &mut dest,
         &mut password,
         recipients,
+        None,
         &PasswordCriteria::default(),
         Argon2Config::default(),
         true,
@@ -413,6 +415,7 @@ fn test_passphrase_encryption_decryption() {
         &PrivateKey::Rsa(loaded_private_key_ok),
         "v1",
         "FilePassword1!",
+        None,
     )
     .unwrap();
     assert_eq!(original_data, &decrypted_dest_ok.into_inner()[..]);
@@ -457,6 +460,7 @@ fn test_multi_recipient_encryption_decryption() {
             .iter()
             .map(|(k, v)| (k, *v))
             .collect::<Vec<(&ironcrypt::keys::PublicKey, &str)>>(),
+        None,
         &PasswordCriteria::default(),
         Argon2Config::default(),
         true,
@@ -473,6 +477,7 @@ fn test_multi_recipient_encryption_decryption() {
         &PrivateKey::Rsa(priv1),
         "v1",
         "MultiUserPassword1!",
+        None,
     )
     .unwrap();
     assert_eq!(original_data, &decrypted_dest1.into_inner()[..]);
@@ -486,6 +491,7 @@ fn test_multi_recipient_encryption_decryption() {
         &PrivateKey::Rsa(priv2),
         "v2",
         "MultiUserPassword1!",
+        None,
     )
     .unwrap();
     assert_eq!(original_data, &decrypted_dest2.into_inner()[..]);
@@ -499,6 +505,7 @@ fn test_multi_recipient_encryption_decryption() {
         &PrivateKey::Rsa(priv3),
         "v3", // Even if they claim to be a version that doesn't exist
         "MultiUserPassword1!",
+        None,
     );
     assert!(res3.is_err());
 

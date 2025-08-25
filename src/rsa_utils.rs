@@ -87,3 +87,32 @@ pub fn load_private_key(
         ))
     }
 }
+
+use rsa::pkcs1v15::{Signature, SigningKey, VerifyingKey};
+use sha2::Sha256;
+use signature::hazmat::{PrehashSigner, PrehashVerifier};
+use signature::SignatureEncoding;
+
+pub fn sign_hash(
+    private_key: &RsaPrivateKey,
+    hash: &[u8],
+) -> Result<Vec<u8>, IronCryptError> {
+    let signing_key = SigningKey::<Sha256>::new_unprefixed(private_key.clone());
+    let signature: Signature = signing_key
+        .sign_prehash(hash)
+        .map_err(|e| IronCryptError::SignatureError(e.to_string()))?;
+    Ok(signature.to_vec())
+}
+
+pub fn verify_signature(
+    public_key: &RsaPublicKey,
+    hash: &[u8],
+    signature_bytes: &[u8],
+) -> Result<(), IronCryptError> {
+    let signature = Signature::try_from(signature_bytes)
+        .map_err(|e| IronCryptError::SignatureError(e.to_string()))?;
+    let verifying_key = VerifyingKey::<Sha256>::new_unprefixed(public_key.clone());
+    verifying_key
+        .verify_prehash(hash, &signature)
+        .map_err(|e| IronCryptError::SignatureVerificationFailed(e.to_string()))
+}
