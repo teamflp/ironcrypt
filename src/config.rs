@@ -94,8 +94,10 @@ fn default_mount() -> String {
 /// Creating a custom configuration:
 /// ```
 /// use ironcrypt::config::{IronCryptConfig, PasswordCriteria};
+ /// use ironcrypt::standards::CryptoStandard;
 ///
 /// let custom_config = IronCryptConfig {
+ ///     standard: CryptoStandard::Custom,
 ///     symmetric_algorithm: ironcrypt::algorithms::SymmetricAlgorithm::ChaCha20Poly1305,
 ///     asymmetric_algorithm: ironcrypt::algorithms::AsymmetricAlgorithm::Ecc,
 ///     rsa_key_size: 4096,

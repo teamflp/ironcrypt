@@ -116,3 +116,31 @@ pub fn verify_signature(
         .verify_prehash(hash, &signature)
         .map_err(|e| IronCryptError::SignatureVerificationFailed(e.to_string()))
 }
+
+pub fn load_private_key_from_str(
+    pem_str: &str,
+    passphrase: Option<&str>,
+) -> Result<RsaPrivateKey, IronCryptError> {
+    if let Some(pass) = passphrase {
+        if pem_str.starts_with("-----BEGIN ENCRYPTED PRIVATE KEY-----") {
+            return RsaPrivateKey::from_pkcs8_encrypted_pem(pem_str, pass.as_bytes())
+                .map_err(|e| IronCryptError::KeyLoadingError(format!("Failed to decrypt key. Is the passphrase correct? Original error: {}", e)));
+        }
+    }
+
+    if pem_str.starts_with("-----BEGIN PRIVATE KEY-----") {
+        RsaPrivateKey::from_pkcs8_pem(pem_str)
+            .map_err(|e| IronCryptError::KeyLoadingError(e.to_string()))
+    } else if pem_str.starts_with("-----BEGIN RSA PRIVATE KEY-----") {
+        RsaPrivateKey::from_pkcs1_pem(pem_str)
+            .map_err(|e| IronCryptError::KeyLoadingError(e.to_string()))
+    } else if pem_str.starts_with("-----BEGIN ENCRYPTED PRIVATE KEY-----") {
+        Err(IronCryptError::KeyLoadingError(
+            "Private key is encrypted, but no passphrase was provided.".to_string(),
+        ))
+    } else {
+        Err(IronCryptError::KeyLoadingError(
+            "Unsupported or unknown private key format".to_string(),
+        ))
+    }
+}
