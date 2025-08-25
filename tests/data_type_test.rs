@@ -32,6 +32,7 @@ async fn test_data_type_key_segregation() {
         KeyManagementConfig {
             key_directory: generic_key_dir.to_string(),
             key_version: "v1".to_string(),
+            passphrase: None,
         },
     );
     data_type_config.insert(
@@ -39,6 +40,7 @@ async fn test_data_type_key_segregation() {
         KeyManagementConfig {
             key_directory: pii_key_dir.to_string(),
             key_version: "v1".to_string(),
+            passphrase: None,
         },
     );
     data_type_config.insert(
@@ -46,6 +48,7 @@ async fn test_data_type_key_segregation() {
         KeyManagementConfig {
             key_directory: biometric_key_dir.to_string(),
             key_version: "v1".to_string(),
+            passphrase: None,
         },
     );
 

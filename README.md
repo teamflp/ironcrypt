@@ -22,6 +22,8 @@
 ## Features
 
 - **Hybrid Encryption (RSA + AES):** IronCrypt uses a smart combination of encryption methods. It encrypts your data with AES-256 (very fast and secure), and then encrypts the AES key itself with RSA. This is an industry-standard technique called "envelope encryption" that combines the best of both worlds: the speed of symmetric encryption and the secure key management of asymmetric encryption.
+- **Multi-Recipient Encryption**: Natively supports encrypting a single file or directory for multiple users. Each user can decrypt the data with their own unique private key, without needing to share secrets.
+- **Passphrase-Encrypted Keys**: Private keys can be optionally encrypted with a user-provided passphrase for an added layer of security, protecting them even if the key files are exposed.
 - **State-of-the-Art Password Hashing:** For passwords, IronCrypt uses Argon2, currently considered one of the most secure hashing algorithms in the world. It is specifically designed to resist modern GPU-based brute-force attacks, providing much greater security than older algorithms.
 - **Advanced Key Management:** The built-in key versioning system (`-v v1`, `-v v2`) and the dedicated `rotate-key` command allow you to update your encryption keys over time. This automates the process of migrating to a new key without having to manually decrypt and re-encrypt all your data. IronCrypt can load both modern PKCS#8 keys and legacy PKCS#1 keys, ensuring broad compatibility.
 - **Flexible Configuration:** You can finely tune security parameters via the `ironcrypt.toml` file, environment variables, or the `IronCryptConfig` struct in code. This includes RSA key size and the computational "costs" of the Argon2 algorithm, allowing you to balance security and performance to fit your needs.
@@ -99,8 +101,8 @@ This process also uses envelope encryption (AES + RSA) to ensure both performanc
 1.  **Opening File Streams**: IronCrypt opens the input file for reading and the output file for writing, without loading the entire content into memory.
 2.  **Creating the Envelope Header**:
     *   A new one-time use **AES-256** key is randomly generated.
-    *   This AES key is encrypted with your **public RSA key**.
-    *   A JSON header is created containing the encrypted AES key and other necessary metadata (nonce, key version).
+    *   This AES key is encrypted with one or more **public RSA keys** (one for each recipient).
+    *   A JSON header is created containing a list of recipients, where each entry contains the encrypted AES key for that user and their key version.
 3.  **Streaming Encryption**:
     *   The JSON header is written to the start of the output file.
     *   IronCrypt then reads the input file in small chunks, encrypts each chunk with the AES key, and immediately writes the encrypted chunk to the output file.
@@ -110,7 +112,7 @@ This process also uses envelope encryption (AES + RSA) to ensure both performanc
 
 1.  **Reading the Header**: IronCrypt reads the JSON header from the start of the encrypted file.
 2.  **Opening the Envelope**:
-    *   Your **private RSA key** is used to decrypt the AES key from the header.
+    *   Your **private RSA key** is used to find your entry in the recipients list and decrypt the AES key.
 3.  **Streaming Decryption**:
     *   With the AES key, IronCrypt reads the rest of the encrypted file in chunks, decrypts each chunk, and writes the plaintext data to the output file.
 4.  **Verification and Saving**: After processing all chunks, it verifies the authentication tag. If valid, the original file is fully restored.
@@ -284,14 +286,14 @@ Here is a summary table of all available commands:
 
 | Command       | Alias                  | Description                                 | Key Options                                                                                                                                               |
 | :------------ | :--------------------- | :------------------------------------------ | :-------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `generate`    |                        | Generates a new RSA key pair.               | `-v, --version <VERSION>` <br> `-d, --directory <DIR>` <br> `-s, --key-size <SIZE>`                                                                        |
+| `generate`    |                        | Generates a new RSA key pair.               | `-v, --version <VERSION>` <br> `-d, --directory <DIR>` <br> `-s, --key-size <SIZE>` <br> `[--passphrase <PASSPHRASE>]`                                        |
 | `encrypt`     |                        | Hashes and encrypts a password.             | `-w, --password <PASSWORD>` <br> `-d, --public-key-directory <DIR>` <br> `-v, --key-version <VERSION>`                                                      |
-| `decrypt`     |                        | Verifies an encrypted password.             | `-w, --password <PASSWORD>` <br> `-k, --private-key-directory <DIR>` <br> `-v, --key-version <VERSION>` <br> `-f, --file <FILE>`                               |
-| `encrypt-file`| `encfile`, `efile`, `ef` | Encrypts a binary file.                     | `-i, --input-file <INPUT>` <br> `-o, --output-file <OUTPUT>` <br> `-d, --public-key-directory <DIR>` <br> `-v, --key-version <VERSION>` <br> `[-w, --password <PASSWORD>]` |
-| `decrypt-file`| `decfile`, `dfile`, `df` | Decrypts a binary file.                     | `-i, --input-file <INPUT>` <br> `-o, --output-file <OUTPUT>` <br> `-k, --private-key-directory <DIR>` <br> `-v, --key-version <VERSION>` <br> `[-w, --password <PASSWORD>]` |
-| `encrypt-dir` | `encdir`                 | Encrypts an entire directory.               | `-i, --input-dir <INPUT>` <br> `-o, --output-file <OUTPUT>` <br> `-d, --public-key-directory <DIR>` <br> `-v, --key-version <VERSION>` <br> `[-w, --password <PASSWORD>]` |
-| `decrypt-dir` | `decdir`                 | Decrypts an entire directory.               | `-i, --input-file <INPUT>` <br> `-o, --output-dir <OUTPUT>` <br> `-k, --private-key-directory <DIR>` <br> `-v, --key-version <VERSION>` <br> `[-w, --password <PASSWORD>]` |
-| `rotate-key`  | `rk`                     | Rotates encryption keys for encrypted data. | `--old-version <OLD_V>` <br> `--new-version <NEW_V>` <br> `-k, --key-directory <DIR>` <br> `--file <FILE>` or `--directory <DIR>`                               |
+| `decrypt`     |                        | Verifies an encrypted password.             | `-w, --password <PASSWORD>` <br> `-k, --private-key-directory <DIR>` <br> `-f, --file <FILE>` <br> `[--passphrase <PASSPHRASE>]`                               |
+| `encrypt-file`| `encfile`, `efile`, `ef` | Encrypts a binary file.                     | `-i, --input-file <INPUT>` <br> `-o, --output-file <OUTPUT>` <br> `-d, --public-key-directory <DIR>` <br> `-v, --key-version <VERSION>...` <br> `[-w, --password <PASSWORD>]` |
+| `decrypt-file`| `decfile`, `dfile`, `df` | Decrypts a binary file.                     | `-i, --input-file <INPUT>` <br> `-o, --output-file <OUTPUT>` <br> `-k, --private-key-directory <DIR>` <br> `-v, --key-version <VERSION>` <br> `[-w, --password <PASSWORD>]` <br> `[--passphrase <PASSPHRASE>]` |
+| `encrypt-dir` | `encdir`                 | Encrypts an entire directory.               | `-i, --input-dir <INPUT>` <br> `-o, --output-file <OUTPUT>` <br> `-d, --public-key-directory <DIR>` <br> `-v, --key-version <VERSION>...` <br> `[-w, --password <PASSWORD>]` |
+| `decrypt-dir` | `decdir`                 | Decrypts an entire directory.               | `-i, --input-file <INPUT>` <br> `-o, --output-dir <OUTPUT>` <br> `-k, --private-key-directory <DIR>` <br> `-v, --key-version <VERSION>` <br> `[-w, --password <PASSWORD>]` <br> `[--passphrase <PASSPHRASE>]` |
+| `rotate-key`  | `rk`                     | Rotates encryption keys for encrypted data. | `--old-version <OLD_V>` <br> `--new-version <NEW_V>` <br> `-k, --key-directory <DIR>` <br> `[--file <FILE> | --directory <DIR>]` <br> `[--passphrase <PASSPHRASE>]` |
 
 A full list of commands and their arguments can be viewed by running `ironcrypt --help`. To get help for a specific command, run `ironcrypt <command> --help`.
 
@@ -300,13 +302,16 @@ Generates a new RSA key pair (private and public).
 
 **Usage:**
 ```sh
-ironcrypt generate --version <VERSION> [--directory <DIR>] [--key-size <SIZE>]
+ironcrypt generate --version <VERSION> [--directory <DIR>] [--key-size <SIZE>] [--passphrase <PASSPHRASE>]
 ```
 
 **Example:**
 ```sh
 # Generate a new v2 key with a size of 4096 bits in the "my_keys" directory
 ironcrypt generate -v v2 -d my_keys -s 4096
+
+# Generate a new v3 key protected by a passphrase
+ironcrypt generate -v v3 -d my_keys --passphrase "a-very-secret-phrase"
 ```
 
 #### `encrypt`
@@ -328,13 +333,16 @@ Decrypts and verifies a password.
 
 **Usage:**
 ```sh
-ironcrypt decrypt --password <PASSWORD> --private-key-directory <DIR> --key-version <VERSION> --file <FILE>
+ironcrypt decrypt --password <PASSWORD> --private-key-directory <DIR> --file <FILE> [--passphrase <PASSPHRASE>]
 ```
 
 **Example:**
 ```sh
 # Verify a password using the v1 private key and the encrypted data from a file
-ironcrypt decrypt -w "My$trongP@ssw0rd" -k keys -v v1 -f encrypted_data.json
+ironcrypt decrypt -w "My$trongP@ssw0rd" -k keys -f encrypted_data.json
+
+# Verify using a key protected by a passphrase
+ironcrypt decrypt -w "My$trongP@ssw0rd" -k my_keys -f encrypted_data_v3.json --passphrase "a-very-secret-phrase"
 ```
 
 #### `encrypt-file`
@@ -342,16 +350,16 @@ Encrypts a single file.
 
 **Usage:**
 ```sh
-ironcrypt encrypt-file -i <INPUT> -o <OUTPUT> -d <KEY_DIR> -v <VERSION> [-w <PASSWORD>]
+ironcrypt encrypt-file -i <INPUT> -o <OUTPUT> -d <KEY_DIR> -v <VERSION>... [-w <PASSWORD>]
 ```
 
 **Example:**
 ```sh
-# Encrypt a file with the v1 public key
+# Encrypt a file for a single user (v1)
 ironcrypt encrypt-file -i my_document.pdf -o my_document.enc -d keys -v v1
 
-# Encrypt a file with a password as well
-ironcrypt encrypt-file -i my_secret.zip -o my_secret.enc -d keys -v v1 -w "ExtraL@yerOfS3curity"
+# Encrypt a file for multiple users (v1 and v2)
+ironcrypt encrypt-file -i my_document.pdf -o my_document.multirecipient.enc -d keys -v v1 -v v2
 ```
 
 #### `decrypt-file`
@@ -359,7 +367,7 @@ Decrypts a single file.
 
 **Usage:**
 ```sh
-ironcrypt decrypt-file -i <INPUT> -o <OUTPUT> -k <KEY_DIR> -v <VERSION> [-w <PASSWORD>]
+ironcrypt decrypt-file -i <INPUT> -o <OUTPUT> -k <KEY_DIR> -v <VERSION> [-w <PASSWORD>] [--passphrase <PASSPHRASE>]
 ```
 
 **Example:**
@@ -367,8 +375,8 @@ ironcrypt decrypt-file -i <INPUT> -o <OUTPUT> -k <KEY_DIR> -v <VERSION> [-w <PAS
 # Decrypt a file with the v1 private key
 ironcrypt decrypt-file -i my_document.enc -o my_document.pdf -k keys -v v1
 
-# Decrypt a file that was also encrypted with a password
-ironcrypt decrypt-file -i my_secret.enc -o my_secret.zip -k keys -v v1 -w "ExtraL@yerOfS3curity"
+# Decrypt a file using a key protected by a passphrase
+ironcrypt decrypt-file -i my_secret.enc -o my_secret.zip -k my_keys -v v3 -w "ExtraL@yerOfS3curity" --passphrase "a-very-secret-phrase"
 ```
 
 #### `encrypt-dir`
@@ -376,13 +384,13 @@ Encrypts an entire directory by first archiving it into a `.tar.gz`.
 
 **Usage:**
 ```sh
-ironcrypt encrypt-dir -i <INPUT_DIR> -o <OUTPUT_FILE> -d <KEY_DIR> -v <VERSION> [-w <PASSWORD>]
+ironcrypt encrypt-dir -i <INPUT_DIR> -o <OUTPUT_FILE> -d <KEY_DIR> -v <VERSION>... [-w <PASSWORD>]
 ```
 
 **Example:**
 ```sh
-# Encrypt the "my_project" directory
-ironcrypt encrypt-dir -i ./my_project -o my_project.enc -d keys -v v1
+# Encrypt the "my_project" directory for multiple users
+ironcrypt encrypt-dir -i ./my_project -o my_project.enc -d keys -v v1 -v v2
 ```
 
 #### `decrypt-dir`
@@ -390,7 +398,7 @@ Decrypts and extracts a directory.
 
 **Usage:**
 ```sh
-ironcrypt decrypt-dir -i <INPUT_FILE> -o <OUTPUT_DIR> -k <KEY_DIR> -v <VERSION> [-w <PASSWORD>]
+ironcrypt decrypt-dir -i <INPUT_FILE> -o <OUTPUT_DIR> -k <KEY_DIR> -v <VERSION> [-w <PASSWORD>] [--passphrase <PASSPHRASE>]
 ```
 
 **Example:**
@@ -404,16 +412,13 @@ Rotates encryption keys for a file or a directory of files.
 
 **Usage:**
 ```sh
-ironcrypt rotate-key --old-version <OLD_V> --new-version <NEW_V> --key-directory <DIR> [--file <FILE> | --directory <DIR>]
+ironcrypt rotate-key --old-version <OLD_V> --new-version <NEW_V> --key-directory <DIR> [--file <FILE> | --directory <DIR>] [--passphrase <PASSPHRASE>]
 ```
 
 **Example:**
 ```sh
 # Rotate keys from v1 to v2 for a single file
 ironcrypt rotate-key --old-version v1 --new-version v2 -k keys --file my_document.enc
-
-# Rotate keys from v1 to v2 for all files in the "encrypted_files" directory
-ironcrypt rotate-key --old-version v1 --new-version v2 -k keys -d ./encrypted_files
 ```
 
 ### As a Library (Crate)
@@ -426,29 +431,42 @@ ironcrypt = "0.2.0" # Replace with the desired version from crates.io
 
 #### Encrypting and Verifying a Password
 ```rust
-use ironcrypt::{IronCrypt, IronCryptConfig, DataType};
+use ironcrypt::{IronCrypt, IronCryptConfig, DataType, config::KeyManagementConfig};
+use std::collections::HashMap;
 use std::error::Error;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    // 1. Initialize IronCrypt with a default configuration.
-    //    Keys will be generated and stored in "keys/v1/" if they don't exist.
-    let config = IronCryptConfig::default();
+    // 1. Use a temporary directory for keys to keep tests isolated.
+    let temp_dir = tempfile::tempdir()?;
+    let key_dir = temp_dir.path().to_str().unwrap();
+
+    // 2. Configure IronCrypt to use the temporary directory.
+    let mut config = IronCryptConfig::default();
+    let mut data_type_config = HashMap::new();
+    data_type_config.insert(
+        DataType::Generic,
+        KeyManagementConfig {
+            key_directory: key_dir.to_string(),
+            key_version: "v1".to_string(),
+            passphrase: None,
+        },
+    );
+    config.data_type_config = Some(data_type_config);
+
+    // 3. Initialize IronCrypt.
     let crypt = IronCrypt::new(config, DataType::Generic).await?;
 
-    // 2. Encrypt a password.
-    //    The result is a JSON string containing the hash and necessary metadata.
+    // 4. Encrypt a password.
     let password = "MySecurePassword123!";
     let encrypted_json = crypt.encrypt_password(password)?;
     println!("Encrypted password: {}", encrypted_json);
 
-    // 3. Verify the password.
+    // 5. Verify the password.
     let is_valid = crypt.verify_password(&encrypted_json, password)?;
     assert!(is_valid);
     println!("Password verification successful!");
 
-    // 4. Clean up the generated keys for this example.
-    std::fs::remove_dir_all("keys")?;
     Ok(())
 }
 ```
@@ -467,15 +485,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut source = Cursor::new(original_data.as_bytes());
     let mut encrypted_dest = Cursor::new(Vec::new());
 
-    // 3. Encrypt the stream.
-    let mut password = "AnotherStrongPassword!".to_string();
+    // 3. Encrypt the stream for a single recipient.
+    let mut password = "AnotherStrongPassword123!".to_string();
+    let recipients = vec![(&public_key, "v1")];
     encrypt_stream(
         &mut source,
         &mut encrypted_dest,
         &mut password,
-        &public_key,
+        recipients,
         &PasswordCriteria::default(),
-        "v1", // Key version
         Argon2Config::default(),
         true, // Indicates that the password should be hashed
     )?;
@@ -489,7 +507,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &mut encrypted_dest,
         &mut decrypted_dest,
         &private_key,
-        "AnotherStrongPassword!",
+        "v1", // The key version of the recipient
+        "AnotherStrongPassword123!",
     )?;
 
     // 6. Verify that the decrypted data matches the original data.
@@ -515,6 +534,9 @@ ironcrypt daemon --key-version v1
 
 # Start the daemon on a different port and with a different key directory
 ironcrypt daemon --key-version v2 --key-directory my_keys --port 8080
+
+# Start the daemon with a passphrase-protected key
+ironcrypt daemon --key-version v3 --key-directory my_keys --passphrase "a-very-secret-phrase"
 ```
 
 The daemon will run in the foreground. For production use, you should run it as a system service (e.g., using `systemd`).
@@ -773,7 +795,7 @@ For library usage, you can construct an `IronCryptConfig` struct and pass it to 
 
 ## Security and Best Practices
 
-- **Protect Your Private Keys:** Never expose your private keys. Store them in a secure, non-public location.
+- **Protect Your Private Keys:** Never expose your private keys. Store them in a secure, non-public location. If possible, encrypt them with a strong, unique passphrase using the `--passphrase` option during generation.
 - **Use Strong Passwords:** When using the password feature for file/directory encryption, ensure the password is strong.
 - **Rotate Keys Regularly:** Use the `rotate-key` command to update your encryption keys periodically.
 - **Backup Your Keys:** Keep secure backups of your keys. If you lose a private key, you will not be able to decrypt your data.

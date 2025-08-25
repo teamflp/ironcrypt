@@ -23,11 +23,18 @@ pub fn save_keys_to_files(
     pub_key: &RsaPublicKey,
     priv_path: &str,
     pub_path: &str,
+    passphrase: Option<&str>,
 ) -> Result<(), IronCryptError> {
     // Save private key in PKCS#8 format
-    let priv_pem = priv_key
-        .to_pkcs8_pem(LineEnding::LF)
-        .map_err(|e| IronCryptError::KeySavingError(e.to_string()))?;
+    let priv_pem = if let Some(pass) = passphrase {
+        priv_key
+            .to_pkcs8_encrypted_pem(&mut OsRng, pass.as_bytes(), LineEnding::LF)
+            .map_err(|e| IronCryptError::KeySavingError(e.to_string()))?
+    } else {
+        priv_key
+            .to_pkcs8_pem(LineEnding::LF)
+            .map_err(|e| IronCryptError::KeySavingError(e.to_string()))?
+    };
 
     // Save public key in PKCS#1 format (as it's common)
     let pub_pem = pub_key
@@ -51,17 +58,29 @@ pub fn load_public_key(path: &str) -> Result<RsaPublicKey, IronCryptError> {
         .map_err(|e| IronCryptError::KeyLoadingError(e.to_string()))
 }
 
-pub fn load_private_key(path: &str) -> Result<RsaPrivateKey, IronCryptError> {
+pub fn load_private_key(
+    path: &str,
+    passphrase: Option<&str>,
+) -> Result<RsaPrivateKey, IronCryptError> {
     let pem_str = &std::fs::read_to_string(path)?;
-    // Inspect the PEM header to decide which format to use
+
+    if let Some(pass) = passphrase {
+        if pem_str.starts_with("-----BEGIN ENCRYPTED PRIVATE KEY-----") {
+            return RsaPrivateKey::from_pkcs8_encrypted_pem(pem_str, pass.as_bytes())
+                .map_err(|e| IronCryptError::KeyLoadingError(format!("Failed to decrypt key. Is the passphrase correct? Original error: {}", e)));
+        }
+    }
+
     if pem_str.starts_with("-----BEGIN PRIVATE KEY-----") {
-        // This is PKCS#8
         RsaPrivateKey::from_pkcs8_pem(pem_str)
             .map_err(|e| IronCryptError::KeyLoadingError(e.to_string()))
     } else if pem_str.starts_with("-----BEGIN RSA PRIVATE KEY-----") {
-        // This is PKCS#1
         RsaPrivateKey::from_pkcs1_pem(pem_str)
             .map_err(|e| IronCryptError::KeyLoadingError(e.to_string()))
+    } else if pem_str.starts_with("-----BEGIN ENCRYPTED PRIVATE KEY-----") {
+        Err(IronCryptError::KeyLoadingError(
+            "Private key is encrypted, but no passphrase was provided.".to_string(),
+        ))
     } else {
         Err(IronCryptError::KeyLoadingError(
             "Unsupported or unknown private key format".to_string(),

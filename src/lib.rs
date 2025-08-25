@@ -43,6 +43,7 @@
 //!         KeyManagementConfig {
 //!             key_directory: key_dir.to_string(),
 //!             key_version: "v1".to_string(),
+//!             passphrase: None,
 //!         },
 //!     );
 //!     config.data_type_config = Some(data_type_config);
@@ -84,13 +85,13 @@
 //!
 //!     // 3. Encrypt the stream.
 //!     let mut password = "AnotherStrongPassword123!".to_string();
+//!     let recipients = vec![(&public_key, "v1")];
 //!     encrypt_stream(
 //!         &mut source,
 //!         &mut encrypted_dest,
 //!         &mut password,
-//!         &public_key,
+//!         recipients,
 //!         &PasswordCriteria::default(),
-//!         "v1", // Key version
 //!         Argon2Config::default(),
 //!         true, // Indicates that the password should be hashed
 //!     )?;
@@ -104,6 +105,7 @@
 //!         &mut encrypted_dest,
 //!         &mut decrypted_dest,
 //!         &private_key,
+//!         "v1",
 //!         "AnotherStrongPassword123!",
 //!     )?;
 //!
@@ -140,8 +142,9 @@ pub use criteria::PasswordCriteria;
 
 // Streaming encryption and decryption functions
 pub use encrypt::{decrypt_stream, encrypt_stream};
-/// Represents the header of an encrypted data stream.
-pub use encrypt::EncryptedStreamHeader;
+pub use encrypt::{
+    EncryptedStreamHeaderV1, EncryptedStreamHeaderV2, RecipientInfo, StreamHeader,
+};
 /// Contains the parameters for the Argon2 hashing algorithm.
 pub use encrypt::Argon2Config;
 /// Struct containing the encrypted data and associated metadata.

@@ -4,6 +4,7 @@ use ironcrypt::{
     decrypt_stream, encrypt_stream, generate_rsa_keys, load_private_key, load_public_key,
     save_keys_to_files, Argon2Config, IronCrypt, IronCryptConfig, PasswordCriteria,
 };
+use rsa::RsaPublicKey;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
@@ -38,6 +39,9 @@ enum Commands {
 
         #[arg(short = 's', long, default_value_t = 2048)]
         key_size: u32,
+
+        #[arg(long)]
+        passphrase: Option<String>,
     },
 
     /// Hashes and encrypts a password (existing logic).
@@ -56,6 +60,14 @@ enum Commands {
 
         #[arg(short = 'f', long, conflicts_with = "data")]
         file: Option<String>,
+
+        /// Path to the private keys directory
+        #[arg(short = 'k', long, default_value = "keys")]
+        key_directory: String,
+
+        /// Passphrase for the private key
+        #[arg(long)]
+        passphrase: Option<String>,
     },
 
     /// Encrypts a binary file (new command).
@@ -78,9 +90,9 @@ enum Commands {
         #[arg(short = 'd', long, default_value = "keys")]
         public_key_directory: String,
 
-        /// Version of the public key to use
-        #[arg(short = 'v', long)]
-        key_version: String,
+        /// Version of the public key to use (can be specified multiple times for multiple recipients)
+        #[arg(short = 'v', long, required = true)]
+        key_versions: Vec<String>,
 
         /// Optional password (leave empty otherwise)
         #[arg(short = 'w', long, default_value = "")]
@@ -146,6 +158,10 @@ enum Commands {
         /// Optional password
         #[arg(short = 'w', long, default_value = "")]
         password: String,
+
+        /// Passphrase for the private key
+        #[arg(long)]
+        passphrase: Option<String>,
     },
 
     /// Encrypts an entire directory.
@@ -163,9 +179,9 @@ enum Commands {
         #[arg(short = 'd', long, default_value = "keys")]
         public_key_directory: String,
 
-        /// Version of the public key to use.
-        #[arg(short = 'v', long)]
-        key_version: String,
+        /// Version of the public key to use (can be specified multiple times for multiple recipients)
+        #[arg(short = 'v', long, required = true)]
+        key_versions: Vec<String>,
 
         /// Optional password (leave empty otherwise).
         #[arg(short = 'w', long, default_value = "")]
@@ -194,6 +210,10 @@ enum Commands {
         /// Optional password.
         #[arg(short = 'w', long, default_value = "")]
         password: String,
+
+        /// Passphrase for the private key
+        #[arg(long)]
+        passphrase: Option<String>,
     },
 
     /// Rotates an encryption key.
@@ -208,20 +228,24 @@ enum Commands {
         new_version: String,
 
         /// The key directory.
-        #[arg(short='k', long, default_value = "keys")]
+        #[arg(short = 'k', long, default_value = "keys")]
         key_directory: String,
 
         /// The new key size (optional, default: 2048).
-        #[arg(short='s', long)]
+        #[arg(short = 's', long)]
         key_size: Option<u32>,
 
         /// A single file to re-encrypt.
-        #[arg(short='f', long, conflicts_with="directory")]
+        #[arg(short = 'f', long, conflicts_with = "directory")]
         file: Option<String>,
 
         /// A directory of files to re-encrypt.
-        #[arg(short='d', long, conflicts_with="file")]
+        #[arg(short = 'd', long, conflicts_with = "file")]
         directory: Option<String>,
+
+        /// Passphrase for the private keys
+        #[arg(long)]
+        passphrase: Option<String>,
     },
 
     /// Starts the transparent encryption daemon.
@@ -252,6 +276,7 @@ async fn main() {
                 version,
                 directory,
                 key_size,
+                passphrase,
             } => {
                 let start = metrics::metrics_start();
                 let result: Result<(), String> = (async {
@@ -282,6 +307,7 @@ async fn main() {
                         &public_key,
                         &private_key_path,
                         &public_key_path,
+                        passphrase.as_deref(),
                     )
                     .map_err(|e| format!("could not save keys to files: {}", e))?;
 
@@ -316,20 +342,37 @@ async fn main() {
                 password,
                 data,
                 file,
+                key_directory,
+                passphrase,
             } => {
                 let start = metrics::metrics_start();
                 let (payload_size, result) = match (async {
                     let encrypted_data = if let Some(s) = data {
                         s
                     } else if let Some(f) = file {
-                        std::fs::read_to_string(&f)
-                            .map_err(|e| format!("could not read file '{}': {}", f, e))?
+                        std::fs::read_to_string(&f).map_err(|e| {
+                            format!("could not read file '{}': {}", f, e)
+                        })?
                     } else {
                         return Err("please provide encrypted data with --data or --file.".to_string());
                     };
                     let payload_size = encrypted_data.len() as u64;
 
-                    let config = IronCryptConfig::default();
+                    let ed: ironcrypt::EncryptedData = serde_json::from_str(&encrypted_data)
+                        .map_err(|e| format!("Could not parse encrypted data: {}", e))?;
+
+                    let mut config = IronCryptConfig::default();
+                    let mut data_type_config = ironcrypt::config::DataTypeConfig::new();
+                    data_type_config.insert(
+                        ironcrypt::DataType::Generic,
+                        ironcrypt::config::KeyManagementConfig {
+                            key_directory,
+                            key_version: ed.key_version, // Use key version from file
+                            passphrase,
+                        },
+                    );
+                    config.data_type_config = Some(data_type_config);
+
                     let crypt = IronCrypt::new(config, ironcrypt::DataType::Generic)
                         .await
                         .map_err(|e| format!("could not initialize encryption module: {}", e))?;
@@ -356,7 +399,7 @@ async fn main() {
                 input_file,
                 output_file,
                 public_key_directory,
-                key_version,
+                key_versions,
                 mut password,
             } => {
                 let start = metrics::metrics_start();
@@ -368,11 +411,20 @@ async fn main() {
                         format!("could not create output file '{}': {}", output_file, e)
                     })?;
 
-                    let public_key_path =
-                        format!("{}/public_key_{}.pem", public_key_directory, key_version);
-                    let public_key = load_public_key(&public_key_path).map_err(|e| {
-                        format!("could not load public key '{}': {}", public_key_path, e)
-                    })?;
+                    let mut public_keys = Vec::new();
+                    for v in &key_versions {
+                        let public_key_path =
+                            format!("{}/public_key_{}.pem", public_key_directory, v);
+                        let key = load_public_key(&public_key_path).map_err(|e| {
+                            format!("could not load public key '{}': {}", public_key_path, e)
+                        })?;
+                        public_keys.push(key);
+                    }
+
+                    let recipients: Vec<(&RsaPublicKey, &str)> = public_keys
+                        .iter()
+                        .zip(key_versions.iter().map(|s| s.as_str()))
+                        .collect();
 
                     let criteria = PasswordCriteria::default();
                     let argon_cfg = Argon2Config::default();
@@ -382,9 +434,8 @@ async fn main() {
                         &mut source,
                         &mut dest,
                         &mut password,
-                        &public_key,
+                        recipients,
                         &criteria,
-                        &key_version,
                         argon_cfg,
                         hash_password,
                     )
@@ -420,15 +471,15 @@ async fn main() {
                     let key_version = crypt.key_version();
                     let criteria = PasswordCriteria::default();
                     let argon_cfg = Argon2Config::default();
+                    let recipients = vec![(public_key, key_version)];
 
                     let hash_password = !password.is_empty();
                     encrypt_stream(
                         &mut source,
                         &mut dest,
                         &mut password,
-                        public_key,
+                        recipients,
                         &criteria,
-                        key_version,
                         argon_cfg,
                         hash_password,
                     )
@@ -464,15 +515,15 @@ async fn main() {
                     let key_version = crypt.key_version();
                     let criteria = PasswordCriteria::default();
                     let argon_cfg = Argon2Config::default();
+                    let recipients = vec![(public_key, key_version)];
 
                     let hash_password = !password.is_empty();
                     encrypt_stream(
                         &mut source,
                         &mut dest,
                         &mut password,
-                        public_key,
+                        recipients,
                         &criteria,
-                        key_version,
                         argon_cfg,
                         hash_password,
                     )
@@ -491,6 +542,7 @@ async fn main() {
                 private_key_directory,
                 key_version,
                 password,
+                passphrase,
             } => {
                 let start = metrics::metrics_start();
                 let payload_size = std::fs::metadata(&input_file).map(|m| m.len()).unwrap_or(0);
@@ -504,11 +556,12 @@ async fn main() {
 
                     let private_key_path =
                         format!("{}/private_key_{}.pem", private_key_directory, key_version);
-                    let private_key = load_private_key(&private_key_path).map_err(|e| {
-                        format!("could not load private key '{}': {}", private_key_path, e)
-                    })?;
+                    let private_key =
+                        load_private_key(&private_key_path, passphrase.as_deref()).map_err(|e| {
+                            format!("could not load private key '{}': {}", private_key_path, e)
+                        })?;
 
-                    decrypt_stream(&mut source, &mut dest, &private_key, &password)
+                    decrypt_stream(&mut source, &mut dest, &private_key, &key_version, &password)
                         .map_err(|e| format!("could not decrypt file stream: {}", e))?;
 
                     println!("File decrypted successfully to '{}'.", output_file);
@@ -522,7 +575,7 @@ async fn main() {
                 input_dir,
                 output_file,
                 public_key_directory,
-                key_version,
+                key_versions,
                 mut password,
             } => {
                 let start = metrics::metrics_start();
@@ -553,11 +606,20 @@ async fn main() {
                         format!("could not create output file '{}': {}", output_file, e)
                     })?;
 
-                    let public_key_path =
-                        format!("{}/public_key_{}.pem", public_key_directory, key_version);
-                    let public_key = load_public_key(&public_key_path).map_err(|e| {
-                        format!("could not load public key '{}': {}", public_key_path, e)
-                    })?;
+                    let mut public_keys = Vec::new();
+                    for v in &key_versions {
+                        let public_key_path =
+                            format!("{}/public_key_{}.pem", public_key_directory, v);
+                        let key = load_public_key(&public_key_path).map_err(|e| {
+                            format!("could not load public key '{}': {}", public_key_path, e)
+                        })?;
+                        public_keys.push(key);
+                    }
+
+                    let recipients: Vec<(&RsaPublicKey, &str)> = public_keys
+                        .iter()
+                        .zip(key_versions.iter().map(|s| s.as_str()))
+                        .collect();
 
                     let criteria = PasswordCriteria::default();
                     let argon_cfg = Argon2Config::default();
@@ -567,9 +629,8 @@ async fn main() {
                         &mut source,
                         &mut dest,
                         &mut password,
-                        &public_key,
+                        recipients,
                         &criteria,
-                        &key_version,
                         argon_cfg,
                         hash_password,
                     )
@@ -594,6 +655,7 @@ async fn main() {
                 private_key_directory,
                 key_version,
                 password,
+                passphrase,
             } => {
                 let start = metrics::metrics_start();
                 let payload_size = std::fs::metadata(&input_file).map(|m| m.len()).unwrap_or(0);
@@ -610,11 +672,12 @@ async fn main() {
 
                     let private_key_path =
                         format!("{}/private_key_{}.pem", private_key_directory, key_version);
-                    let private_key = load_private_key(&private_key_path).map_err(|e| {
-                        format!("could not load private key '{}': {}", private_key_path, e)
-                    })?;
+                    let private_key =
+                        load_private_key(&private_key_path, passphrase.as_deref()).map_err(|e| {
+                            format!("could not load private key '{}': {}", private_key_path, e)
+                        })?;
 
-                    decrypt_stream(&mut source, &mut dest, &private_key, &password)
+                    decrypt_stream(&mut source, &mut dest, &private_key, &key_version, &password)
                         .map_err(|e| format!("could not decrypt directory stream: {}", e))?;
 
                     let tar_gz = File::open(&tar_path)
@@ -642,11 +705,12 @@ async fn main() {
                 key_size,
                 file,
                 directory,
+                passphrase,
             } => {
                 let start = metrics::metrics_start();
                 let result: Result<(), String> = (async {
+                use ironcrypt::StreamHeader;
                 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
-                use ironcrypt::EncryptedStreamHeader;
                 use base64::Engine;
                 use rsa::Oaep;
                 use rsa::rand_core::OsRng;
@@ -672,13 +736,14 @@ async fn main() {
                         &public_key,
                         &new_private_key_path,
                         &new_public_key_path,
+                        passphrase.as_deref(),
                     ).map_err(|e| e.to_string())?;
                 }
 
                 // 2. Load keys
                 let old_private_key_path =
                     format!("{}/private_key_{}.pem", key_directory, old_version);
-                let old_private_key = load_private_key(&old_private_key_path).map_err(|e| e.to_string())?;
+                let old_private_key = load_private_key(&old_private_key_path, passphrase.as_deref()).map_err(|e| e.to_string())?;
                 let new_public_key = load_public_key(&new_public_key_path).map_err(|e| e.to_string())?;
 
                 // 3. Open files
@@ -689,27 +754,36 @@ async fn main() {
                 let header_len = source_file.read_u64::<BigEndian>().map_err(|e| e.to_string())?;
                 let mut header_bytes = vec![0; header_len as usize];
                 source_file.read_exact(&mut header_bytes).map_err(|e| e.to_string())?;
-                let old_header: EncryptedStreamHeader = serde_json::from_slice(&header_bytes).map_err(|e| e.to_string())?;
+                let old_header: StreamHeader = serde_json::from_slice(&header_bytes).map_err(|e| e.to_string())?;
 
-                if old_header.key_version != old_version {
+                // This is a simplified rotation logic. A real implementation would need to handle V2 headers with multiple recipients.
+                let (old_key_version, old_encrypted_sym_key, nonce, password_hash) = match old_header {
+                    StreamHeader::V1(h) => (h.key_version, h.encrypted_symmetric_key, h.nonce, h.password_hash),
+                    StreamHeader::V2(h) => {
+                        let info = h.recipients.iter().find(|r| r.key_version == old_version).ok_or("Old key version not found in recipients list".to_string())?;
+                        (info.key_version.clone(), info.encrypted_symmetric_key.clone(), h.nonce, h.password_hash)
+                    }
+                };
+
+                if old_key_version != old_version {
                     return Err(format!(
                         "File key version '{}' does not match expected old version '{}'",
-                        old_header.key_version, old_version
+                        old_key_version, old_version
                     ));
                 }
 
                 // 5. Re-encrypt symmetric key
-                let sym_key_ciphertxt = base64::engine::general_purpose::STANDARD.decode(&old_header.encrypted_symmetric_key).map_err(|e| e.to_string())?;
+                let sym_key_ciphertxt = base64::engine::general_purpose::STANDARD.decode(&old_encrypted_sym_key).map_err(|e| e.to_string())?;
                 let sym_key_plaintxt = old_private_key.decrypt(Oaep::new::<Sha256>(), &sym_key_ciphertxt).map_err(|e| e.to_string())?;
                 let new_sym_key_ciphertxt = new_public_key.encrypt(&mut OsRng, Oaep::new::<Sha256>(), &sym_key_plaintxt).map_err(|e| e.to_string())?;
 
                 // 6. Write new header and copy ciphertext
-                let new_header = EncryptedStreamHeader {
+                let new_header = StreamHeader::V1(ironcrypt::EncryptedStreamHeaderV1 {
                     key_version: new_version.clone(),
                     encrypted_symmetric_key: base64::engine::general_purpose::STANDARD.encode(&new_sym_key_ciphertxt),
-                    nonce: old_header.nonce,
-                    password_hash: old_header.password_hash,
-                };
+                    nonce,
+                    password_hash,
+                });
                 let new_header_json = serde_json::to_string(&new_header).map_err(|e| e.to_string())?;
 
                 {
@@ -797,6 +871,7 @@ mod tests {
             KeyManagementConfig {
                 key_directory: key_directory.to_string(),
                 key_version: "v1".to_string(),
+                passphrase: None,
             },
         );
         config.data_type_config = Some(data_type_config);

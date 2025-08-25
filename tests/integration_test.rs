@@ -30,6 +30,7 @@ async fn test_file_encryption_decryption() {
         ironcrypt::config::KeyManagementConfig {
             key_directory: key_dir.to_string(),
             key_version: "v1".to_string(),
+            passphrase: None,
         },
     );
     config.data_type_config = Some(data_type_config);
@@ -91,6 +92,7 @@ async fn test_directory_encryption_decryption() {
         ironcrypt::config::KeyManagementConfig {
             key_directory: key_dir.to_string(),
             key_version: "v1".to_string(),
+            passphrase: None,
         },
     );
     config.data_type_config = Some(data_type_config);
@@ -150,6 +152,7 @@ async fn test_key_rotation() {
         ironcrypt::config::KeyManagementConfig {
             key_directory: key_dir.to_string(),
             key_version: "v1".to_string(),
+            passphrase: None,
         },
     );
     config_v1.data_type_config = Some(data_type_config.clone());
@@ -164,6 +167,7 @@ async fn test_key_rotation() {
         ironcrypt::config::KeyManagementConfig {
             key_directory: key_dir.to_string(),
             key_version: "v2".to_string(),
+            passphrase: None,
         },
     );
     config_v2.data_type_config = Some(data_type_config.clone());
@@ -186,6 +190,7 @@ async fn test_key_rotation() {
         ironcrypt::config::KeyManagementConfig {
             key_directory: key_dir.to_string(),
             key_version: "v2".to_string(),
+            passphrase: None,
         },
     );
     config_v2_verify.data_type_config = Some(data_type_config);
@@ -222,7 +227,7 @@ fn test_stream_encryption_large_file() {
     let (private_key, public_key) = ironcrypt::generate_rsa_keys(2048).unwrap();
     let private_key_path = format!("{}/private_key_v1.pem", key_dir);
     let public_key_path = format!("{}/public_key_v1.pem", key_dir);
-    ironcrypt::save_keys_to_files(&private_key, &public_key, &private_key_path, &public_key_path).unwrap();
+    ironcrypt::save_keys_to_files(&private_key, &public_key, &private_key_path, &public_key_path, None).unwrap();
 
 
     // --- Encryption ---
@@ -233,14 +238,14 @@ fn test_stream_encryption_large_file() {
 
     let criteria = PasswordCriteria::default();
     let argon_cfg = Argon2Config::default();
+    let recipients = vec![(&loaded_public_key, "v1")];
 
     encrypt_stream(
         &mut source,
         &mut dest,
         &mut password,
-        &loaded_public_key,
+        recipients,
         &criteria,
-        "v1",
         argon_cfg,
         true,
     ).unwrap();
@@ -248,12 +253,13 @@ fn test_stream_encryption_large_file() {
     // --- Decryption ---
     let mut encrypted_source = fs::File::open(encrypted_file_path).unwrap();
     let mut decrypted_dest = fs::File::create(decrypted_file_path).unwrap();
-    let loaded_private_key = load_private_key(&private_key_path).unwrap();
+    let loaded_private_key = load_private_key(&private_key_path, None).unwrap();
 
     decrypt_stream(
         &mut encrypted_source,
         &mut decrypted_dest,
         &loaded_private_key,
+        "v1",
         STRONG_PASSWORD,
     ).unwrap();
 
@@ -320,6 +326,7 @@ async fn test_load_pkcs1_and_pkcs8_keys() {
         ironcrypt::config::KeyManagementConfig {
             key_directory: key_dir.to_string(),
             key_version: "v1".to_string(),
+            passphrase: None,
         },
     );
     config_v1.data_type_config = Some(data_type_config.clone());
@@ -334,12 +341,146 @@ async fn test_load_pkcs1_and_pkcs8_keys() {
         ironcrypt::config::KeyManagementConfig {
             key_directory: key_dir.to_string(),
             key_version: "v2".to_string(),
+            passphrase: None,
         },
     );
     config_v2.data_type_config = Some(data_type_config);
     let crypt_v2 = IronCrypt::new(config_v2, DataType::Generic).await.unwrap();
     let encrypted_v2 = crypt_v2.encrypt_password(STRONG_PASSWORD).unwrap();
     assert!(crypt_v2.verify_password(&encrypted_v2, STRONG_PASSWORD).unwrap());
+
+    // Cleanup
+    fs::remove_dir_all(key_dir).unwrap();
+}
+
+#[test]
+fn test_passphrase_encryption_decryption() {
+    let key_dir = "test_keys_passphrase";
+    setup_test_dir(key_dir);
+    let passphrase = "my-secret-passphrase";
+
+    // 1. Generate keys with a passphrase
+    let (private_key, public_key) = ironcrypt::generate_rsa_keys(2048).unwrap();
+    let private_key_path = format!("{}/private_key_v1.pem", key_dir);
+    let public_key_path = format!("{}/public_key_v1.pem", key_dir);
+    ironcrypt::save_keys_to_files(
+        &private_key,
+        &public_key,
+        &private_key_path,
+        &public_key_path,
+        Some(passphrase),
+    )
+    .unwrap();
+
+    // 2. Encrypt some data
+    let original_data = b"this data is protected by a key with a passphrase";
+    let mut source = std::io::Cursor::new(original_data);
+    let mut dest = std::io::Cursor::new(Vec::new());
+    let mut password = "FilePassword1!".to_string();
+    let recipients = vec![(&public_key, "v1")];
+    encrypt_stream(
+        &mut source,
+        &mut dest,
+        &mut password,
+        recipients,
+        &PasswordCriteria::default(),
+        Argon2Config::default(),
+        true,
+    )
+    .unwrap();
+
+    // 3. Decrypt with the correct passphrase
+    dest.set_position(0);
+    let mut decrypted_dest_ok = std::io::Cursor::new(Vec::new());
+    let loaded_private_key_ok =
+        load_private_key(&private_key_path, Some(passphrase)).unwrap();
+    decrypt_stream(
+        &mut dest,
+        &mut decrypted_dest_ok,
+        &loaded_private_key_ok,
+        "v1",
+        "FilePassword1!",
+    )
+    .unwrap();
+    assert_eq!(original_data, &decrypted_dest_ok.into_inner()[..]);
+
+    // 4. Attempt to decrypt with the wrong passphrase
+    let loaded_private_key_bad =
+        load_private_key(&private_key_path, Some("wrong-passphrase"));
+    assert!(loaded_private_key_bad.is_err());
+
+    // 5. Attempt to decrypt with no passphrase
+    let loaded_private_key_none = load_private_key(&private_key_path, None);
+    assert!(loaded_private_key_none.is_err());
+
+    // Cleanup
+    fs::remove_dir_all(key_dir).unwrap();
+}
+
+#[test]
+fn test_multi_recipient_encryption_decryption() {
+    let key_dir = "test_keys_multi_recipient";
+    setup_test_dir(key_dir);
+
+    // 1. Generate two key pairs
+    let (priv1, pub1) = ironcrypt::generate_rsa_keys(2048).unwrap();
+    let (priv2, pub2) = ironcrypt::generate_rsa_keys(2048).unwrap();
+    let (priv3, _) = ironcrypt::generate_rsa_keys(2048).unwrap(); // Unauthorized user
+
+    // 2. Encrypt for user1 and user2
+    let original_data = b"this data is for user1 and user2";
+    let mut source = std::io::Cursor::new(original_data);
+    let mut dest = std::io::Cursor::new(Vec::new());
+    let mut password = "MultiUserPassword1!".to_string();
+    let recipients = vec![(&pub1, "v1"), (&pub2, "v2")];
+    encrypt_stream(
+        &mut source,
+        &mut dest,
+        &mut password,
+        recipients,
+        &PasswordCriteria::default(),
+        Argon2Config::default(),
+        true,
+    )
+    .unwrap();
+
+    // 3. Decrypt with user1's key
+    dest.set_position(0);
+    let mut decrypted_dest1 = std::io::Cursor::new(Vec::new());
+    decrypt_stream(
+        &mut dest,
+        &mut decrypted_dest1,
+        &priv1,
+        "v1",
+        "MultiUserPassword1!",
+    )
+    .unwrap();
+    assert_eq!(original_data, &decrypted_dest1.into_inner()[..]);
+
+    // 4. Decrypt with user2's key
+    dest.set_position(0);
+    let mut decrypted_dest2 = std::io::Cursor::new(Vec::new());
+    decrypt_stream(
+        &mut dest,
+        &mut decrypted_dest2,
+        &priv2,
+        "v2",
+        "MultiUserPassword1!",
+    )
+    .unwrap();
+    assert_eq!(original_data, &decrypted_dest2.into_inner()[..]);
+
+    // 5. Attempt to decrypt with user3's key (should fail)
+    dest.set_position(0);
+    let mut decrypted_dest3 = std::io::Cursor::new(Vec::new());
+    let res3 = decrypt_stream(
+        &mut dest,
+        &mut decrypted_dest3,
+        &priv3,
+        "v3", // Even if they claim to be a version that doesn't exist
+        "MultiUserPassword1!",
+    );
+    assert!(res3.is_err());
 
     // Cleanup
     fs::remove_dir_all(key_dir).unwrap();

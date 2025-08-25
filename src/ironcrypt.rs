@@ -34,7 +34,13 @@ fn ensure_and_load_public_key_from_paths(
     }
     if !Path::new(&private_key_path).exists() || !Path::new(&public_key_path).exists() {
         let (priv_key, pub_key) = generate_rsa_keys(rsa_key_size)?;
-        save_keys_to_files(&priv_key, &pub_key, &private_key_path, &public_key_path)?;
+        save_keys_to_files(
+            &priv_key,
+            &pub_key,
+            &private_key_path,
+            &public_key_path,
+            None,
+        )?;
     }
     load_public_key(&public_key_path)
 }
@@ -285,9 +291,16 @@ impl IronCrypt {
         encrypted_json: &str,
         user_input_password: &str,
     ) -> Result<bool, IronCryptError> {
+        let ed: EncryptedData = serde_json::from_str(encrypted_json)?;
         let private_key_path =
-            format!("{}/private_key_{}.pem", self.key_directory, self.key_version);
-        self.decrypt_data_and_verify_password(encrypted_json, user_input_password, &private_key_path)
+            format!("{}/private_key_{}.pem", self.key_directory, ed.key_version);
+        let passphrase = self.get_passphrase()?;
+        self.decrypt_data_and_verify_password(
+            encrypted_json,
+            user_input_password,
+            &private_key_path,
+            passphrase.as_deref(),
+        )
     }
 
     /// Stores a secret in the configured secret store.
@@ -360,7 +373,8 @@ impl IronCrypt {
 
         let private_key_path =
             format!("{}/private_key_{}.pem", self.key_directory, self.key_version);
-        let private_key = load_private_key(&private_key_path)?;
+        let passphrase = self.get_passphrase()?;
+        let private_key = load_private_key(&private_key_path, passphrase.as_deref())?;
 
         let encrypted_key_bytes = base64_standard.decode(&ed.encrypted_symmetric_key)?;
         let padding = Oaep::new::<Sha256>();
@@ -409,7 +423,8 @@ impl IronCrypt {
 
         let private_key_path =
             format!("{}/private_key_{}.pem", self.key_directory, self.key_version);
-        let private_key = load_private_key(&private_key_path)?;
+        let passphrase = self.get_passphrase()?;
+        let private_key = load_private_key(&private_key_path, passphrase.as_deref())?;
 
         let encrypted_key_bytes = base64_standard.decode(&ed.encrypted_symmetric_key)?;
         let padding = Oaep::new::<Sha256>();
@@ -486,10 +501,11 @@ impl IronCrypt {
         encrypted_data_json: &str,
         input_password: &str,
         private_key_pem_path: &str,
+        passphrase: Option<&str>,
     ) -> Result<bool, IronCryptError> {
         let ed: EncryptedData = serde_json::from_str(encrypted_data_json)?;
 
-        let private_key = load_private_key(private_key_pem_path)?;
+        let private_key = load_private_key(private_key_pem_path, passphrase)?;
         let encrypted_key_bytes = base64_standard.decode(ed.encrypted_symmetric_key)?;
         let padding = Oaep::new::<Sha256>();
         let symmetric_key = private_key.decrypt(padding, &encrypted_key_bytes)?;
@@ -522,5 +538,14 @@ impl IronCrypt {
     /// Returns the version of the key currently in use.
     pub fn key_version(&self) -> &str {
         &self.key_version
+    }
+
+    fn get_passphrase(&self) -> Result<Option<String>, IronCryptError> {
+        if let Some(dt_cfg) = &self.config.data_type_config {
+            if let Some(km) = dt_cfg.get(&self.data_type) {
+                return Ok(km.passphrase.clone());
+            }
+        }
+        Ok(None)
     }
 }
