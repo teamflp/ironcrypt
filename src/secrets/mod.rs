@@ -1,9 +1,12 @@
 use async_trait::async_trait;
 use std::error::Error;
 
+#[cfg(feature = "aws")]
 pub mod aws;
+#[cfg(feature = "azure")]
 pub mod azure;
-// pub mod google; // TODO: Disabled due to compilation errors after dependency update.
+#[cfg(feature = "gcp")]
+pub mod google;
 pub mod vault;
 
 /// A trait for a generic secret store.

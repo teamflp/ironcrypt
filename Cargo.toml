@@ -12,6 +12,7 @@ documentation = "https://docs.rs/ironcrypt"
 repository = "https://github.com/teamflp/ironcrypt"
 
 [dependencies]
+# Core dependencies - always included
 serde = { version = "1.0.210", features = ["derive"] }
 argon2 = "0.5.3"
 base64 = "0.22.1"
@@ -20,36 +21,51 @@ pkcs8 = { version = "0.10.2", features = ["pem", "encryption"] }
 serde_json = "1.0"
 sha2 = "0.10.6"
 rand_core = "0.9.1"
-clap = { version = "4.5.20", features = ["derive", "env"] }
 thiserror = "2.0.12"
-indicatif = "0.18.0"
 aes-gcm = "0.10.3"
 cipher = "0.4.4" # For symmetric encryption
 unicode-general-category = "1.0.0"
 zeroize = "1.8.1"
-tar = "0.4.44"
-flate2 = "1.0.30"
 metrics = "0.24.2"
 metrics-exporter-prometheus = "0.17.2"
-tempfile = "3.20.0"
 aes-gcm-stream = "0.2.4"
 byteorder = "1.5.0"
 rand = { version = "0.8.5", default-features = false, features = ["std_rng", "getrandom"] }
 vaultrs = "0.7.4"
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = ["rt", "macros", "sync", "time"] }
 async-trait = "0.1"
-aws-config = "1.1.7"
-aws-sdk-secretsmanager = "1.2.0"
-azure_security_keyvault_secrets = "0.6.0"
-azure_identity = "0.27.0"
-google-cloud-secretmanager-v1 = "0.4.4"
-google-cloud-auth = "0.22.3"
-axum = { version = "0.7.5", features = ["ws", "macros", "json"] }
-tower-http = { version = "0.5.2", features = ["cors", "trace"] }
-tokio-util = { version = "0.7.11", features = ["io-util"] }
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["fmt"] }
-futures = "0.3"
+
+# --- Optional Dependencies ---
+
+# CLI feature
+clap = { version = "4.5.20", features = ["derive", "env"], optional = true }
+tar = { version = "0.4.44", optional = true }
+flate2 = { version = "1.0.30", optional = true }
+tempfile = { version = "3.20.0", optional = true }
+
+# Interactive feature (for CLI progress bars)
+indicatif = { version = "0.18.0", optional = true }
+
+# Daemon feature
+axum = { version = "0.7.5", features = ["ws", "macros", "json"], optional = true }
+tower-http = { version = "0.5.2", features = ["cors", "trace"], optional = true }
+tokio-util = { version = "0.7.11", features = ["io-util"], optional = true }
+tracing = { version = "0.1", optional = true }
+tracing-subscriber = { version = "0.3", features = ["fmt"], optional = true }
+futures = { version = "0.3", optional = true }
+
+# AWS feature
+aws-config = { version = "1.1.7", optional = true }
+aws-sdk-secretsmanager = { version = "1.2.0", optional = true }
+
+# Azure feature
+azure_security_keyvault_secrets = { version = "0.6.0", optional = true }
+azure_identity = { version = "0.27.0", optional = true }
+
+# Google Cloud feature
+google-cloud-secretmanager-v1 = { version = "0.4.4", optional = true }
+google-cloud-auth = { version = "0.22.3", optional = true }
+
 
 [dev-dependencies]
 assert_cmd = "2.0"
@@ -66,7 +82,38 @@ path = "src/lib.rs"
 [[bin]]
 name = "ironcrypt"
 path = "src/main.rs"
+required-features = ["cli"]
 
 [[bin]]
 name = "ironcryptd"
 path = "src/bin/daemon.rs"
+required-features = ["daemon"]
+
+[features]
+default = ["full"]
+
+# Meta features
+full = ["cli", "daemon", "cloud", "interactive"]
+cloud = ["aws", "azure", "gcp"]
+
+# CLI features
+cli = ["dep:clap", "dep:tar", "dep:flate2", "dep:tempfile"]
+interactive = ["dep:indicatif", "cli"]
+
+# Daemon features
+daemon = [
+  "dep:axum",
+  "dep:tower-http",
+  "dep:tokio-util",
+  "dep:tracing",
+  "dep:tracing-subscriber",
+  "dep:futures",
+  "tokio/net",
+  "tokio/io-util",
+  "dep:clap",
+]
+
+# Cloud provider features
+aws = ["dep:aws-config", "dep:aws-sdk-secretsmanager"]
+azure = ["dep:azure_security_keyvault_secrets", "dep:azure_identity"]
+gcp = ["dep:google-cloud-secretmanager-v1", "dep:google-cloud-auth"]

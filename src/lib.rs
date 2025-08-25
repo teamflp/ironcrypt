@@ -162,5 +162,11 @@ pub use ironcrypt::IronCrypt;
 // RSA key utilities
 pub use rsa_utils::{generate_rsa_keys, load_private_key, load_public_key, save_keys_to_files};
 
-// Secret management (if the feature is enabled)
-pub use secrets::{aws, azure, vault, SecretStore};
+// Secret management
+pub use secrets::{vault, SecretStore};
+#[cfg(feature = "aws")]
+pub use secrets::aws;
+#[cfg(feature = "azure")]
+pub use secrets::azure;
+#[cfg(feature = "gcp")]
+pub use secrets::google;
