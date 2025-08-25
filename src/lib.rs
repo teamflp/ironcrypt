@@ -71,7 +71,7 @@
 //! but it works the same way with a `File`).
 //!
 //! ```rust
-//! use ironcrypt::{encrypt_stream, decrypt_stream, generate_rsa_keys, PasswordCriteria, Argon2Config};
+//! use ironcrypt::{encrypt_stream, decrypt_stream, generate_rsa_keys, PasswordCriteria, Argon2Config, PublicKey, PrivateKey, algorithms::SymmetricAlgorithm};
 //! use std::io::Cursor;
 //!
 //! fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -85,7 +85,8 @@
 //!
 //!     // 3. Encrypt the stream.
 //!     let mut password = "AnotherStrongPassword123!".to_string();
-//!     let recipients = vec![(&public_key, "v1")];
+//!     let pk_enum = PublicKey::Rsa(public_key);
+//!     let recipients = vec![(&pk_enum, "v1")];
 //!     encrypt_stream(
 //!         &mut source,
 //!         &mut encrypted_dest,
@@ -94,6 +95,7 @@
 //!         &PasswordCriteria::default(),
 //!         Argon2Config::default(),
 //!         true, // Indicates that the password should be hashed
+//!         SymmetricAlgorithm::Aes256Gcm,
 //!     )?;
 //!
 //!     // 4. Go back to the beginning of the encrypted stream to read it.
@@ -104,7 +106,7 @@
 //!     decrypt_stream(
 //!         &mut encrypted_dest,
 //!         &mut decrypted_dest,
-//!         &private_key,
+//!         &PrivateKey::Rsa(private_key),
 //!         "v1",
 //!         "AnotherStrongPassword123!",
 //!     )?;
@@ -122,6 +124,7 @@
 //! check out the `examples/` directory of the project.
 
 // --- Modules ---
+pub mod algorithms;
 pub mod config;
 pub mod criteria;
 pub mod encrypt;
@@ -129,6 +132,8 @@ pub mod handle_error;
 pub mod hashing;
 pub mod ironcrypt;
 pub mod metrics;
+pub mod ecc_utils;
+pub mod keys;
 pub mod rsa_utils;
 pub mod secrets;
 
@@ -136,6 +141,9 @@ pub mod secrets;
 
 // Main configuration
 pub use config::{DataType, IronCryptConfig};
+
+// Key types
+pub use keys::{PrivateKey, PublicKey};
 
 // Password criteria
 pub use criteria::PasswordCriteria;
@@ -170,3 +178,38 @@ pub use secrets::aws;
 pub use secrets::azure;
 #[cfg(feature = "gcp")]
 pub use secrets::google;
+
+/// Tries to load a public key from a file, attempting to parse it as RSA and then ECC.
+pub fn load_any_public_key(path: &str) -> Result<PublicKey, IronCryptError> {
+    // Try loading as RSA first
+    if let Ok(key) = rsa_utils::load_public_key(path) {
+        return Ok(PublicKey::Rsa(key));
+    }
+    // If that fails, try loading as ECC
+    if let Ok(key) = ecc_utils::load_public_key(path) {
+        return Ok(PublicKey::Ecc(key));
+    }
+    Err(IronCryptError::KeyLoadingError(format!(
+        "Failed to load public key from {}: unsupported format",
+        path
+    )))
+}
+
+/// Tries to load a private key from a file, attempting to parse it as RSA and then ECC.
+pub fn load_any_private_key(
+    path: &str,
+    passphrase: Option<&str>,
+) -> Result<PrivateKey, IronCryptError> {
+    // Try loading as RSA first
+    if let Ok(key) = rsa_utils::load_private_key(path, passphrase) {
+        return Ok(PrivateKey::Rsa(key));
+    }
+    // If that fails, try loading as ECC
+    if let Ok(key) = ecc_utils::load_secret_key(path, passphrase) {
+        return Ok(PrivateKey::Ecc(key));
+    }
+    Err(IronCryptError::KeyLoadingError(format!(
+        "Failed to load private key from {}: unsupported format or wrong passphrase",
+        path
+    )))
+}

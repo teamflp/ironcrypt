@@ -1,11 +1,13 @@
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 #[cfg(feature = "interactive")]
 use indicatif::{ProgressBar, ProgressStyle};
 use ironcrypt::{
-    decrypt_stream, encrypt_stream, generate_rsa_keys, load_private_key, load_public_key,
-    save_keys_to_files, Argon2Config, IronCrypt, IronCryptConfig, PasswordCriteria,
+    algorithms::SymmetricAlgorithm,
+    decrypt_stream, ecc_utils, encrypt_stream, generate_rsa_keys,
+    keys::PublicKey,
+    load_private_key, load_public_key, save_keys_to_files, Argon2Config, IronCrypt,
+    IronCryptConfig, PasswordCriteria,
 };
-use rsa::RsaPublicKey;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
@@ -29,9 +31,21 @@ struct Cli {
     command: Commands,
 }
 
+#[derive(ValueEnum, Clone, Debug)]
+enum KeyType {
+    Rsa,
+    Ecc,
+}
+
+#[derive(ValueEnum, Clone, Debug, Copy)]
+enum CliSymmetricAlgorithm {
+    Aes,
+    Chacha20,
+}
+
 #[derive(Subcommand)]
 enum Commands {
-    /// Generates an RSA key pair.
+    /// Generates an asymmetric key pair.
     Generate {
         #[arg(short = 'v', long)]
         version: String,
@@ -39,11 +53,16 @@ enum Commands {
         #[arg(short = 'd', long, default_value = "keys")]
         directory: String,
 
+        /// For RSA, the key size in bits. ECC uses a fixed curve (P-256).
         #[arg(short = 's', long, default_value_t = 2048)]
         key_size: u32,
 
         #[arg(long)]
         passphrase: Option<String>,
+
+        /// The type of key to generate.
+        #[arg(long, value_enum, default_value_t = KeyType::Rsa)]
+        key_type: KeyType,
     },
 
     /// Hashes and encrypts a password (existing logic).
@@ -99,6 +118,10 @@ enum Commands {
         /// Optional password (leave empty otherwise)
         #[arg(short = 'w', long, default_value = "")]
         password: String,
+
+        /// The symmetric algorithm to use for encryption.
+        #[arg(long, value_enum, default_value_t = CliSymmetricAlgorithm::Aes)]
+        sym_algo: CliSymmetricAlgorithm,
     },
 
     /// Encrypts a PII file.
@@ -188,6 +211,10 @@ enum Commands {
         /// Optional password (leave empty otherwise).
         #[arg(short = 'w', long, default_value = "")]
         password: String,
+
+        /// The symmetric algorithm to use for encryption.
+        #[arg(long, value_enum, default_value_t = CliSymmetricAlgorithm::Aes)]
+        sym_algo: CliSymmetricAlgorithm,
     },
 
     /// Decrypts an entire directory.
@@ -280,6 +307,7 @@ async fn main() {
                 directory,
                 key_size,
                 passphrase,
+                key_type,
             } => {
                 let start = metrics::metrics_start();
                 let result: Result<(), String> = (async {
@@ -292,39 +320,57 @@ async fn main() {
                     let private_key_path = format!("{}/private_key_{}.pem", directory, version);
                     let public_key_path = format!("{}/public_key_{}.pem", directory, version);
 
-                    #[cfg(feature = "interactive")]
-                    let spinner = {
-                        let s = ProgressBar::new_spinner();
-                        s.set_style(
-                            ProgressStyle::with_template("{spinner} {msg}")
-                                .unwrap()
-                                .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]),
-                        );
-                        s.set_message("Generating RSA keys...");
-                        s.enable_steady_tick(Duration::from_millis(100));
-                        s
-                    };
-                    #[cfg(not(feature = "interactive"))]
-                    println!("Generating RSA keys...");
+                    match key_type {
+                        KeyType::Rsa => {
+                            #[cfg(feature = "interactive")]
+                            let spinner = {
+                                let s = ProgressBar::new_spinner();
+                                s.set_style(
+                                    ProgressStyle::with_template("{spinner} {msg}")
+                                        .unwrap()
+                                        .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]),
+                                );
+                                s.set_message("Generating RSA keys...");
+                                s.enable_steady_tick(Duration::from_millis(100));
+                                s
+                            };
+                            #[cfg(not(feature = "interactive"))]
+                            println!("Generating RSA keys...");
 
-                    let (private_key, public_key) = generate_rsa_keys(key_size)
-                        .map_err(|e| format!("could not generate RSA key pair: {}", e))?;
+                            let (private_key, public_key) = generate_rsa_keys(key_size)
+                                .map_err(|e| format!("could not generate RSA key pair: {}", e))?;
 
-                    #[cfg(feature = "interactive")]
-                    spinner.finish_with_message("RSA keys generated.");
-                    #[cfg(not(feature = "interactive"))]
-                    println!("RSA keys generated.");
+                            #[cfg(feature = "interactive")]
+                            spinner.finish_with_message("RSA keys generated.");
+                            #[cfg(not(feature = "interactive"))]
+                            println!("RSA keys generated.");
 
-                    save_keys_to_files(
-                        &private_key,
-                        &public_key,
-                        &private_key_path,
-                        &public_key_path,
-                        passphrase.as_deref(),
-                    )
-                    .map_err(|e| format!("could not save keys to files: {}", e))?;
+                            save_keys_to_files(
+                                &private_key,
+                                &public_key,
+                                &private_key_path,
+                                &public_key_path,
+                                passphrase.as_deref(),
+                            )
+                            .map_err(|e| format!("could not save keys to files: {}", e))?;
+                        }
+                        KeyType::Ecc => {
+                            println!("Generating ECC keys (P-256)...");
+                            let (secret_key, public_key) = ecc_utils::generate_ecc_keys()
+                                .map_err(|e| format!("could not generate ECC key pair: {}", e))?;
 
-                    println!("RSA keys saved successfully.");
+                            ecc_utils::save_keys_to_files(
+                                &secret_key,
+                                &public_key,
+                                &private_key_path,
+                                &public_key_path,
+                                passphrase.as_deref(),
+                            )
+                            .map_err(|e| format!("could not save ECC keys to files: {}", e))?;
+                        }
+                    }
+
+                    println!("Keys saved successfully.");
                     println!("Private key: {}", private_key_path);
                     println!("Public key: {}", public_key_path);
                     Ok(())
@@ -374,13 +420,18 @@ async fn main() {
                     let ed: ironcrypt::EncryptedData = serde_json::from_str(&encrypted_data)
                         .map_err(|e| format!("Could not parse encrypted data: {}", e))?;
 
+                    let key_version = match &ed.recipient_info {
+                        ironcrypt::RecipientInfo::Rsa { key_version, .. } => key_version.clone(),
+                        ironcrypt::RecipientInfo::Ecc { key_version, .. } => key_version.clone(),
+                    };
+
                     let mut config = IronCryptConfig::default();
                     let mut data_type_config = ironcrypt::config::DataTypeConfig::new();
                     data_type_config.insert(
                         ironcrypt::DataType::Generic,
                         ironcrypt::config::KeyManagementConfig {
                             key_directory,
-                            key_version: ed.key_version, // Use key version from file
+                            key_version, // Use key version from file
                             passphrase,
                         },
                     );
@@ -414,6 +465,7 @@ async fn main() {
                 public_key_directory,
                 key_versions,
                 mut password,
+                sym_algo,
             } => {
                 let start = metrics::metrics_start();
                 let payload_size = std::fs::metadata(&input_file).map(|m| m.len()).unwrap_or(0);
@@ -428,13 +480,13 @@ async fn main() {
                     for v in &key_versions {
                         let public_key_path =
                             format!("{}/public_key_{}.pem", public_key_directory, v);
-                        let key = load_public_key(&public_key_path).map_err(|e| {
+                        let key = ironcrypt::load_any_public_key(&public_key_path).map_err(|e| {
                             format!("could not load public key '{}': {}", public_key_path, e)
                         })?;
                         public_keys.push(key);
                     }
 
-                    let recipients: Vec<(&RsaPublicKey, &str)> = public_keys
+                    let recipients: Vec<(&PublicKey, &str)> = public_keys
                         .iter()
                         .zip(key_versions.iter().map(|s| s.as_str()))
                         .collect();
@@ -443,6 +495,11 @@ async fn main() {
                     let argon_cfg = Argon2Config::default();
 
                     let hash_password = !password.is_empty();
+                    let algo = match sym_algo {
+                        CliSymmetricAlgorithm::Aes => SymmetricAlgorithm::Aes256Gcm,
+                        CliSymmetricAlgorithm::Chacha20 => SymmetricAlgorithm::ChaCha20Poly1305,
+                    };
+
                     encrypt_stream(
                         &mut source,
                         &mut dest,
@@ -451,6 +508,7 @@ async fn main() {
                         &criteria,
                         argon_cfg,
                         hash_password,
+                        algo,
                     )
                     .map_err(|e| format!("could not encrypt file stream: {}", e))?;
 
@@ -482,9 +540,10 @@ async fn main() {
 
                     let public_key = crypt.public_key();
                     let key_version = crypt.key_version();
+                    let recipients = vec![(public_key, key_version)];
+
                     let criteria = PasswordCriteria::default();
                     let argon_cfg = Argon2Config::default();
-                    let recipients = vec![(public_key, key_version)];
 
                     let hash_password = !password.is_empty();
                     encrypt_stream(
@@ -495,6 +554,7 @@ async fn main() {
                         &criteria,
                         argon_cfg,
                         hash_password,
+                        SymmetricAlgorithm::Aes256Gcm,
                     )
                     .map_err(|e| format!("could not encrypt file stream: {}", e))?;
 
@@ -526,9 +586,10 @@ async fn main() {
 
                     let public_key = crypt.public_key();
                     let key_version = crypt.key_version();
+                    let recipients = vec![(public_key, key_version)];
+
                     let criteria = PasswordCriteria::default();
                     let argon_cfg = Argon2Config::default();
-                    let recipients = vec![(public_key, key_version)];
 
                     let hash_password = !password.is_empty();
                     encrypt_stream(
@@ -539,6 +600,7 @@ async fn main() {
                         &criteria,
                         argon_cfg,
                         hash_password,
+                        SymmetricAlgorithm::Aes256Gcm,
                     )
                     .map_err(|e| format!("could not encrypt file stream: {}", e))?;
 
@@ -569,13 +631,22 @@ async fn main() {
 
                     let private_key_path =
                         format!("{}/private_key_{}.pem", private_key_directory, key_version);
-                    let private_key =
-                        load_private_key(&private_key_path, passphrase.as_deref()).map_err(|e| {
-                            format!("could not load private key '{}': {}", private_key_path, e)
-                        })?;
+                    let private_key = ironcrypt::load_any_private_key(
+                        &private_key_path,
+                        passphrase.as_deref(),
+                    )
+                    .map_err(|e| {
+                        format!("could not load private key '{}': {}", private_key_path, e)
+                    })?;
 
-                    decrypt_stream(&mut source, &mut dest, &private_key, &key_version, &password)
-                        .map_err(|e| format!("could not decrypt file stream: {}", e))?;
+                    decrypt_stream(
+                        &mut source,
+                        &mut dest,
+                        &private_key,
+                        &key_version,
+                        &password,
+                    )
+                    .map_err(|e| format!("could not decrypt file stream: {}", e))?;
 
                     println!("File decrypted successfully to '{}'.", output_file);
                     Ok(())
@@ -590,6 +661,7 @@ async fn main() {
                 public_key_directory,
                 key_versions,
                 mut password,
+                sym_algo,
             } => {
                 let start = metrics::metrics_start();
                 let closure_result: Result<(u64, ()), String> = (async {
@@ -623,13 +695,13 @@ async fn main() {
                     for v in &key_versions {
                         let public_key_path =
                             format!("{}/public_key_{}.pem", public_key_directory, v);
-                        let key = load_public_key(&public_key_path).map_err(|e| {
+                        let key = ironcrypt::load_any_public_key(&public_key_path).map_err(|e| {
                             format!("could not load public key '{}': {}", public_key_path, e)
                         })?;
                         public_keys.push(key);
                     }
 
-                    let recipients: Vec<(&RsaPublicKey, &str)> = public_keys
+                    let recipients: Vec<(&PublicKey, &str)> = public_keys
                         .iter()
                         .zip(key_versions.iter().map(|s| s.as_str()))
                         .collect();
@@ -638,6 +710,10 @@ async fn main() {
                     let argon_cfg = Argon2Config::default();
 
                     let hash_password = !password.is_empty();
+                    let algo = match sym_algo {
+                        CliSymmetricAlgorithm::Aes => SymmetricAlgorithm::Aes256Gcm,
+                        CliSymmetricAlgorithm::Chacha20 => SymmetricAlgorithm::ChaCha20Poly1305,
+                    };
                     encrypt_stream(
                         &mut source,
                         &mut dest,
@@ -646,6 +722,7 @@ async fn main() {
                         &criteria,
                         argon_cfg,
                         hash_password,
+                        algo,
                     )
                     .map_err(|e| format!("could not encrypt directory stream: {}", e))?;
 
@@ -685,13 +762,22 @@ async fn main() {
 
                     let private_key_path =
                         format!("{}/private_key_{}.pem", private_key_directory, key_version);
-                    let private_key =
-                        load_private_key(&private_key_path, passphrase.as_deref()).map_err(|e| {
-                            format!("could not load private key '{}': {}", private_key_path, e)
-                        })?;
+                    let private_key = ironcrypt::load_any_private_key(
+                        &private_key_path,
+                        passphrase.as_deref(),
+                    )
+                    .map_err(|e| {
+                        format!("could not load private key '{}': {}", private_key_path, e)
+                    })?;
 
-                    decrypt_stream(&mut source, &mut dest, &private_key, &key_version, &password)
-                        .map_err(|e| format!("could not decrypt directory stream: {}", e))?;
+                    decrypt_stream(
+                        &mut source,
+                        &mut dest,
+                        &private_key,
+                        &key_version,
+                        &password,
+                    )
+                    .map_err(|e| format!("could not decrypt directory stream: {}", e))?;
 
                     let tar_gz = File::open(&tar_path)
                         .map_err(|e| format!("could not open decrypted archive: {}", e))?;
@@ -775,6 +861,9 @@ async fn main() {
                     StreamHeader::V2(h) => {
                         let info = h.recipients.iter().find(|r| r.key_version == old_version).ok_or("Old key version not found in recipients list".to_string())?;
                         (info.key_version.clone(), info.encrypted_symmetric_key.clone(), h.nonce, h.password_hash)
+                    }
+                    StreamHeader::V3(_) => {
+                        return Err("Key rotation for V3 headers is not yet supported.".into());
                     }
                 };
 

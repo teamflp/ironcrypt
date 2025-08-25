@@ -1,14 +1,24 @@
-use crate::{IronCryptError, PasswordCriteria};
+use crate::{
+    algorithms::SymmetricAlgorithm,
+    keys::{PrivateKey, PublicKey},
+    IronCryptError, PasswordCriteria,
+};
 use aes_gcm::aead::{Aead, KeyInit};
-use aes_gcm::{AeadCore, Aes256Gcm};
+use aes_gcm::{AeadCore, Aes256Gcm, Nonce};
 use aes_gcm_stream::{Aes256GcmStreamDecryptor, Aes256GcmStreamEncryptor};
-use argon2::password_hash::rand_core::{OsRng, RngCore};
 use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
 use argon2::{Algorithm, Argon2, Params, Version};
 use base64::engine::general_purpose::STANDARD as base64_standard;
 use base64::Engine;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
-use rsa::{Oaep, RsaPrivateKey, RsaPublicKey};
+use chacha20poly1305::XChaCha20Poly1305;
+use hkdf::Hkdf;
+use p256::ecdh::{self, EphemeralSecret};
+use p256::pkcs8::spki::{DecodePublicKey, EncodePublicKey};
+use p256::pkcs8::LineEnding;
+use rand::rngs::OsRng;
+use rand::RngCore;
+use rsa::Oaep;
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use std::io::{Read, Write};
@@ -17,11 +27,8 @@ use zeroize::Zeroize;
 /// Represents the configuration for the Argon2 hashing algorithm.
 #[derive(Clone, Debug)]
 pub struct Argon2Config {
-    /// Memory cost (in KiB). Recommended: 65536 (64 MB).
     pub memory_cost: u32,
-    /// Time cost (number of iterations). Recommended: 3.
     pub time_cost: u32,
-    /// Degree of parallelism. Recommended: 1.
     pub parallelism: u32,
 }
 
@@ -35,78 +42,24 @@ impl Default for Argon2Config {
     }
 }
 
-/// Serializable struct containing encryption information.
+/// Serializable struct containing encryption information for non-streaming data.
 #[derive(Serialize, Deserialize, Debug)]
 pub struct EncryptedData {
-    pub key_version: String,
-    pub encrypted_symmetric_key: String,
+    /// The symmetric algorithm used for data encryption.
+    pub symmetric_algorithm: SymmetricAlgorithm,
+    /// Information about the recipient, including the encrypted symmetric key.
+    pub recipient_info: RecipientInfo,
+    /// The nonce used for symmetric encryption.
     pub nonce: String,
+    /// The encrypted data.
     pub ciphertext: String,
-    /// Optional, if `hash_password` is `true`.
+    /// The hash of the password, if one was used.
     pub password_hash: Option<String>,
-}
-
-/// Encrypts binary data using AES-256-GCM + RSA.
-///
-/// **Warning:** This function is deprecated and loads the entire data into memory.
-/// For encrypting large files or streams, prefer `encrypt_stream`.
-#[deprecated(
-    since = "0.2.0",
-    note = "Use `encrypt_stream` for better memory management."
-)]
-pub fn encrypt_data_with_criteria(
-    data: &[u8],
-    password: &mut String,
-    public_key: &RsaPublicKey,
-    criteria: &PasswordCriteria,
-    key_version: &str,
-    argon_cfg: Argon2Config,
-    hash_password: bool,
-) -> Result<EncryptedData, IronCryptError> {
-    criteria.validate(password)?;
-
-    let password_hash = if hash_password {
-        let params = Params::new(
-            argon_cfg.memory_cost,
-            argon_cfg.time_cost,
-            argon_cfg.parallelism,
-            None,
-        )?;
-        let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
-        let salt = SaltString::generate(&mut OsRng);
-        let hash_str = argon2.hash_password(password.as_bytes(), &salt)?.to_string();
-        Some(base64_standard.encode(hash_str))
-    } else {
-        None
-    };
-
-    let mut symmetric_key = [0u8; 32];
-    OsRng.fill_bytes(&mut symmetric_key);
-
-    let cipher = Aes256Gcm::new_from_slice(&symmetric_key)?;
-    let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
-    let ciphertext = cipher.encrypt(&nonce, data)?;
-
-    let padding = Oaep::new::<Sha256>();
-    let encrypted_symmetric_key = public_key.encrypt(&mut OsRng, padding, &symmetric_key)?;
-
-    let result = EncryptedData {
-        key_version: key_version.to_string(),
-        encrypted_symmetric_key: base64_standard.encode(&encrypted_symmetric_key),
-        nonce: base64_standard.encode(nonce),
-        ciphertext: base64_standard.encode(&ciphertext),
-        password_hash,
-    };
-
-    symmetric_key.zeroize();
-    password.zeroize();
-
-    Ok(result)
 }
 
 // --- Streaming API ---
 
-const BUFFER_SIZE: usize = 8192; // 8 KB buffer
+const BUFFER_SIZE: usize = 8192;
 
 /// Serializable header for encrypted streams (V1, single-recipient).
 #[derive(Serialize, Deserialize, Debug)]
@@ -117,9 +70,9 @@ pub struct EncryptedStreamHeaderV1 {
     pub password_hash: Option<String>,
 }
 
-/// Holds the encrypted symmetric key for a single recipient.
-#[derive(Serialize, Deserialize, Debug)]
-pub struct RecipientInfo {
+/// Holds the encrypted symmetric key for a single recipient (legacy V2).
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct RecipientInfoV2 {
     pub key_version: String,
     pub encrypted_symmetric_key: String,
 }
@@ -127,6 +80,30 @@ pub struct RecipientInfo {
 /// Serializable header for encrypted streams (V2, multi-recipient).
 #[derive(Serialize, Deserialize, Debug)]
 pub struct EncryptedStreamHeaderV2 {
+    pub recipients: Vec<RecipientInfoV2>,
+    pub nonce: String,
+    pub password_hash: Option<String>,
+}
+
+/// Holds information for a single recipient, supporting different asymmetric algorithms.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(tag = "type")]
+pub enum RecipientInfo {
+    Rsa {
+        key_version: String,
+        encrypted_symmetric_key: String,
+    },
+    Ecc {
+        key_version: String,
+        ephemeral_public_key: String,
+        encrypted_symmetric_key: String,
+    },
+}
+
+/// Serializable header for encrypted streams (V3, multi-algorithm).
+#[derive(Serialize, Deserialize, Debug)]
+pub struct EncryptedStreamHeaderV3 {
+    pub symmetric_algorithm: SymmetricAlgorithm,
     pub recipients: Vec<RecipientInfo>,
     pub nonce: String,
     pub password_hash: Option<String>,
@@ -134,24 +111,26 @@ pub struct EncryptedStreamHeaderV2 {
 
 /// An enum to handle different versions of the stream header for backward compatibility.
 #[derive(Serialize, Deserialize, Debug)]
-#[serde(untagged)] // Allows deserializing into the first matching variant
+#[serde(untagged)]
 pub enum StreamHeader {
+    V3(EncryptedStreamHeaderV3),
     V2(EncryptedStreamHeaderV2),
     V1(EncryptedStreamHeaderV1),
 }
 
-/// Encrypts a data stream using AES-256-GCM and RSA for multiple recipients.
+/// Encrypts a data stream using a configurable combination of algorithms.
 pub fn encrypt_stream<'a, R: Read, W: Write>(
     source: &mut R,
     destination: &mut W,
     password: &mut String,
-    recipients: impl IntoIterator<Item = (&'a RsaPublicKey, &'a str)>,
+    recipients: impl IntoIterator<Item = (&'a PublicKey, &'a str)>,
     criteria: &PasswordCriteria,
     argon_cfg: Argon2Config,
     hash_password: bool,
+    sym_algo: SymmetricAlgorithm,
 ) -> Result<(), IronCryptError> {
-    criteria.validate(password)?;
     let password_hash = if hash_password {
+        criteria.validate(password)?;
         let params = Params::new(
             argon_cfg.memory_cost,
             argon_cfg.time_cost,
@@ -169,18 +148,56 @@ pub fn encrypt_stream<'a, R: Read, W: Write>(
 
     let mut symmetric_key = [0u8; 32];
     OsRng.fill_bytes(&mut symmetric_key);
-    let nonce_bytes = Aes256Gcm::generate_nonce(&mut OsRng);
+
+    let nonce_len = match sym_algo {
+        SymmetricAlgorithm::Aes256Gcm => 12,      // 96 bits
+        SymmetricAlgorithm::ChaCha20Poly1305 => 24, // 192 bits for XChaCha
+    };
+    let mut nonce_bytes = vec![0u8; nonce_len];
+    OsRng.fill_bytes(&mut nonce_bytes);
 
     let mut recipient_infos = Vec::new();
 
     for (public_key, key_version) in recipients {
-        let padding = Oaep::new::<Sha256>();
-        let encrypted_symmetric_key =
-            public_key.encrypt(&mut OsRng, padding, &symmetric_key)?;
-        recipient_infos.push(RecipientInfo {
-            key_version: key_version.to_string(),
-            encrypted_symmetric_key: base64_standard.encode(&encrypted_symmetric_key),
-        });
+        let recipient_info = match public_key {
+            PublicKey::Rsa(rsa_pub_key) => {
+                let padding = Oaep::new::<Sha256>();
+                let encrypted_symmetric_key =
+                    rsa_pub_key.encrypt(&mut OsRng, padding, &symmetric_key)?;
+                RecipientInfo::Rsa {
+                    key_version: key_version.to_string(),
+                    encrypted_symmetric_key: base64_standard.encode(&encrypted_symmetric_key),
+                }
+            }
+            PublicKey::Ecc(ecc_pub_key) => {
+                let ephemeral_secret = EphemeralSecret::random(&mut OsRng);
+                let shared_secret = ephemeral_secret.diffie_hellman(ecc_pub_key);
+
+                let hkdf = Hkdf::<Sha256>::new(None, shared_secret.raw_secret_bytes());
+                let mut okm = [0u8; 32];
+                hkdf.expand(b"ironcrypt-ecies", &mut okm)
+                    .map_err(|_| IronCryptError::KeyGenerationError("HKDF expansion failed".into()))?;
+
+                let key_cipher = Aes256Gcm::new_from_slice(&okm)?;
+                let key_nonce = Aes256Gcm::generate_nonce(&mut OsRng);
+                let encrypted_symmetric_key = key_cipher.encrypt(&key_nonce, &symmetric_key[..])?;
+
+                let mut final_payload = key_nonce.to_vec();
+                final_payload.extend_from_slice(&encrypted_symmetric_key);
+
+                let ephemeral_pub_key_pem = ephemeral_secret
+                    .public_key()
+                    .to_public_key_pem(LineEnding::LF)
+                    .map_err(|_| IronCryptError::KeySavingError("Failed to encode ephemeral public key".into()))?;
+
+                RecipientInfo::Ecc {
+                    key_version: key_version.to_string(),
+                    ephemeral_public_key: base64_standard.encode(ephemeral_pub_key_pem),
+                    encrypted_symmetric_key: base64_standard.encode(&final_payload),
+                }
+            }
+        };
+        recipient_infos.push(recipient_info);
     }
 
     if recipient_infos.is_empty() {
@@ -189,43 +206,53 @@ pub fn encrypt_stream<'a, R: Read, W: Write>(
         ));
     }
 
-    let header = StreamHeader::V2(EncryptedStreamHeaderV2 {
+    let header = StreamHeader::V3(EncryptedStreamHeaderV3 {
+        symmetric_algorithm: sym_algo,
         recipients: recipient_infos,
         nonce: base64_standard.encode(&nonce_bytes),
         password_hash,
     });
 
     let header_json = serde_json::to_string(&header)?;
-    let header_len = header_json.len() as u64;
-
-    destination.write_u64::<BigEndian>(header_len)?;
+    destination.write_u64::<BigEndian>(header_json.len() as u64)?;
     destination.write_all(header_json.as_bytes())?;
 
-    let mut encryptor = Aes256GcmStreamEncryptor::new(symmetric_key, &nonce_bytes);
-    symmetric_key.zeroize();
-
-    let mut buffer = [0u8; BUFFER_SIZE];
-    loop {
-        let bytes_read = source.read(&mut buffer)?;
-        if bytes_read == 0 {
-            break;
+    match sym_algo {
+        SymmetricAlgorithm::Aes256Gcm => {
+            let mut encryptor = Aes256GcmStreamEncryptor::new(symmetric_key, &nonce_bytes);
+            symmetric_key.zeroize();
+            let mut buffer = [0u8; BUFFER_SIZE];
+            loop {
+                let bytes_read = source.read(&mut buffer)?;
+                if bytes_read == 0 {
+                    break;
+                }
+                let ciphertext_chunk = encryptor.update(&buffer[..bytes_read]);
+                destination.write_all(&ciphertext_chunk)?;
+            }
+            let (final_chunk, tag) = encryptor.finalize();
+            destination.write_all(&final_chunk)?;
+            destination.write_all(&tag)?;
         }
-        let ciphertext_chunk = encryptor.update(&buffer[..bytes_read]);
-        destination.write_all(&ciphertext_chunk)?;
+        SymmetricAlgorithm::ChaCha20Poly1305 => {
+            let mut source_data = Vec::new();
+            source.read_to_end(&mut source_data)?;
+            let cipher = XChaCha20Poly1305::new_from_slice(&symmetric_key)?;
+            let nonce = Nonce::from_slice(&nonce_bytes);
+            let ciphertext = cipher.encrypt(nonce, source_data.as_ref())?;
+            destination.write_all(&ciphertext)?;
+        }
     }
 
-    let (final_chunk, tag) = encryptor.finalize();
-    destination.write_all(&final_chunk)?;
-    destination.write_all(&tag)?;
-
+    symmetric_key.zeroize();
     Ok(())
 }
 
-/// Decrypts a data stream encrypted with `encrypt_stream`.
+/// Decrypts a data stream.
 pub fn decrypt_stream<R: Read, W: Write>(
     source: &mut R,
     destination: &mut W,
-    private_key: &RsaPrivateKey,
+    private_key: &PrivateKey,
     key_version: &str,
     password: &str,
 ) -> Result<(), IronCryptError> {
@@ -234,72 +261,167 @@ pub fn decrypt_stream<R: Read, W: Write>(
     source.read_exact(&mut header_bytes)?;
     let header: StreamHeader = serde_json::from_slice(&header_bytes)?;
 
-    let (encrypted_symmetric_key_b64, nonce_b64, password_hash) = match header {
+    let symmetric_key: Vec<u8>;
+    let nonce_bytes: Vec<u8>;
+    let sym_algo: SymmetricAlgorithm;
+
+    match header {
+        StreamHeader::V3(h) => {
+            sym_algo = h.symmetric_algorithm;
+            nonce_bytes = base64_standard.decode(h.nonce)?;
+
+            let recipient_info = h
+                .recipients
+                .iter()
+                .find(|r| match r {
+                    RecipientInfo::Rsa { key_version: v, .. } => v == key_version,
+                    RecipientInfo::Ecc { key_version: v, .. } => v == key_version,
+                })
+                .ok_or_else(|| {
+                    IronCryptError::DecryptionError(format!(
+                        "No key found for recipient version '{}'",
+                        key_version
+                    ))
+                })?;
+
+            symmetric_key = match (private_key, recipient_info) {
+                (
+                    PrivateKey::Rsa(rsa_priv_key),
+                    RecipientInfo::Rsa {
+                        encrypted_symmetric_key,
+                        ..
+                    },
+                ) => {
+                    let key_bytes = base64_standard.decode(encrypted_symmetric_key)?;
+                    rsa_priv_key.decrypt(Oaep::new::<Sha256>(), &key_bytes)?
+                }
+                (
+                    PrivateKey::Ecc(ecc_priv_key),
+                    RecipientInfo::Ecc {
+                        ephemeral_public_key,
+                        encrypted_symmetric_key,
+                        ..
+                    },
+                ) => {
+                    let eph_pub_key_pem = base64_standard.decode(ephemeral_public_key)?;
+                    let eph_pub_key = p256::PublicKey::from_public_key_pem(
+                        &String::from_utf8(eph_pub_key_pem)?,
+                    )?;
+
+                    let shared_secret = ecdh::diffie_hellman(
+                        ecc_priv_key.to_nonzero_scalar(),
+                        eph_pub_key.as_affine(),
+                    );
+
+                    let hkdf = Hkdf::<Sha256>::new(None, shared_secret.raw_secret_bytes());
+                    let mut okm = [0u8; 32];
+                    hkdf.expand(b"ironcrypt-ecies", &mut okm)
+                        .map_err(|_| IronCryptError::DecryptionError("HKDF expansion failed".into()))?;
+
+                    let payload = base64_standard.decode(encrypted_symmetric_key)?;
+                    let (nonce, ciphertext) = payload.split_at(12);
+
+                    let key_cipher = Aes256Gcm::new_from_slice(&okm)?;
+                    key_cipher.decrypt(nonce.into(), ciphertext)?
+                }
+                _ => {
+                    return Err(IronCryptError::DecryptionError(
+                        "Mismatched private key and recipient info type".into(),
+                    ))
+                }
+            };
+
+            if let Some(expected_hash_b64) = h.password_hash {
+                verify_password_hash(&expected_hash_b64, password)?;
+            }
+        }
+        // Backward compatibility for V1
+        StreamHeader::V1(h) => {
+            if let Some(hash) = &h.password_hash {
+                verify_password_hash(hash, password)?;
+            }
+            sym_algo = SymmetricAlgorithm::Aes256Gcm;
+            nonce_bytes = base64_standard.decode(h.nonce)?;
+            let key_bytes = base64_standard.decode(h.encrypted_symmetric_key)?;
+
+            if let PrivateKey::Rsa(rsa_priv_key) = private_key {
+                symmetric_key = rsa_priv_key.decrypt(Oaep::new::<Sha256>(), &key_bytes)?;
+            } else {
+                return Err(IronCryptError::DecryptionError(
+                    "V1 headers only support RSA keys".into(),
+                ));
+            }
+        }
+        // Backward compatibility for V2
         StreamHeader::V2(h) => {
+            if let Some(hash) = &h.password_hash {
+                verify_password_hash(hash, password)?;
+            }
             let recipient_info = h
                 .recipients
                 .iter()
                 .find(|r| r.key_version == key_version)
-                .ok_or(IronCryptError::DecryptionError(format!(
-                    "No key found for recipient version '{}'",
-                    key_version
-                )))?;
-            (
-                recipient_info.encrypted_symmetric_key.clone(),
-                h.nonce,
-                h.password_hash,
-            )
-        }
-        StreamHeader::V1(h) => {
-            if h.key_version != key_version {
-                return Err(IronCryptError::DecryptionError(format!(
-                    "Key version mismatch: expected '{}', found '{}'",
-                    key_version, h.key_version
-                )));
+                .ok_or_else(|| {
+                    IronCryptError::DecryptionError(format!(
+                        "No key found for recipient version '{}'",
+                        key_version
+                    ))
+                })?;
+
+            sym_algo = SymmetricAlgorithm::Aes256Gcm;
+            nonce_bytes = base64_standard.decode(h.nonce)?;
+            let key_bytes = base64_standard.decode(&recipient_info.encrypted_symmetric_key)?;
+
+            if let PrivateKey::Rsa(rsa_priv_key) = private_key {
+                symmetric_key = rsa_priv_key.decrypt(Oaep::new::<Sha256>(), &key_bytes)?;
+            } else {
+                return Err(IronCryptError::DecryptionError(
+                    "V2 headers only support RSA keys".into(),
+                ));
             }
-            (h.encrypted_symmetric_key, h.nonce, h.password_hash)
         }
     };
 
-    if let Some(expected_hash_b64) = &password_hash {
-        let expected_hash_str = String::from_utf8(base64_standard.decode(expected_hash_b64)?)?;
-        let parsed_hash = PasswordHash::new(&expected_hash_str)?;
+    match sym_algo {
+        SymmetricAlgorithm::Aes256Gcm => {
+            let key_array: [u8; 32] = symmetric_key.as_slice().try_into().map_err(|_| {
+                IronCryptError::DecryptionError("Decrypted key has incorrect size.".to_string())
+            })?;
+            let mut decryptor = Aes256GcmStreamDecryptor::new(key_array, &nonce_bytes);
 
-        if Argon2::default()
-            .verify_password(password.as_bytes(), &parsed_hash)
-            .is_err()
-        {
-            return Err(IronCryptError::PasswordVerificationError);
+            let mut buffer = [0u8; BUFFER_SIZE];
+            loop {
+                let bytes_read = source.read(&mut buffer)?;
+                if bytes_read == 0 {
+                    break;
+                }
+                let plaintext_chunk = decryptor.update(&buffer[..bytes_read]);
+                destination.write_all(&plaintext_chunk)?;
+            }
+            let final_chunk = decryptor.finalize()?;
+            destination.write_all(&final_chunk)?;
+        }
+        SymmetricAlgorithm::ChaCha20Poly1305 => {
+            let mut source_data = Vec::new();
+            source.read_to_end(&mut source_data)?;
+            let cipher = XChaCha20Poly1305::new_from_slice(&symmetric_key)?;
+            let nonce = Nonce::from_slice(&nonce_bytes);
+            let plaintext = cipher.decrypt(nonce, source_data.as_ref())?;
+            destination.write_all(&plaintext)?;
         }
     }
 
-    let encrypted_symmetric_key = base64_standard.decode(&encrypted_symmetric_key_b64)?;
-    let padding = Oaep::new::<Sha256>();
-    let mut symmetric_key = private_key.decrypt(padding, &encrypted_symmetric_key)?;
+    Ok(())
+}
 
-    let nonce_bytes = base64_standard.decode(&nonce_b64)?;
-    let key_array: [u8; 32] = symmetric_key
-        .clone()
-        .try_into()
-        .map_err(|_| {
-            IronCryptError::DecryptionError("Decrypted key has incorrect size.".to_string())
-        })?;
-
-    let mut decryptor = Aes256GcmStreamDecryptor::new(key_array, &nonce_bytes);
-    symmetric_key.zeroize();
-
-    let mut buffer = [0u8; BUFFER_SIZE];
-    loop {
-        let bytes_read = source.read(&mut buffer)?;
-        if bytes_read == 0 {
-            break;
-        }
-        let plaintext_chunk = decryptor.update(&buffer[..bytes_read]);
-        destination.write_all(&plaintext_chunk)?;
+fn verify_password_hash(hash_b64: &str, password: &str) -> Result<(), IronCryptError> {
+    let expected_hash_str = String::from_utf8(base64_standard.decode(hash_b64)?)?;
+    let parsed_hash = PasswordHash::new(&expected_hash_str)?;
+    if Argon2::default()
+        .verify_password(password.as_bytes(), &parsed_hash)
+        .is_err()
+    {
+        return Err(IronCryptError::PasswordVerificationError);
     }
-
-    let final_chunk = decryptor.finalize()?;
-    destination.write_all(&final_chunk)?;
-
     Ok(())
 }

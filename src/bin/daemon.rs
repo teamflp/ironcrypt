@@ -9,10 +9,11 @@ use axum::{
 use clap::Parser;
 use futures::StreamExt;
 use ironcrypt::{
-    decrypt_stream, encrypt_stream, load_private_key, load_public_key, Argon2Config,
-    PasswordCriteria,
+    algorithms::SymmetricAlgorithm,
+    decrypt_stream, encrypt_stream,
+    keys::{PrivateKey, PublicKey},
+    load_private_key, load_public_key, Argon2Config, PasswordCriteria,
 };
-use rsa::{RsaPrivateKey, RsaPublicKey};
 use std::{net::SocketAddr, sync::Arc};
 use tokio::net::TcpListener;
 use tokio_util::io::{ReaderStream, SyncIoBridge};
@@ -22,8 +23,8 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 /// A struct to hold the application's shared state.
 #[derive(Clone)]
 struct AppState {
-    public_key: Arc<RsaPublicKey>,
-    private_key: Arc<RsaPrivateKey>,
+    public_key: Arc<PublicKey>,
+    private_key: Arc<PrivateKey>,
     key_version: String,
 }
 
@@ -62,8 +63,9 @@ async fn main() {
     let public_key_path = format!("{}/public_key_{}.pem", args.key_directory, args.key_version);
     let private_key_path = format!("{}/private_key_{}.pem", args.key_directory, args.key_version);
 
+    // This assumes RSA keys for now. A more robust solution would check the key type.
     let public_key = match load_public_key(&public_key_path) {
-        Ok(key) => Arc::new(key),
+        Ok(key) => Arc::new(PublicKey::Rsa(key)),
         Err(e) => {
             eprintln!("Failed to load public key from {}: {}", public_key_path, e);
             return;
@@ -71,7 +73,7 @@ async fn main() {
     };
 
     let private_key = match load_private_key(&private_key_path, args.passphrase.as_deref()) {
-        Ok(key) => Arc::new(key),
+        Ok(key) => Arc::new(PrivateKey::Rsa(key)),
         Err(e) => {
             eprintln!("Failed to load private key from {}: {}", private_key_path, e);
             return;
@@ -152,6 +154,7 @@ async fn encrypt_handler(
             &criteria,
             argon_cfg,
             hash_password,
+            SymmetricAlgorithm::Aes256Gcm, // Use default for now
         ) {
             tracing::error!("Encryption failed: {}", e);
         }

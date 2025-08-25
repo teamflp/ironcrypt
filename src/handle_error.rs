@@ -4,6 +4,7 @@ use aes_gcm::Error as AesGcmError;
 use argon2::password_hash::Error as ArgonError;
 use base64::DecodeError as Base64DecodeError;
 use cipher::InvalidLength as CipherInvalidLength;
+use p256::pkcs8;
 use rsa::errors::Error as RsaError;
 use serde_json::Error as SerdeJsonError;
 use std::error::Error;
@@ -54,6 +55,15 @@ pub enum IronCryptError {
 
     #[error("Secret store error: {0}")]
     SecretStoreError(String),
+
+    #[error("PKCS#8 error: {0}")]
+    Pkcs8Error(#[from] pkcs8::Error),
+
+    #[error("SPKI error: {0}")]
+    SpkiError(#[from] pkcs8::spki::Error),
+
+    #[error("Elliptic curve error: {0}")]
+    EllipticCurveError(#[from] p256::elliptic_curve::Error),
 }
 
 impl From<Box<dyn Error + Send + Sync>> for IronCryptError {
