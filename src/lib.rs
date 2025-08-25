@@ -92,6 +92,7 @@
 //!         &mut encrypted_dest,
 //!         &mut password,
 //!         recipients,
+//!         None, // signing_key
 //!         &PasswordCriteria::default(),
 //!         Argon2Config::default(),
 //!         true, // Indicates that the password should be hashed
@@ -109,6 +110,7 @@
 //!         &PrivateKey::Rsa(private_key),
 //!         "v1",
 //!         "AnotherStrongPassword123!",
+//!         None // verifying_key
 //!     )?;
 //!
 //!     // 6. Verify that the decrypted data matches the original data.
@@ -124,6 +126,7 @@
 //! check out the `examples/` directory of the project.
 
 // --- Modules ---
+pub mod ffi;
 pub mod algorithms;
 pub mod config;
 pub mod criteria;
