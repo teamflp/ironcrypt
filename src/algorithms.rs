@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 /// Defines the supported symmetric encryption algorithms.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
@@ -12,6 +13,12 @@ pub enum SymmetricAlgorithm {
 impl Default for SymmetricAlgorithm {
     fn default() -> Self {
         SymmetricAlgorithm::Aes256Gcm
+    }
+}
+
+impl fmt::Display for SymmetricAlgorithm {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self)
     }
 }
 
