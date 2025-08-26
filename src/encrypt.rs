@@ -358,7 +358,7 @@ pub fn decrypt_stream<R: Read, W: Write>(
         source.read_exact(&mut header_bytes)?;
         let header: StreamHeader = serde_json::from_slice(&header_bytes)?;
 
-        let (symmetric_key, nonce_bytes, sym_algo, signature_info) = match header {
+        let (symmetric_key, nonce_bytes, sym_algo, signature_info, password_ok) = match header {
             StreamHeader::V4(h) => {
                 event.symmetric_algorithm = Some(format!("{:?}", h.symmetric_algorithm));
                 let recipient_info = h
@@ -431,9 +431,11 @@ pub fn decrypt_stream<R: Read, W: Write>(
                     .map_err(|e| IronCryptError::DecryptionError(format!("Failed to decrypt metadata: {}", e)))?;
                 let sensitive_metadata: SensitiveHeaderData = serde_json::from_slice(&sensitive_metadata_json)?;
 
-                if let Some(expected_hash_b64) = sensitive_metadata.password_hash {
-                    verify_password_hash(&expected_hash_b64, password)?;
-                }
+                let password_ok = if let Some(expected_hash_b64) = &sensitive_metadata.password_hash {
+                    check_password_hash(expected_hash_b64, password)
+                } else {
+                    true
+                };
 
                 let sig_info = if let (Some(sig), Some(algo), Some(version)) =
                     (sensitive_metadata.signature, sensitive_metadata.signature_algorithm, sensitive_metadata.signer_key_version)
@@ -450,6 +452,7 @@ pub fn decrypt_stream<R: Read, W: Write>(
                     base64_standard.decode(sensitive_metadata.nonce)?,
                     h.symmetric_algorithm,
                     sig_info,
+                    password_ok,
                 )
             }
             StreamHeader::V3(h) => {
@@ -517,9 +520,11 @@ pub fn decrypt_stream<R: Read, W: Write>(
                     }
                 };
 
-                if let Some(expected_hash_b64) = h.password_hash {
-                    verify_password_hash(&expected_hash_b64, password)?;
-                }
+                let password_ok = if let Some(expected_hash_b64) = &h.password_hash {
+                    check_password_hash(expected_hash_b64, password)
+                } else {
+                    true
+                };
 
                 let sig_info = None; // V3 has no signature info
 
@@ -528,57 +533,69 @@ pub fn decrypt_stream<R: Read, W: Write>(
                     base64_standard.decode(h.nonce)?,
                     h.symmetric_algorithm,
                     sig_info,
+                    password_ok,
                 )
             }
             // Backward compatibility for V1 and V2
-            StreamHeader::V1(h) => (
-                {
-                    event.symmetric_algorithm = Some(format!("{:?}", SymmetricAlgorithm::Aes256Gcm));
-                    if let Some(hash) = &h.password_hash {
-                        verify_password_hash(hash, password)?;
-                    }
-                    let key_bytes = base64_standard.decode(h.encrypted_symmetric_key)?;
-                    if let PrivateKey::Rsa(rsa_priv_key) = private_key {
-                        rsa_priv_key.decrypt(Oaep::new::<Sha256>(), &key_bytes)?
-                    } else {
-                        return Err(IronCryptError::DecryptionError(
-                            "V1 headers only support RSA keys".into(),
-                        ));
-                    }
-                },
-                base64_standard.decode(h.nonce)?,
-                SymmetricAlgorithm::Aes256Gcm,
-                None,
-            ),
-            StreamHeader::V2(h) => (
-                {
-                    event.symmetric_algorithm = Some(format!("{:?}", SymmetricAlgorithm::Aes256Gcm));
-                    if let Some(hash) = &h.password_hash {
-                        verify_password_hash(hash, password)?;
-                    }
-                    let recipient_info = h
-                        .recipients
-                        .iter()
-                        .find(|r| r.key_version == key_version)
-                        .ok_or_else(|| {
-                            IronCryptError::DecryptionError(format!(
-                                "No key found for recipient version '{}'",
-                                key_version
-                            ))
-                        })?;
-                    let key_bytes = base64_standard.decode(&recipient_info.encrypted_symmetric_key)?;
-                    if let PrivateKey::Rsa(rsa_priv_key) = private_key {
-                        rsa_priv_key.decrypt(Oaep::new::<Sha256>(), &key_bytes)?
-                    } else {
-                        return Err(IronCryptError::DecryptionError(
-                            "V2 headers only support RSA keys".into(),
-                        ));
-                    }
-                },
-                base64_standard.decode(h.nonce)?,
-                SymmetricAlgorithm::Aes256Gcm,
-                None,
-            ),
+            StreamHeader::V1(h) => {
+                let password_ok = if let Some(hash) = &h.password_hash {
+                    check_password_hash(hash, password)
+                } else {
+                    true
+                };
+                (
+                    {
+                        event.symmetric_algorithm = Some(format!("{:?}", SymmetricAlgorithm::Aes256Gcm));
+                        let key_bytes = base64_standard.decode(&h.encrypted_symmetric_key)?;
+                        if let PrivateKey::Rsa(rsa_priv_key) = private_key {
+                            rsa_priv_key.decrypt(Oaep::new::<Sha256>(), &key_bytes)?
+                        } else {
+                            return Err(IronCryptError::DecryptionError(
+                                "V1 headers only support RSA keys".into(),
+                            ));
+                        }
+                    },
+                    base64_standard.decode(&h.nonce)?,
+                    SymmetricAlgorithm::Aes256Gcm,
+                    None,
+                    password_ok,
+                )
+            }
+            StreamHeader::V2(h) => {
+                let password_ok = if let Some(hash) = &h.password_hash {
+                    check_password_hash(hash, password)
+                } else {
+                    true
+                };
+                (
+                    {
+                        event.symmetric_algorithm = Some(format!("{:?}", SymmetricAlgorithm::Aes256Gcm));
+                        let recipient_info = h
+                            .recipients
+                            .iter()
+                            .find(|r| r.key_version == key_version)
+                            .ok_or_else(|| {
+                                IronCryptError::DecryptionError(format!(
+                                    "No key found for recipient version '{}'",
+                                    key_version
+                                ))
+                            })?;
+                        let key_bytes =
+                            base64_standard.decode(&recipient_info.encrypted_symmetric_key)?;
+                        if let PrivateKey::Rsa(rsa_priv_key) = private_key {
+                            rsa_priv_key.decrypt(Oaep::new::<Sha256>(), &key_bytes)?
+                        } else {
+                            return Err(IronCryptError::DecryptionError(
+                                "V2 headers only support RSA keys".into(),
+                            ));
+                        }
+                    },
+                    base64_standard.decode(&h.nonce)?,
+                    SymmetricAlgorithm::Aes256Gcm,
+                    None,
+                    password_ok,
+                )
+            }
         };
 
         // Decrypt into a temporary buffer first for potential signature verification
@@ -643,6 +660,10 @@ pub fn decrypt_stream<R: Read, W: Write>(
         // If verification passes (or was not required), write the plaintext to the destination
         destination.write_all(&plaintext_buffer)?;
 
+        if !password_ok {
+            return Err(IronCryptError::PasswordVerificationError);
+        }
+
         Ok(())
     })();
 
@@ -661,14 +682,28 @@ pub fn decrypt_stream<R: Read, W: Write>(
     result
 }
 
-fn verify_password_hash(hash_b64: &str, password: &str) -> Result<(), IronCryptError> {
-    let expected_hash_str = String::from_utf8(base64_standard.decode(hash_b64)?)?;
-    let parsed_hash = PasswordHash::new(&expected_hash_str)?;
-    if Argon2::default()
+/// Verifies a password against a base64-encoded Argon2 hash.
+///
+/// This function is designed to be resistant to timing attacks. It returns a boolean
+/// instead of a Result to prevent early exits in the calling function, which could
+/// leak timing information.
+///
+/// # Returns
+///
+/// `true` if the password is correct, `false` otherwise (including on parsing errors).
+pub(crate) fn check_password_hash(hash_b64: &str, password: &str) -> bool {
+    let Ok(expected_hash_bytes) = base64_standard.decode(hash_b64) else {
+        return false;
+    };
+    let Ok(expected_hash_str) = String::from_utf8(expected_hash_bytes) else {
+        return false;
+    };
+
+    let Ok(parsed_hash) = PasswordHash::new(&expected_hash_str) else {
+        return false;
+    };
+
+    Argon2::default()
         .verify_password(password.as_bytes(), &parsed_hash)
-        .is_err()
-    {
-        return Err(IronCryptError::PasswordVerificationError);
-    }
-    Ok(())
+        .is_ok()
 }

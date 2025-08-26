@@ -15,8 +15,8 @@ use crate::secrets::aws::AwsStore;
 use crate::secrets::azure::AzureStore;
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{AeadCore, Aes256Gcm, Nonce};
-use argon2::password_hash::{PasswordHash, PasswordHasher, SaltString};
-use argon2::{Algorithm, Argon2, Params, PasswordVerifier, Version};
+use argon2::password_hash::{PasswordHasher, SaltString};
+use argon2::{Algorithm, Argon2, Params, Version};
 use base64::engine::general_purpose::STANDARD as base64_standard;
 use base64::Engine;
 use chacha20poly1305::XChaCha20Poly1305;
@@ -224,8 +224,11 @@ impl IronCrypt {
         encrypted_json: &str,
         user_input_password: &str,
     ) -> Result<bool, IronCryptError> {
-        self.decrypt_binary_data(encrypted_json, user_input_password)?;
-        Ok(true)
+        match self.decrypt_binary_data(encrypted_json, user_input_password) {
+            Ok(_) => Ok(true),
+            Err(IronCryptError::DecryptionError(_)) => Ok(false),
+            Err(e) => Err(e),
+        }
     }
 
     pub async fn store_secret(&self, key: &str, value: &str) -> Result<(), IronCryptError> {
@@ -408,32 +411,32 @@ impl IronCrypt {
         let ciphertext = base64_standard.decode(&ed.ciphertext)?;
         let nonce_bytes = base64_standard.decode(&ed.nonce)?;
 
-        let plaintext = match ed.symmetric_algorithm {
+        let plaintext_result = match ed.symmetric_algorithm {
             SymmetricAlgorithm::Aes256Gcm => {
                 let cipher = Aes256Gcm::new_from_slice(&symmetric_key)?;
-                cipher.decrypt(Nonce::from_slice(&nonce_bytes), ciphertext.as_ref())?
+                cipher.decrypt(Nonce::from_slice(&nonce_bytes), ciphertext.as_ref())
             }
             SymmetricAlgorithm::ChaCha20Poly1305 => {
                 let cipher = XChaCha20Poly1305::new_from_slice(&symmetric_key)?;
-                cipher.decrypt(Nonce::from_slice(&nonce_bytes), ciphertext.as_ref())?
+                cipher.decrypt(Nonce::from_slice(&nonce_bytes), ciphertext.as_ref())
             }
         };
 
         symmetric_key.zeroize();
 
-        if let Some(hash_b64) = ed.password_hash.as_ref() {
-            let decoded_hash = base64_standard.decode(hash_b64)?;
-            let hash_str = String::from_utf8(decoded_hash)?;
-            let parsed_hash = PasswordHash::new(&hash_str)?;
-            if Argon2::default()
-                .verify_password(password.as_bytes(), &parsed_hash)
-                .is_err()
-            {
-                return Err(IronCryptError::InvalidPassword);
-            }
+        let password_ok = if let Some(hash_b64) = ed.password_hash.as_ref() {
+            crate::encrypt::check_password_hash(hash_b64, password)
+        } else {
+            true
+        };
+
+        if plaintext_result.is_err() || !password_ok {
+            return Err(IronCryptError::DecryptionError(
+                "Invalid password or ciphertext".to_string(),
+            ));
         }
 
-        Ok(plaintext)
+        Ok(plaintext_result.unwrap())
     }
 
     pub fn re_encrypt_data(

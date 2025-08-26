@@ -1051,10 +1051,9 @@ mod tests {
         assert!(ok, "The password should be correct");
 
         // Verify a bad password
-        let bad_ok = crypt.verify_password(&encrypted, "bad_password");
-        assert!(
-            bad_ok.is_err(),
-            "Should fail on a bad password"
-        );
+        let bad_ok = crypt
+            .verify_password(&encrypted, "bad_password")
+            .expect("verify_password should not fail on bad password, just return false");
+        assert!(!bad_ok, "Should return false on a bad password");
     }
 }
