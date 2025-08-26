@@ -164,3 +164,33 @@ Commandes pour protéger et accéder à vos données au quotidien.
     # Démarrer le démon pour qu'il écoute sur le port 3000 avec la clé v1
     ironcrypt daemon --port 3000 --key-directory ./keys --key-version v1
     ```
+
+## 4. Fonctionnalités Avancées
+
+Cette section décrit les fonctionnalités avancées pour la conformité et la sécurité.
+
+---
+
+### Journal d'Audit Structuré
+
+*   **Domaine** : Traçabilité, sécurité et conformité.
+*   **Définition** : `ironcrypt` enregistre désormais chaque opération de chiffrement et de déchiffrement dans un journal d'audit structuré au format JSON. Cela fournit une piste d'audit complète, essentielle pour les environnements réglementés.
+*   **Informations enregistrées** :
+    *   `operation`: Type d'opération (`encrypt` ou `decrypt`).
+    *   `outcome`: Résultat (`success` ou `failure`).
+    *   `key_version(s)`: La ou les versions de clé utilisées.
+    *   `algorithm`: L'algorithme symétrique utilisé.
+    *   `signature_verification`: Résultat de la vérification de la signature (si applicable).
+*   **Utilisation** : Le journal est automatiquement généré lorsque des opérations de chiffrement/déchiffrement sont effectuées, en particulier lors de l'utilisation du démon `ironcryptd`. Les logs peuvent être collectés et analysés par des systèmes de gestion de logs (SIEM).
+
+---
+
+### Standard de Sécurité ANSSI
+
+*   **Domaine** : Conformité et interopérabilité.
+*   **Définition** : Ajout d'un nouveau standard de sécurité nommé `Anssi`, basé sur les recommandations de l'Agence Nationale de la Sécurité des Systèmes d'Information. L'utilisation de ce standard garantit que les paramètres cryptographiques sont conformes aux recommandations de sécurité françaises et européennes.
+*   **Configuration du standard `Anssi`** :
+    *   Algorithme Symétrique : `AES-256-GCM`
+    *   Algorithme Asymétrique : `RSA`
+    *   Taille de clé RSA : `3072` bits
+*   **Utilisation** : Ce standard peut être utilisé lors de l'initialisation de la bibliothèque `ironcrypt` pour s'assurer que les configurations par défaut respectent un haut niveau de sécurité reconnu.
