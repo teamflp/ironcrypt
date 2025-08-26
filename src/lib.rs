@@ -128,6 +128,7 @@
 // --- Modules ---
 pub mod ffi;
 pub mod algorithms;
+pub mod audit;
 pub mod config;
 pub mod criteria;
 pub mod encrypt;

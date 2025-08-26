@@ -13,7 +13,7 @@ use ironcrypt::{
     keys::{PrivateKey, PublicKey},
     load_private_key, load_public_key, Argon2Config, CryptoStandard, IronCryptConfig,
 };
-use std::{net::SocketAddr, sync::Arc};
+use std::{io, net::SocketAddr, sync::Arc};
 use tokio::net::TcpListener;
 use tokio_util::io::{ReaderStream, SyncIoBridge};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
@@ -75,7 +75,11 @@ struct Args {
 async fn main() {
     // Initialize tracing
     tracing_subscriber::registry()
-        .with(tracing_subscriber::fmt::layer())
+        .with(
+            tracing_subscriber::fmt::layer()
+                .json()
+                .with_writer(io::stdout),
+        )
         .init();
 
     // Parse command-line arguments
