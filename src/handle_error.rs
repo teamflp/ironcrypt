@@ -35,6 +35,9 @@ pub enum IronCryptError {
     #[error("Key saving error: {0}")]
     KeySavingError(String),
 
+    #[error("Key derivation error: {0}")]
+    KeyDerivationError(String),
+
     #[error("I/O error: {0}")]
     IOError(#[from] IoError),
 
@@ -70,6 +73,9 @@ pub enum IronCryptError {
 
     #[error("Signature verification failed: {0}")]
     SignatureVerificationFailed(String),
+
+    #[error("Unsupported operation: {0}")]
+    UnsupportedOperation(String),
 }
 
 impl From<Box<dyn Error + Send + Sync>> for IronCryptError {
@@ -117,6 +123,12 @@ impl From<SerdeJsonError> for IronCryptError {
 impl From<argon2::Error> for IronCryptError {
     fn from(err: argon2::Error) -> Self {
         IronCryptError::Argon2Error(format!("{err}"))
+    }
+}
+
+impl From<hkdf::InvalidLength> for IronCryptError {
+    fn from(err: hkdf::InvalidLength) -> Self {
+        IronCryptError::KeyDerivationError(format!("HKDF error: {err}"))
     }
 }
 

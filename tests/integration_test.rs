@@ -144,7 +144,6 @@ async fn test_directory_encryption_decryption() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_key_rotation() {
     let key_dir = "test_keys_rotation";
     setup_test_dir(key_dir);

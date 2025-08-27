@@ -14,13 +14,17 @@ pub enum Outcome {
 #[derive(Serialize, Debug, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 pub enum Operation {
-    EncryptStream,
-    DecryptStream,
+    GenerateKey,
+    Encrypt,
+    Decrypt,
+    Sign,
+    Verify,
+    Rekey,
 }
 
 /// A structured event for auditing cryptographic operations.
 #[derive(Serialize, Debug)]
-pub struct AuditEvent<'a> {
+pub struct AuditEvent {
     #[serde(with = "chrono::serde::ts_seconds")]
     pub timestamp: DateTime<Utc>,
     pub operation: Operation,
@@ -28,9 +32,13 @@ pub struct AuditEvent<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error_message: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub key_version: Option<&'a str>,
+    pub key_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key_size: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key_version: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub recipient_key_versions: Vec<&'a str>,
+    pub recipient_key_versions: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub symmetric_algorithm: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -39,7 +47,7 @@ pub struct AuditEvent<'a> {
     pub signer_key_version: Option<String>,
 }
 
-impl<'a> AuditEvent<'a> {
+impl AuditEvent {
     /// Creates a new audit event.
     pub fn new(operation: Operation) -> Self {
         Self {
@@ -47,6 +55,8 @@ impl<'a> AuditEvent<'a> {
             operation,
             outcome: Outcome::Success, // Default to success
             error_message: None,
+            key_type: None,
+            key_size: None,
             key_version: None,
             recipient_key_versions: Vec::new(),
             symmetric_algorithm: None,

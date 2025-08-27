@@ -53,8 +53,8 @@ impl CryptoStandard {
             }),
             CryptoStandard::Anssi => Some(StandardConfig {
                 symmetric_algorithm: SymmetricAlgorithm::Aes256Gcm,
-                asymmetric_algorithm: AsymmetricAlgorithm::Rsa,
-                rsa_key_size: 3072, // ANSSI recommends a minimum of 3072 for RSA keys
+                asymmetric_algorithm: AsymmetricAlgorithm::Ecc, // ANSSI recommends ECC over RSA.
+                rsa_key_size: 3072, // Still specifying a strong RSA size if user overrides.
             }),
             CryptoStandard::Custom => None,
         }
