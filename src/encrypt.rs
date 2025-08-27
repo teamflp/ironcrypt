@@ -3,10 +3,10 @@ use crate::{
     audit::{AuditEvent, Operation, Outcome},
     hashing,
     keys::{PrivateKey, PublicKey},
-    rsa_utils, IronCryptError, PasswordCriteria,
+    rsa_utils, IronCryptError, PasswordCriteria, ecc_utils,
 };
 use aes_gcm::aead::{Aead, KeyInit};
-use aes_gcm::{AeadCore, Aes256Gcm, Nonce};
+use aes_gcm::{Aes256Gcm, Nonce};
 use aes_gcm_stream::{Aes256GcmStreamDecryptor, Aes256GcmStreamEncryptor};
 use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
 use argon2::{Algorithm, Argon2, Params, Version};
@@ -15,10 +15,8 @@ use base64::Engine;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use chacha20poly1305::XChaCha20Poly1305;
 use hex;
-use hkdf::Hkdf;
-use p256::ecdh::{self, EphemeralSecret};
-use p256::pkcs8::spki::{DecodePublicKey, EncodePublicKey};
-use p256::pkcs8::LineEnding;
+use p256::pkcs8::spki::{DecodePublicKey};
+use p256::pkcs8::{EncodePublicKey, LineEnding};
 use rand::rngs::OsRng;
 use rand::RngCore;
 use rsa::Oaep;
@@ -154,17 +152,15 @@ pub fn encrypt_stream<'a, R: Read, W: Write>(
     hash_password: bool,
     sym_algo: SymmetricAlgorithm,
 ) -> Result<(), IronCryptError> {
-    let mut event = AuditEvent::new(Operation::EncryptStream);
+    let mut event = AuditEvent::new(Operation::Encrypt);
     event.symmetric_algorithm = Some(format!("{:?}", sym_algo));
-    event.recipient_key_versions = recipients.clone().into_iter().map(|(_, v)| v).collect();
+    event.recipient_key_versions = recipients.clone().into_iter().map(|(_, v)| v.to_string()).collect();
     if let Some((_, version)) = signing_key {
         event.signer_key_version = Some(version.to_string());
         event.signature_algorithm = Some("rsa-pkcs1v15-sha256".to_string());
     }
 
     let result = (|| {
-        // This is the new V4 implementation
-        // Buffer the source data to allow for both hashing (for signature) and encryption.
         let mut source_data = Vec::new();
         source.read_to_end(&mut source_data)?;
         let mut source_cursor = Cursor::new(&source_data);
@@ -231,29 +227,12 @@ pub fn encrypt_stream<'a, R: Read, W: Write>(
                     }
                 }
                 PublicKey::Ecc(ecc_pub_key) => {
-                    let ephemeral_secret = EphemeralSecret::random(&mut OsRng);
-                    let shared_secret = ephemeral_secret.diffie_hellman(ecc_pub_key);
-                    let hkdf = Hkdf::<Sha256>::new(None, shared_secret.raw_secret_bytes());
-                    let mut okm = [0u8; 32];
-                    hkdf.expand(b"ironcrypt-ecies", &mut okm)
-                        .map_err(|_| IronCryptError::KeyGenerationError("HKDF expansion failed".into()))?;
-                    let key_cipher = Aes256Gcm::new_from_slice(&okm)?;
-                    let key_nonce = Aes256Gcm::generate_nonce(&mut OsRng);
-                    let encrypted_symmetric_key = key_cipher.encrypt(&key_nonce, &symmetric_key[..])?;
-                    let mut final_payload = key_nonce.to_vec();
-                    final_payload.extend_from_slice(&encrypted_symmetric_key);
-                    let ephemeral_pub_key_pem = ephemeral_secret
-                        .public_key()
-                        .to_public_key_pem(LineEnding::LF)
-                        .map_err(|_| {
-                            IronCryptError::KeySavingError(
-                                "Failed to encode ephemeral public key".into(),
-                            )
-                        })?;
+                    let kek = ecc_utils::ecies_key_encap(ecc_pub_key, &symmetric_key)?;
+                    let ephemeral_public_key_pem = kek.ephemeral_pk.to_public_key_pem(LineEnding::LF)?;
                     RecipientInfo::Ecc {
                         key_version: key_version.to_string(),
-                        ephemeral_public_key: base64_standard.encode(ephemeral_pub_key_pem),
-                        encrypted_symmetric_key: base64_standard.encode(&final_payload),
+                        ephemeral_public_key: base64_standard.encode(ephemeral_public_key_pem),
+                        encrypted_symmetric_key: base64_standard.encode(kek.encapsulated_key),
                     }
                 }
             };
@@ -274,7 +253,7 @@ pub fn encrypt_stream<'a, R: Read, W: Write>(
             signer_key_version,
         };
         let sensitive_metadata_json = serde_json::to_string(&sensitive_metadata)?;
-        let mut metadata_nonce_bytes = vec![0u8; 12]; // AES-GCM nonce size
+        let mut metadata_nonce_bytes = vec![0u8; 12];
         OsRng.fill_bytes(&mut metadata_nonce_bytes);
         let cipher = Aes256Gcm::new(&symmetric_key.into());
         let encrypted_metadata = cipher
@@ -324,14 +303,9 @@ pub fn encrypt_stream<'a, R: Read, W: Write>(
         Ok(())
     })();
 
-    match &result {
-        Ok(_) => {
-            event.outcome = Outcome::Success;
-        }
-        Err(e) => {
-            event.outcome = Outcome::Failure;
-            event.error_message = Some(e.to_string());
-        }
+    if let Err(e) = &result {
+        event.outcome = Outcome::Failure;
+        event.error_message = Some(e.to_string());
     }
 
     event.log();
@@ -349,8 +323,8 @@ pub fn decrypt_stream<R: Read, W: Write>(
     password: &str,
     verifying_key: Option<&PublicKey>,
 ) -> Result<(), IronCryptError> {
-    let mut event = AuditEvent::new(Operation::DecryptStream);
-    event.key_version = Some(key_version);
+    let mut event = AuditEvent::new(Operation::Decrypt);
+    event.key_version = Some(key_version.to_string());
 
     let result = (|| {
         let header_len = source.read_u64::<BigEndian>()?;
@@ -398,24 +372,9 @@ pub fn decrypt_stream<R: Read, W: Write>(
                         let eph_pub_key = p256::PublicKey::from_public_key_pem(
                             &String::from_utf8(eph_pub_key_pem)?,
                         )?;
+                        let encapsulated_key = base64_standard.decode(encrypted_symmetric_key)?;
 
-                        let shared_secret = ecdh::diffie_hellman(
-                            ecc_priv_key.to_nonzero_scalar(),
-                            eph_pub_key.as_affine(),
-                        );
-
-                        let hkdf = Hkdf::<Sha256>::new(None, shared_secret.raw_secret_bytes());
-                        let mut okm = [0u8; 32];
-                        hkdf.expand(b"ironcrypt-ecies", &mut okm)
-                            .map_err(|_| {
-                                IronCryptError::DecryptionError("HKDF expansion failed".into())
-                            })?;
-
-                        let payload = base64_standard.decode(encrypted_symmetric_key)?;
-                        let (nonce, ciphertext) = payload.split_at(12);
-
-                        let key_cipher = Aes256Gcm::new_from_slice(&okm)?;
-                        key_cipher.decrypt(nonce.into(), ciphertext)?
+                        ecc_utils::ecies_key_decap(ecc_priv_key, &eph_pub_key, &encapsulated_key)?
                     }
                     _ => {
                         return Err(IronCryptError::DecryptionError(
@@ -494,24 +453,9 @@ pub fn decrypt_stream<R: Read, W: Write>(
                         let eph_pub_key = p256::PublicKey::from_public_key_pem(
                             &String::from_utf8(eph_pub_key_pem)?,
                         )?;
+                        let encapsulated_key = base64_standard.decode(encrypted_symmetric_key)?;
 
-                        let shared_secret = ecdh::diffie_hellman(
-                            ecc_priv_key.to_nonzero_scalar(),
-                            eph_pub_key.as_affine(),
-                        );
-
-                        let hkdf = Hkdf::<Sha256>::new(None, shared_secret.raw_secret_bytes());
-                        let mut okm = [0u8; 32];
-                        hkdf.expand(b"ironcrypt-ecies", &mut okm)
-                            .map_err(|_| {
-                                IronCryptError::DecryptionError("HKDF expansion failed".into())
-                            })?;
-
-                        let payload = base64_standard.decode(encrypted_symmetric_key)?;
-                        let (nonce, ciphertext) = payload.split_at(12);
-
-                        let key_cipher = Aes256Gcm::new_from_slice(&okm)?;
-                        key_cipher.decrypt(nonce.into(), ciphertext)?
+                        ecc_utils::ecies_key_decap(ecc_priv_key, &eph_pub_key, &encapsulated_key)?
                     }
                     _ => {
                         return Err(IronCryptError::DecryptionError(
@@ -526,7 +470,7 @@ pub fn decrypt_stream<R: Read, W: Write>(
                     true
                 };
 
-                let sig_info = None; // V3 has no signature info
+                let sig_info = None;
 
                 (
                     sk,
@@ -628,7 +572,6 @@ pub fn decrypt_stream<R: Read, W: Write>(
             }
         }
 
-        // --- Signature Verification ---
         if let Some((signature_hex, algo, _signer_version)) = signature_info {
             let key_for_verification = verifying_key.ok_or_else(|| {
                 IronCryptError::SignatureVerificationFailed(
@@ -657,7 +600,6 @@ pub fn decrypt_stream<R: Read, W: Write>(
             rsa_utils::verify_signature(rsa_public_key, &hash, &signature)?;
         }
 
-        // If verification passes (or was not required), write the plaintext to the destination
         destination.write_all(&plaintext_buffer)?;
 
         if !password_ok {
@@ -667,14 +609,9 @@ pub fn decrypt_stream<R: Read, W: Write>(
         Ok(())
     })();
 
-    match &result {
-        Ok(_) => {
-            event.outcome = Outcome::Success;
-        }
-        Err(e) => {
-            event.outcome = Outcome::Failure;
-            event.error_message = Some(e.to_string());
-        }
+    if let Err(e) = &result {
+        event.outcome = Outcome::Failure;
+        event.error_message = Some(e.to_string());
     }
 
     event.log();
@@ -683,14 +620,6 @@ pub fn decrypt_stream<R: Read, W: Write>(
 }
 
 /// Verifies a password against a base64-encoded Argon2 hash.
-///
-/// This function is designed to be resistant to timing attacks. It returns a boolean
-/// instead of a Result to prevent early exits in the calling function, which could
-/// leak timing information.
-///
-/// # Returns
-///
-/// `true` if the password is correct, `false` otherwise (including on parsing errors).
 pub(crate) fn check_password_hash(hash_b64: &str, password: &str) -> bool {
     let Ok(expected_hash_bytes) = base64_standard.decode(hash_b64) else {
         return false;

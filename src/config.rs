@@ -46,6 +46,17 @@ pub struct SecretsConfig {
     // pub google: Option<GoogleConfig>,
 }
 
+/// Configuration for auditing.
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub struct AuditConfig {
+    /// Path to the audit log file.
+    pub log_path: String,
+    /// Path to the private key used for signing the audit log.
+    /// If not provided, the log will not be signed.
+    #[serde(default)]
+    pub signing_key_path: Option<String>,
+}
+
 // TODO: Google provider disabled due to compilation errors.
 // /// Configuration for Google Cloud Secret Manager.
 // #[derive(Serialize, Deserialize, Debug, Clone, Default)]
@@ -152,6 +163,9 @@ pub struct IronCryptConfig {
     /// Configuration for data type specific key management.
     #[serde(default)]
     pub data_type_config: Option<DataTypeConfig>,
+    /// Configuration for auditing.
+    #[serde(default)]
+    pub audit: Option<AuditConfig>,
 }
 
 impl Default for IronCryptConfig {
@@ -169,6 +183,7 @@ impl Default for IronCryptConfig {
             password_criteria: PasswordCriteria::default(),
             secrets: None,
             data_type_config: None,
+            audit: None,
         }
     }
 }

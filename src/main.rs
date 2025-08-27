@@ -5,14 +5,13 @@ use ironcrypt::{
     algorithms::SymmetricAlgorithm,
     decrypt_stream, ecc_utils, encrypt_stream, generate_rsa_keys,
     keys::PublicKey,
-    load_private_key, load_public_key,
     save_keys_to_files, Argon2Config, IronCrypt, IronCryptConfig, PasswordCriteria,
 };
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
 use std::fs::File;
-use std::io::{Read, Write};
+use std::io::Read;
 use std::process;
 #[cfg(feature = "interactive")]
 use std::time::Duration;
@@ -856,100 +855,76 @@ async fn main() {
             } => {
                 let start = metrics::metrics_start();
                 let result: Result<(), String> = (async {
-                use ironcrypt::StreamHeader;
-                use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
-                use base64::Engine;
-                use rsa::Oaep;
-                use rsa::rand_core::OsRng;
-                use sha2::Sha256;
-
-                if directory.is_some() {
-                    return Err("Key rotation for directories is not yet supported.".into());
-                }
-                let file_path = file.ok_or_else(|| {
-                    "Please specify a file to rotate with --file".to_string()
-                })?;
-
-                // 1. Generate new key if it doesn't exist
-                let new_key_size = key_size.unwrap_or(2048);
-                let new_public_key_path =
-                    format!("{}/public_key_{}.pem", key_directory, new_version);
-                if std::fs::metadata(&new_public_key_path).is_err() {
-                    let (private_key, public_key) = generate_rsa_keys(new_key_size).map_err(|e| e.to_string())?;
-                    let new_private_key_path =
-                        format!("{}/private_key_{}.pem", key_directory, new_version);
-                    save_keys_to_files(
-                        &private_key,
-                        &public_key,
-                        &new_private_key_path,
-                        &new_public_key_path,
-                        passphrase.as_deref(),
-                    ).map_err(|e| e.to_string())?;
-                }
-
-                // 2. Load keys
-                let old_private_key_path =
-                    format!("{}/private_key_{}.pem", key_directory, old_version);
-                let old_private_key = load_private_key(&old_private_key_path, passphrase.as_deref()).map_err(|e| e.to_string())?;
-                let new_public_key = load_public_key(&new_public_key_path).map_err(|e| e.to_string())?;
-
-                // 3. Open files
-                let mut source_file = File::open(&file_path).map_err(|e| e.to_string())?;
-                let temp_dest_file = NamedTempFile::new().map_err(|e| e.to_string())?;
-
-                // 4. Read old header
-                let header_len = source_file.read_u64::<BigEndian>().map_err(|e| e.to_string())?;
-                let mut header_bytes = vec![0; header_len as usize];
-                source_file.read_exact(&mut header_bytes).map_err(|e| e.to_string())?;
-                let old_header: StreamHeader = serde_json::from_slice(&header_bytes).map_err(|e| e.to_string())?;
-
-                // This is a simplified rotation logic. A real implementation would need to handle V2 headers with multiple recipients.
-                let (old_key_version, old_encrypted_sym_key, nonce, password_hash) = match old_header {
-                    StreamHeader::V1(h) => (h.key_version, h.encrypted_symmetric_key, h.nonce, h.password_hash),
-                    StreamHeader::V2(h) => {
-                        let info = h.recipients.iter().find(|r| r.key_version == old_version).ok_or("Old key version not found in recipients list".to_string())?;
-                        (info.key_version.clone(), info.encrypted_symmetric_key.clone(), h.nonce, h.password_hash)
+                    if directory.is_some() {
+                        return Err("Key rotation for directories is not yet supported.".into());
                     }
-                    StreamHeader::V3(_) => {
-                        return Err("Key rotation for V3 headers is not yet supported.".into());
+                    let file_path = file.ok_or_else(|| {
+                        "Please specify a file to rotate with --file".to_string()
+                    })?;
+
+                    // 1. Set up configs. We need an IronCrypt instance to call re_encrypt_data.
+                    // The instance is configured for the *old* key, which is needed to decrypt the
+                    // existing file's symmetric key.
+                    let mut config = IronCryptConfig::default();
+                    let mut data_type_config = ironcrypt::config::DataTypeConfig::new();
+                    data_type_config.insert(
+                        ironcrypt::DataType::Generic,
+                        ironcrypt::config::KeyManagementConfig {
+                            key_directory: key_directory.clone(),
+                            key_version: old_version.clone(),
+                            passphrase,
+                        },
+                    );
+                    config.data_type_config = Some(data_type_config);
+
+                    // 2. Generate new key if it doesn't exist.
+                    let new_public_key_path =
+                        format!("{}/public_key_{}.pem", key_directory, new_version);
+                    if std::fs::metadata(&new_public_key_path).is_err() {
+                        println!("Generating new key for version '{}'...", new_version);
+                        let (private_key, public_key) =
+                            generate_rsa_keys(key_size.unwrap_or(2048))
+                                .map_err(|e| e.to_string())?;
+                        let new_private_key_path =
+                            format!("{}/private_key_{}.pem", key_directory, new_version);
+                        save_keys_to_files(
+                            &private_key,
+                            &public_key,
+                            &new_private_key_path,
+                            &new_public_key_path,
+                            None, // Passphrase for new key is not supported in this flow yet
+                        )
+                        .map_err(|e| e.to_string())?;
                     }
-                    StreamHeader::V4(_) => {
-                        return Err("Key rotation for V4 headers is not yet supported.".into());
-                    }
-                };
 
-                if old_key_version != old_version {
-                    return Err(format!(
-                        "File key version '{}' does not match expected old version '{}'",
-                        old_key_version, old_version
-                    ));
-                }
+                    // 3. Create an IronCrypt instance configured for the old key.
+                    // This instance will be used to call the re-encryption logic.
+                    let crypt = IronCrypt::new(config, ironcrypt::DataType::Generic)
+                        .await
+                        .map_err(|e| e.to_string())?;
 
-                // 5. Re-encrypt symmetric key
-                let sym_key_ciphertxt = base64::engine::general_purpose::STANDARD.decode(&old_encrypted_sym_key).map_err(|e| e.to_string())?;
-                let sym_key_plaintxt = old_private_key.decrypt(Oaep::new::<Sha256>(), &sym_key_ciphertxt).map_err(|e| e.to_string())?;
-                let new_sym_key_ciphertxt = new_public_key.encrypt(&mut OsRng, Oaep::new::<Sha256>(), &sym_key_plaintxt).map_err(|e| e.to_string())?;
+                    // 4. Load the new public key.
+                    let new_public_key = ironcrypt::load_any_public_key(&new_public_key_path)
+                        .map_err(|e| e.to_string())?;
 
-                // 6. Write new header and copy ciphertext
-                let new_header = StreamHeader::V1(ironcrypt::EncryptedStreamHeaderV1 {
-                    key_version: new_version.clone(),
-                    encrypted_symmetric_key: base64::engine::general_purpose::STANDARD.encode(&new_sym_key_ciphertxt),
-                    nonce,
-                    password_hash,
-                });
-                let new_header_json = serde_json::to_string(&new_header).map_err(|e| e.to_string())?;
+                    // 5. Read the original encrypted file content.
+                    // This is inefficient for large files but required because the current
+                    // re_encrypt_data function works on in-memory data.
+                    let encrypted_json =
+                        std::fs::read_to_string(&file_path).map_err(|e| e.to_string())?;
 
-                {
-                    let mut temp_writer = std::io::BufWriter::new(&temp_dest_file);
-                    temp_writer.write_u64::<BigEndian>(new_header_json.len() as u64).map_err(|e| e.to_string())?;
-                    temp_writer.write_all(new_header_json.as_bytes()).map_err(|e| e.to_string())?;
-                    std::io::copy(&mut source_file, &mut temp_writer).map_err(|e| e.to_string())?;
-                }
+                    // 6. Perform the key rotation.
+                    let re_encrypted_json = crypt
+                        .re_encrypt_data(&encrypted_json, &new_public_key, &new_version)
+                        .map_err(|e| e.to_string())?;
 
-                // 7. Replace original file
-                temp_dest_file.persist(&file_path).map_err(|e| e.to_string())?;
+                    // 7. Write the re-encrypted data back to the original file.
+                    std::fs::write(&file_path, re_encrypted_json).map_err(|e| e.to_string())?;
 
-                println!("Key for file '{}' rotated successfully to version '{}'.", file_path, new_version);
+                    println!(
+                        "Key for file '{}' rotated successfully to version '{}'.",
+                        file_path, new_version
+                    );
                     Ok(())
                 })
                 .await;
