@@ -32,6 +32,7 @@ pub struct SecretsConfig {
     /// e.g., "vault"
     pub provider: String,
     /// Configuration for HashiCorp Vault.
+    #[cfg(feature = "vault")]
     #[serde(default)]
     pub vault: Option<VaultConfig>,
     /// Configuration for AWS Secrets Manager.
@@ -80,6 +81,7 @@ pub struct AwsConfig {
 }
 
 /// Configuration for HashiCorp Vault.
+#[cfg(feature = "vault")]
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct VaultConfig {
     /// The address of the Vault server.

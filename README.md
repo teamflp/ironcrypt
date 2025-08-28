@@ -15,14 +15,15 @@
   - [Contribution](#contribution)
   - [License](#license)
 
-**IronCrypt** is a Command-Line Interface (CLI) tool and Rust library dedicated to secure password and data encryption. By combining the **Argon2** hashing algorithm, **AES-256-GCM** encryption, and **RSA** for key management, IronCrypt provides a robust solution to ensure your application’s data confidentiality and password security.
+**IronCrypt** is a Command-Line Interface (CLI) tool and Rust library dedicated to secure password and data encryption. By combining the **Argon2** hashing algorithm, **AES-256-GCM** or **XChaCha20-Poly1305** for symmetric encryption, and modern asymmetric cryptography like **RSA** or **Elliptic Curve Cryptography (ECC)**, IronCrypt provides a robust, flexible solution to ensure your application’s data confidentiality and password security.
 
 ---
 
 ## Features
 
-- **Hybrid Encryption (RSA + AES):** IronCrypt uses a smart combination of encryption methods. It encrypts your data with AES-256 (very fast and secure), and then encrypts the AES key itself with RSA. This is an industry-standard technique called "envelope encryption" that combines the best of both worlds: the speed of symmetric encryption and the secure key management of asymmetric encryption.
-- **Multi-Recipient Encryption**: Natively supports encrypting a single file or directory for multiple users. Each user can decrypt the data with their own unique private key, without needing to share secrets.
+- **Modern, Hybrid Encryption:** IronCrypt uses a robust hybrid encryption model. It encrypts data with a high-performance symmetric cipher (AES-256-GCM or XChaCha20-Poly1305) and protects the symmetric key using state-of-the-art asymmetric cryptography. This "envelope encryption" provides the best of both worlds: the speed of symmetric ciphers and the secure key management of public-key cryptography.
+- **Flexible Asymmetric Cryptography:** Choose between **RSA** for broad compatibility or **Elliptic Curve Cryptography (ECC)** for higher performance and smaller key sizes, offering equivalent security with less overhead. Both are fully supported for encryption and digital signatures.
+- **Multi-Recipient Encryption**: Natively supports encrypting a single file or directory for multiple users, even with different key types (e.g., some recipients using RSA, others ECC). Each user can decrypt the data with their own unique private key, without needing to share secrets.
 - **Passphrase-Encrypted Keys**: Private keys can be optionally encrypted with a user-provided passphrase for an added layer of security, protecting them even if the key files are exposed.
 - **State-of-the-Art Password Hashing:** For passwords, IronCrypt uses Argon2, currently considered one of the most secure hashing algorithms in the world. It is specifically designed to resist modern GPU-based brute-force attacks, providing much greater security than older algorithms.
 - **Advanced Key Management:** The built-in key versioning system (`-v v1`, `-v v2`) and the dedicated `rotate-key` command allow you to update your encryption keys over time. This automates the process of migrating to a new key without having to manually decrypt and re-encrypt all your data. IronCrypt can load both modern PKCS#8 keys and legacy PKCS#1 keys, ensuring broad compatibility.
@@ -289,7 +290,8 @@ By default, all features are enabled. To create a custom build, you must first d
 *   `aws`: Enables support for AWS Secrets Manager.
 *   `azure`: Enables support for Azure Key Vault.
 *   `gcp`: Enables support for Google Cloud Secret Manager. (Note: Currently non-functional, will result in an error at runtime).
-*   `cloud`: A meta-feature that enables all cloud providers (`aws`, `azure`, `gcp`).
+*   `vault`: Enables support for HashiCorp Vault.
+*   `cloud`: A meta-feature that enables all cloud providers (`aws`, `azure`, `gcp`, `vault`).
 *   `full`: A meta-feature that enables all of the above features. This is the default.
 
 **Local Builds with `cargo`:**
@@ -900,6 +902,53 @@ IronCrypt can be configured in three ways, in order of precedence:
 3.  **Command-Line Arguments:** Flags like `--key-directory` override all other methods.
 
 For library usage, you can construct an `IronCryptConfig` struct and pass it to `IronCrypt::new`.
+
+### Cryptographic Algorithm Configuration
+
+You can customize the cryptographic algorithms used by IronCrypt in your `ironcrypt.toml` file.
+
+```toml
+# Set a predefined standard for algorithms and key sizes.
+# Options: "nist_p256", "nist_p384", "rsa_2048", "rsa_4096"
+# If set, the specific algorithm settings below are ignored.
+standard = "nist_p256"
+```
+
+Alternatively, you can specify a custom combination of algorithms:
+
+```toml
+standard = "custom"
+# Symmetric algorithm for data encryption. Options: "aes_256_gcm", "chacha20_poly1305"
+symmetric_algorithm = "chacha20_poly1305"
+# Asymmetric algorithm for key encapsulation. Options: "rsa", "ecc"
+asymmetric_algorithm = "ecc"
+# RSA key size (in bits), only used if asymmetric_algorithm is "rsa".
+rsa_key_size = 4096
+```
+
+Using **ECC (nist_p256)** is recommended for new applications due to its excellent performance and smaller key sizes compared to RSA.
+
+### Secret Management Configuration
+
+To use IronCrypt with a secret management system like HashiCorp Vault, AWS Secrets Manager, or Azure Key Vault, you need to enable the corresponding feature flag during compilation and configure it in your `ironcrypt.toml` file.
+
+First, specify the provider you want to use:
+
+```toml
+[secrets]
+provider = "vault" # or "aws", "azure"
+```
+
+Then, provide the specific configuration for your chosen provider.
+
+#### HashiCorp Vault (`vault` feature)
+
+```toml
+[secrets.vault]
+address = "http://127.0.0.1:8200" # Address of your Vault server
+token = "YOUR_VAULT_TOKEN"        # Vault token with access to the secret engine
+mount = "secret"                  # Mount path of the KVv2 secrets engine (optional, defaults to "secret")
+```
 
 ---
 
