@@ -339,6 +339,437 @@ Here is a summary table of all available commands:
 
 A full list of commands and their arguments can be viewed by running `ironcrypt --help`. To get help for a specific command, run `ironcrypt <command> --help`.
 
+---
+
+## Getting Started with Examples
+
+This section provides practical, step-by-step examples for beginners to get started with IronCrypt quickly. All examples use clear, concrete commands that you can copy and paste.
+
+### Quick Start: CLI Examples
+
+#### 1. Generate RSA Keys
+
+First, you need to generate a pair of RSA keys (private and public) that will be used for encryption and decryption:
+
+```sh
+# Generate a new RSA key pair version "v1" with default settings (2048-bit keys)
+ironcrypt generate --version v1
+
+# This creates two files in the "keys" directory:
+# - keys/private_key_v1.pem (keep this secret!)
+# - keys/public_key_v1.pem (can be shared)
+```
+
+**Advanced key generation examples:**
+
+```sh
+# Generate keys with a custom directory
+ironcrypt generate --version v1 --directory my_keys
+
+# Generate stronger 4096-bit keys
+ironcrypt generate --version v2 --key-size 4096
+
+# Generate keys protected with a passphrase (recommended for production)
+ironcrypt generate --version v3 --passphrase "MySecurePassphrase123!"
+
+# Generate ECC keys instead of RSA (faster, smaller)
+ironcrypt generate --version v4 --key-type ecc
+```
+
+#### 2. Encrypt and Decrypt Files
+
+Once you have keys, you can encrypt files for secure storage or transmission:
+
+```sh
+# Create a test file to encrypt
+echo "This is my secret document content!" > secret.txt
+
+# Encrypt the file using v1 public key
+ironcrypt encrypt-file \
+  --input-file secret.txt \
+  --output-file secret.txt.enc \
+  --key-versions v1
+
+# Decrypt the file using v1 private key
+ironcrypt decrypt-file \
+  --input-file secret.txt.enc \
+  --output-file secret_decrypted.txt \
+  --key-version v1
+
+# Verify the decryption worked
+cat secret_decrypted.txt
+```
+
+**Multi-recipient encryption example:**
+
+```sh
+# Generate keys for multiple users
+ironcrypt generate --version alice
+ironcrypt generate --version bob
+
+# Encrypt a file so both Alice and Bob can decrypt it
+ironcrypt encrypt-file \
+  --input-file important_document.pdf \
+  --output-file document.enc \
+  --key-versions alice \
+  --key-versions bob
+
+# Alice can decrypt with her private key
+ironcrypt decrypt-file \
+  --input-file document.enc \
+  --output-file document_for_alice.pdf \
+  --key-version alice
+
+# Bob can decrypt with his private key  
+ironcrypt decrypt-file \
+  --input-file document.enc \
+  --output-file document_for_bob.pdf \
+  --key-version bob
+```
+
+#### 3. Encrypt and Decrypt Directories
+
+You can encrypt entire directories (they are compressed into archives first):
+
+```sh
+# Create a test directory with some files
+mkdir my_project
+echo "# My Project" > my_project/README.md
+echo "print('Hello World')" > my_project/main.py
+mkdir my_project/data
+echo "secret,data,here" > my_project/data/secrets.csv
+
+# Encrypt the entire directory
+ironcrypt encrypt-dir \
+  --input-dir my_project \
+  --output-file my_project.enc \
+  --key-versions v1
+
+# Decrypt the directory to a new location
+ironcrypt decrypt-dir \
+  --input-file my_project.enc \
+  --output-dir my_project_restored \
+  --key-version v1
+
+# Verify the directory was restored correctly
+ls -la my_project_restored/
+```
+
+#### 4. Password-Based Additional Security
+
+Add an extra layer of security with passwords:
+
+```sh
+# Encrypt with both RSA keys AND a password
+ironcrypt encrypt-file \
+  --input-file sensitive.txt \
+  --output-file sensitive.enc \
+  --key-versions v1 \
+  --password "ExtraSecurityLayer123!"
+
+# Decrypt requires both the private key AND the password
+ironcrypt decrypt-file \
+  --input-file sensitive.enc \
+  --output-file sensitive_restored.txt \
+  --key-version v1 \
+  --password "ExtraSecurityLayer123!"
+```
+
+### Rust Library Examples
+
+#### Example 1: Basic Password Encryption and Verification
+
+This example shows how to encrypt and verify passwords in your Rust application:
+
+```rust
+use ironcrypt::{IronCrypt, IronCryptConfig, DataType, config::KeyManagementConfig};
+use std::collections::HashMap;
+use std::error::Error;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
+    // 1. Create a temporary directory for this example
+    let temp_dir = tempfile::tempdir()?;
+    let key_dir = temp_dir.path().to_str().unwrap();
+    
+    // 2. Configure IronCrypt with the key directory
+    let mut config = IronCryptConfig::default();
+    let mut data_type_config = HashMap::new();
+    data_type_config.insert(
+        DataType::Generic,
+        KeyManagementConfig {
+            key_directory: key_dir.to_string(),
+            key_version: "v1".to_string(),
+            passphrase: None,
+        },
+    );
+    config.data_type_config = Some(data_type_config);
+    
+    // 3. Initialize IronCrypt (this automatically generates keys if they don't exist)
+    let crypt = IronCrypt::new(config, DataType::Generic).await?;
+    println!("IronCrypt initialized successfully!");
+    
+    // 4. Encrypt a password (this hashes with Argon2 then encrypts)
+    let password = "MySecurePassword123!";
+    let encrypted_data = crypt.encrypt_password(password)?;
+    println!("Password encrypted successfully!");
+    println!("Encrypted data: {}", encrypted_data);
+    
+    // 5. Verify the password (returns true if correct)
+    let is_valid = crypt.verify_password(&encrypted_data, password)?;
+    println!("Password verification: {}", if is_valid { "SUCCESS" } else { "FAILED" });
+    
+    // 6. Try with wrong password (should fail)
+    let wrong_password = "WrongPassword";
+    let is_wrong_valid = crypt.verify_password(&encrypted_data, wrong_password)?;
+    println!("Wrong password verification: {}", if is_wrong_valid { "SUCCESS" } else { "FAILED" });
+    
+    Ok(())
+}
+```
+
+#### Example 2: File Encryption with Generated Keys
+
+This example shows how to encrypt and decrypt files programmatically:
+
+```rust
+use ironcrypt::{generate_rsa_keys, save_keys_to_files, load_public_key, load_private_key};
+use ironcrypt::{encrypt_stream, decrypt_stream, PrivateKey, PublicKey};
+use ironcrypt::{PasswordCriteria, Argon2Config};
+use ironcrypt::algorithms::SymmetricAlgorithm;
+use std::io::Cursor;
+use std::error::Error;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
+    // 1. Generate RSA keys programmatically
+    let (private_key, public_key) = generate_rsa_keys(2048)?;
+    println!("RSA key pair generated successfully!");
+    
+    // 2. Save keys to files
+    save_keys_to_files(
+        &private_key,
+        &public_key,
+        "my_private_key.pem",
+        "my_public_key.pem",
+        None, // No passphrase protection
+    )?;
+    println!("Keys saved to files!");
+    
+    // 3. Prepare data to encrypt
+    let original_data = "This is my secret message that will be encrypted!";
+    let mut source = Cursor::new(original_data.as_bytes());
+    let mut encrypted_dest = Cursor::new(Vec::new());
+    
+    // 4. Encrypt the data
+    let mut password = "AdditionalSecurityPassword123!".to_string();
+    let pk_enum = PublicKey::Rsa(public_key);
+    let recipients = vec![(&pk_enum, "v1")];
+    
+    encrypt_stream(
+        &mut source,
+        &mut encrypted_dest,
+        &mut password,
+        recipients,
+        None, // No signing key
+        &PasswordCriteria::default(),
+        Argon2Config::default(),
+        true, // Hash the password
+        SymmetricAlgorithm::Aes256Gcm,
+    )?;
+    println!("Data encrypted successfully!");
+    
+    // 5. Decrypt the data
+    encrypted_dest.set_position(0); // Reset to beginning for reading
+    let mut decrypted_dest = Cursor::new(Vec::new());
+    let sk_enum = PrivateKey::Rsa(private_key);
+    
+    decrypt_stream(
+        &mut encrypted_dest,
+        &mut decrypted_dest,
+        &sk_enum,
+        "v1",
+        "AdditionalSecurityPassword123!",
+        None, // No signature verification
+    )?;
+    
+    // 6. Verify the decryption
+    let decrypted_data = String::from_utf8(decrypted_dest.into_inner())?;
+    println!("Data decrypted successfully!");
+    println!("Original: {}", original_data);
+    println!("Decrypted: {}", decrypted_data);
+    println!("Match: {}", original_data == decrypted_data);
+    
+    Ok(())
+}
+```
+
+#### Example 3: Loading Configuration from ironcrypt.toml
+
+This example shows how to use a configuration file to customize IronCrypt's behavior:
+
+**Create `ironcrypt.toml` file:**
+
+```toml
+# ironcrypt.toml - IronCrypt Configuration File
+
+# -------------------------------------------------------------------
+# Cryptography Settings
+# -------------------------------------------------------------------
+[cryptography]
+# Use custom settings instead of preset standards
+standard = "Custom"
+
+# Use ChaCha20-Poly1305 for symmetric encryption (faster on some hardware)
+symmetric_algorithm = "ChaCha20Poly1305"
+
+# Use RSA for asymmetric encryption
+asymmetric_algorithm = "Rsa"
+
+# Use stronger 4096-bit RSA keys
+rsa_key_size = 4096
+
+# -------------------------------------------------------------------
+# Password Hashing Settings (Argon2)
+# -------------------------------------------------------------------
+[hashing]
+# Increase memory cost for stronger password hashing (128 MiB)
+argon2_memory_cost = 131072
+
+# Increase time cost for slower but more secure hashing
+argon2_time_cost = 5
+
+# Use multiple threads for hashing (adjust based on your CPU cores)
+argon2_parallelism = 2
+
+# -------------------------------------------------------------------
+# Password Strength Requirements
+# -------------------------------------------------------------------
+[password_policy]
+# Require longer passwords
+min_length = 16
+max_length = 256
+
+# Minimum counts for each character type (use 0 to disable requirement)
+uppercase = 2
+lowercase = 2
+digits = 2  
+special_chars = 2
+
+# Forbid common weak patterns
+disallowed_patterns = ["password", "123456", "qwerty", "admin", "letmein"]
+```
+
+**Rust code to use custom configuration:**
+
+```rust
+use ironcrypt::{IronCrypt, IronCryptConfig, DataType, config::KeyManagementConfig};
+use ironcrypt::{CryptoStandard, PasswordCriteria};
+use ironcrypt::algorithms::{SymmetricAlgorithm, AsymmetricAlgorithm};
+use std::collections::HashMap;
+use std::error::Error;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
+    // 1. Create a custom configuration (equivalent to loading from ironcrypt.toml)
+    let mut config = IronCryptConfig {
+        // Use custom cryptographic settings
+        standard: CryptoStandard::Custom,
+        symmetric_algorithm: SymmetricAlgorithm::ChaCha20Poly1305,
+        asymmetric_algorithm: AsymmetricAlgorithm::Rsa,
+        rsa_key_size: 4096,
+        
+        // Stronger Argon2 settings
+        argon2_memory_cost: 131072, // 128 MiB
+        argon2_time_cost: 5,
+        argon2_parallelism: 2,
+        
+        // Custom password policy
+        password_criteria: PasswordCriteria {
+            min_length: 16,
+            max_length: Some(256),
+            uppercase: Some(2),
+            lowercase: Some(2),
+            digits: Some(2),
+            special_chars: Some(2),
+            disallowed_patterns: vec![
+                "password".to_string(),
+                "123456".to_string(),
+                "qwerty".to_string(),
+                "admin".to_string(),
+                "letmein".to_string(),
+            ],
+        },
+        
+        // Default values for other settings
+        buffer_size: 4096,
+        secrets: None,
+        data_type_config: None,
+        audit: None,
+    };
+    
+    // 2. Set up key management 
+    let mut data_type_config = HashMap::new();
+    data_type_config.insert(
+        DataType::Generic,
+        KeyManagementConfig {
+            key_directory: "keys".to_string(),
+            key_version: "v1".to_string(),
+            passphrase: None,
+        },
+    );
+    config.data_type_config = Some(data_type_config);
+    
+    // 3. Display the configuration
+    println!("Configuration created with custom settings:");
+    println!("- Cryptographic standard: {:?}", config.standard);
+    println!("- Symmetric algorithm: {:?}", config.symmetric_algorithm);
+    println!("- RSA key size: {} bits", config.rsa_key_size);
+    println!("- Argon2 memory cost: {} KiB", config.argon2_memory_cost);
+    println!("- Minimum password length: {}", config.password_criteria.min_length);
+    
+    // 4. Initialize IronCrypt with the custom configuration
+    let crypt = IronCrypt::new(config, DataType::Generic).await?;
+    println!("IronCrypt initialized with custom configuration!");
+    
+    // 5. Test password encryption with the stronger settings
+    let strong_password = "MyVery$ecureP@ssw0rd2024!!";
+    let encrypted_data = crypt.encrypt_password(strong_password)?;
+    println!("Password encrypted with stronger Argon2 settings!");
+    
+    // 6. Verify the password
+    let is_valid = crypt.verify_password(&encrypted_data, strong_password)?;
+    println!("Password verification: {}", if is_valid { "SUCCESS" } else { "FAILED" });
+    
+    Ok(())
+}
+```
+
+**Note:** To load configuration from an `ironcrypt.toml` file automatically, place the file in your working directory when running the CLI commands. The CLI tool will automatically detect and use the configuration file. For library usage, you can manually parse the TOML file using the `toml` crate and map the values to `IronCryptConfig` struct fields.
+
+### Best Practices and Tips
+
+1. **Key Security**: Always protect your private keys. Use passphrases for production environments.
+
+2. **Key Backup**: Keep secure backups of your keys. Without the private key, encrypted data cannot be recovered.
+
+3. **Multi-recipient Encryption**: Use multiple key versions to encrypt files for different users or systems.
+
+4. **Password Policies**: Implement strong password policies using the configuration file.
+
+5. **Regular Key Rotation**: Use the `rotate-key` command to update keys periodically for better security.
+
+6. **Testing**: Always test your encryption and decryption processes with test data before using in production.
+
+### Additional Resources
+
+- **Configuration Reference**: See the [Configuration](#configuration) section for all available options
+- **Security Best Practices**: Review the [Security and Best Practices](#security-and-best-practices) section
+- **Full API Documentation**: Available at [docs.rs/ironcrypt](https://docs.rs/ironcrypt)
+- **Example Code**: Check the `examples/` directory for more code examples
+
+---
+
 #### `generate`
 Generates a new RSA key pair (private and public).
 
