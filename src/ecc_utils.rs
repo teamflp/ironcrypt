@@ -9,8 +9,11 @@ use rand::rngs::OsRng;
 use aes_gcm::{Aes256Gcm, Key, Nonce};
 use aes_gcm::aead::{Aead, KeyInit};
 use hkdf::Hkdf;
+use p256::ecdsa::{Signature, SigningKey, VerifyingKey};
 use sha2::Sha256;
 use p256::ecdh;
+use signature::{Signer, Verifier};
+
 
 /// Generates a new P-256 key pair.
 pub fn generate_ecc_keys() -> Result<(SecretKey, PublicKey), IronCryptError> {
@@ -104,4 +107,25 @@ pub fn ecies_key_decap(
         .map_err(|e| IronCryptError::DecryptionError(e.to_string()))?;
 
     Ok(symmetric_key)
+}
+
+/// Signs a hash using ECDSA with a P-256 key.
+pub fn sign_hash_ecc(secret_key: &SecretKey, hash: &[u8]) -> Result<Vec<u8>, IronCryptError> {
+    let signing_key = SigningKey::from(secret_key);
+    let signature: Signature = signing_key.sign(hash);
+    Ok(signature.to_vec())
+}
+
+/// Verifies an ECDSA signature of a hash.
+pub fn verify_signature_ecc(
+    public_key: &PublicKey,
+    hash: &[u8],
+    signature_bytes: &[u8],
+) -> Result<(), IronCryptError> {
+    let signature = Signature::from_slice(signature_bytes)
+        .map_err(|e| IronCryptError::SignatureError(e.to_string()))?;
+    let verifying_key = VerifyingKey::from(public_key);
+    verifying_key
+        .verify(hash, &signature)
+        .map_err(|e| IronCryptError::SignatureVerificationFailed(e.to_string()))
 }

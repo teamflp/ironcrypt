@@ -9,6 +9,7 @@ pub mod azure;
 pub mod google;
 #[cfg(feature = "hsm")]
 pub mod hsm;
+#[cfg(feature = "vault")]
 pub mod vault;
 
 /// A trait for a generic secret store.

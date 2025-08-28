@@ -8,8 +8,10 @@ use crate::{
     handle_error::IronCryptError,
     keys::{PrivateKey, PublicKey},
     load_any_private_key, load_any_public_key, save_keys_to_files,
-    secrets::{vault::VaultStore, SecretStore},
+    secrets::SecretStore,
 };
+#[cfg(feature = "vault")]
+use crate::secrets::vault::VaultStore;
 #[cfg(feature = "aws")]
 use crate::secrets::aws::AwsStore;
 #[cfg(feature = "azure")]
@@ -179,6 +181,7 @@ impl IronCrypt {
 
         let secret_store = if let Some(secrets_config) = &config.secrets {
             match secrets_config.provider.as_str() {
+                #[cfg(feature = "vault")]
                 "vault" => {
                     let vault_config = secrets_config.vault.as_ref().ok_or_else(|| {
                         IronCryptError::ConfigurationError(
@@ -372,30 +375,16 @@ impl IronCrypt {
                     }
                 }
                 PublicKey::Ecc(ecc_pub_key) => {
-                    let ephemeral_secret = EphemeralSecret::random(&mut OsRng);
-                    let shared_secret = ephemeral_secret.diffie_hellman(ecc_pub_key);
-
-                    let hkdf = Hkdf::<Sha256>::new(None, shared_secret.raw_secret_bytes());
-                    let mut okm = [0u8; 32];
-                    hkdf.expand(b"ironcrypt-ecies", &mut okm)
-                        .map_err(|_| IronCryptError::KeyGenerationError("HKDF expansion failed".into()))?;
-
-                    let key_cipher = Aes256Gcm::new_from_slice(&okm)?;
-                    let key_nonce = Aes256Gcm::generate_nonce(&mut OsRng);
-                    let encrypted_symmetric_key = key_cipher.encrypt(&key_nonce, &symmetric_key[..])?;
-
-                    let mut final_payload = key_nonce.to_vec();
-                    final_payload.extend_from_slice(&encrypted_symmetric_key);
-
-                    let ephemeral_pub_key_pem = ephemeral_secret
-                        .public_key()
+                    let kek = ecc_utils::ecies_key_encap(ecc_pub_key, &symmetric_key)?;
+                    let ephemeral_public_key_pem = kek
+                        .ephemeral_pk
                         .to_public_key_pem(LineEnding::LF)
-                        .map_err(|_| IronCryptError::KeySavingError("Failed to encode ephemeral public key".into()))?;
+                        .map_err(|e| IronCryptError::KeySavingError(e.to_string()))?;
 
                     RecipientInfo::Ecc {
                         key_version: self.key_version.clone(),
-                        ephemeral_public_key: base64_standard.encode(ephemeral_pub_key_pem),
-                        encrypted_symmetric_key: base64_standard.encode(&final_payload),
+                        ephemeral_public_key: base64_standard.encode(ephemeral_public_key_pem),
+                        encrypted_symmetric_key: base64_standard.encode(kek.encapsulated_key),
                     }
                 }
             };
@@ -464,21 +453,12 @@ impl IronCrypt {
                     },
                 ) => {
                     let eph_pub_key_pem = base64_standard.decode(ephemeral_public_key)?;
-                    let eph_pub_key = p256::PublicKey::from_public_key_pem(&String::from_utf8(
-                        eph_pub_key_pem,
-                    )?)?;
-                    let shared_secret = ecdh::diffie_hellman(
-                        ecc_priv_key.to_nonzero_scalar(),
-                        eph_pub_key.as_affine(),
-                    );
-                    let hkdf = Hkdf::<Sha256>::new(None, shared_secret.raw_secret_bytes());
-                    let mut okm = [0u8; 32];
-                    hkdf.expand(b"ironcrypt-ecies", &mut okm)
-                        .map_err(|_| IronCryptError::DecryptionError("HKDF expansion failed".into()))?;
-                    let payload = base64_standard.decode(encrypted_symmetric_key)?;
-                    let (nonce, ciphertext) = payload.split_at(12);
-                    let key_cipher = Aes256Gcm::new_from_slice(&okm)?;
-                    key_cipher.decrypt(nonce.into(), ciphertext)?
+                    let eph_pub_key = p256::PublicKey::from_public_key_pem(
+                        &String::from_utf8(eph_pub_key_pem)?,
+                    )?;
+                    let encapsulated_key = base64_standard.decode(encrypted_symmetric_key)?;
+
+                    ecc_utils::ecies_key_decap(ecc_priv_key, &eph_pub_key, &encapsulated_key)?
                 }
                 _ => {
                     return Err(IronCryptError::DecryptionError(
@@ -571,21 +551,11 @@ impl IronCrypt {
                     },
                 ) => {
                     let eph_pub_key_pem = base64_standard.decode(ephemeral_public_key)?;
-                    let eph_pub_key = p256::PublicKey::from_public_key_pem(&String::from_utf8(
-                        eph_pub_key_pem,
-                    )?)?;
-                    let shared_secret = ecdh::diffie_hellman(
-                        ecc_priv_key.to_nonzero_scalar(),
-                        eph_pub_key.as_affine(),
-                    );
-                    let hkdf = Hkdf::<Sha256>::new(None, shared_secret.raw_secret_bytes());
-                    let mut okm = [0u8; 32];
-                    hkdf.expand(b"ironcrypt-ecies", &mut okm)
-                        .map_err(|_| IronCryptError::DecryptionError("HKDF expansion failed".into()))?;
-                    let payload = base64_standard.decode(encrypted_symmetric_key)?;
-                    let (nonce, ciphertext) = payload.split_at(12);
-                    let key_cipher = Aes256Gcm::new_from_slice(&okm)?;
-                    key_cipher.decrypt(nonce.into(), ciphertext)?
+                    let eph_pub_key = p256::PublicKey::from_public_key_pem(
+                        &String::from_utf8(eph_pub_key_pem)?,
+                    )?;
+                    let encapsulated_key = base64_standard.decode(encrypted_symmetric_key)?;
+                    ecc_utils::ecies_key_decap(ecc_priv_key, &eph_pub_key, &encapsulated_key)?
                 }
                 _ => {
                     return Err(IronCryptError::DecryptionError(
@@ -605,35 +575,16 @@ impl IronCrypt {
                     }
                 }
                 PublicKey::Ecc(ecc_pub_key) => {
-                    let ephemeral_secret = EphemeralSecret::random(&mut OsRng);
-                    let shared_secret = ephemeral_secret.diffie_hellman(ecc_pub_key);
-
-                    let hkdf = Hkdf::<Sha256>::new(None, shared_secret.raw_secret_bytes());
-                    let mut okm = [0u8; 32];
-                    hkdf.expand(b"ironcrypt-ecies", &mut okm)
-                        .map_err(|_| IronCryptError::KeyGenerationError("HKDF expansion failed".into()))?;
-
-                    let key_cipher = Aes256Gcm::new_from_slice(&okm)?;
-                    let key_nonce = Aes256Gcm::generate_nonce(&mut OsRng);
-                    let encrypted_symmetric_key =
-                        key_cipher.encrypt(&key_nonce, &symmetric_key[..])?;
-
-                    let mut final_payload = key_nonce.to_vec();
-                    final_payload.extend_from_slice(&encrypted_symmetric_key);
-
-                    let ephemeral_pub_key_pem = ephemeral_secret
-                        .public_key()
+                    let kek = ecc_utils::ecies_key_encap(ecc_pub_key, &symmetric_key)?;
+                    let ephemeral_public_key_pem = kek
+                        .ephemeral_pk
                         .to_public_key_pem(LineEnding::LF)
-                        .map_err(|_| {
-                            IronCryptError::KeySavingError(
-                                "Failed to encode ephemeral public key".into(),
-                            )
-                        })?;
+                        .map_err(|e| IronCryptError::KeySavingError(e.to_string()))?;
 
                     RecipientInfo::Ecc {
                         key_version: new_key_version.to_string(),
-                        ephemeral_public_key: base64_standard.encode(ephemeral_pub_key_pem),
-                        encrypted_symmetric_key: base64_standard.encode(&final_payload),
+                        ephemeral_public_key: base64_standard.encode(ephemeral_public_key_pem),
+                        encrypted_symmetric_key: base64_standard.encode(kek.encapsulated_key),
                     }
                 }
             };
@@ -684,20 +635,14 @@ impl IronCrypt {
             let passphrase = self.get_passphrase()?;
             let private_key = load_any_private_key(&private_key_path, passphrase.as_deref())?;
 
-            let rsa_private_key = match private_key {
-                PrivateKey::Rsa(key) => key,
-                PrivateKey::Ecc(_) => {
-                    return Err(IronCryptError::UnsupportedOperation(
-                        "Signing is only supported with RSA keys.".to_string(),
-                    ))
-                }
-            };
-
             let mut hasher = Sha256::new();
             hasher.update(data_to_sign);
             let hash = hasher.finalize();
 
-            let signature = rsa_utils::sign_hash(&rsa_private_key, &hash)?;
+            let signature = match private_key {
+                PrivateKey::Rsa(key) => rsa_utils::sign_hash(&key, &hash)?,
+                PrivateKey::Ecc(key) => ecc_utils::sign_hash_ecc(&key, &hash)?,
+            };
 
             Ok(base64_standard.encode(signature))
         })();
@@ -723,22 +668,20 @@ impl IronCrypt {
         event.signature_algorithm = Some("rsa-pkcs1v15-sha256".to_string());
 
         let verification_result = (|| {
-            let rsa_public_key = match &self.public_key {
-                PublicKey::Rsa(key) => key,
-                PublicKey::Ecc(_) => {
-                    return Err(IronCryptError::UnsupportedOperation(
-                        "Verification is only supported with RSA keys.".to_string(),
-                    ))
-                }
-            };
-
             let signature_bytes = base64_standard.decode(signature)?;
 
             let mut hasher = Sha256::new();
             hasher.update(data_to_verify);
             let hash = hasher.finalize();
 
-            rsa_utils::verify_signature(rsa_public_key, &hash, &signature_bytes)
+            match &self.public_key {
+                PublicKey::Rsa(key) => {
+                    rsa_utils::verify_signature(key, &hash, &signature_bytes)
+                }
+                PublicKey::Ecc(key) => {
+                    ecc_utils::verify_signature_ecc(key, &hash, &signature_bytes)
+                }
+            }
         })();
 
         match verification_result {
