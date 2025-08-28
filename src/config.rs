@@ -104,11 +104,11 @@ fn default_mount() -> String {
 ///
 /// Creating a custom configuration:
 /// ```
-/// use ironcrypt::config::{IronCryptConfig, PasswordCriteria};
- /// use ironcrypt::standards::CryptoStandard;
+/// use ironcrypt::config::{IronCryptConfig, PasswordCriteria, AuditConfig};
+/// use ironcrypt::standards::CryptoStandard;
 ///
 /// let custom_config = IronCryptConfig {
- ///     standard: CryptoStandard::Custom,
+///     standard: CryptoStandard::Custom,
 ///     symmetric_algorithm: ironcrypt::algorithms::SymmetricAlgorithm::ChaCha20Poly1305,
 ///     asymmetric_algorithm: ironcrypt::algorithms::AsymmetricAlgorithm::Ecc,
 ///     rsa_key_size: 4096,
@@ -122,6 +122,10 @@ fn default_mount() -> String {
 ///     },
 ///     secrets: None,
 ///     data_type_config: None,
+///     audit: Some(AuditConfig {
+///         log_path: String::from("/path/to/audit.log"),
+///         signing_key_path: Some(String::from("/path/to/signing_key")),
+///     }),
 /// };
 /// ```
 #[derive(Serialize, Deserialize, Debug, Clone)]
