@@ -2,6 +2,8 @@ use ironcrypt::{
     config::{AwsConfig, AzureConfig, KeyManagementConfig, SecretsConfig},
     DataType, IronCrypt, IronCryptConfig, SecretStore,
 };
+#[cfg(feature = "gcp")]
+use ironcrypt::GoogleConfig;
 use mockall::mock;
 use std::collections::HashMap;
 use std::error::Error;
@@ -84,6 +86,7 @@ async fn test_aws_provider_initialization() {
                 region: "us-east-1".to_string(),
             }),
             azure: None,
+            google: None,
         }),
         data_type_config: Some(data_type_config),
         ..Default::default()
@@ -97,30 +100,41 @@ async fn test_aws_provider_initialization() {
     assert!(ironcrypt.is_ok());
 }
 
-// TODO: This test is disabled because the Google Cloud secrets provider is disabled.
-// #[tokio::test]
-// async fn test_google_provider_initialization() {
-//     let key_dir = tempfile::tempdir().unwrap();
-//     let config = IronCryptConfig {
-//         secrets: Some(SecretsConfig {
-//             provider: "google".to_string(),
-//             vault: None,
-//             aws: None,
-//             azure: None,
-//             google: Some(ironcrypt::GoogleConfig {
-//                 project_id: "dummy-project".to_string(),
-//             }),
-//         }),
-//         ..Default::default()
-//     };
+#[cfg(feature = "gcp")]
+#[tokio::test]
+async fn test_google_provider_initialization() {
+    let key_dir = tempfile::tempdir().unwrap();
+    let mut data_type_config = HashMap::new();
+    data_type_config.insert(
+        DataType::Generic,
+        KeyManagementConfig {
+            key_directory: key_dir.path().to_str().unwrap().to_string(),
+            key_version: "v1".to_string(),
+            passphrase: None,
+        },
+    );
 
-//     // This test just checks that the Google client can be initialized without panicking.
-//     // It doesn't make any real calls to Google Cloud.
-//     let ironcrypt = IronCrypt::new(key_dir.path().to_str().unwrap(), "v1", config)
-//         .await;
+    let config = IronCryptConfig {
+        secrets: Some(SecretsConfig {
+            provider: "google".to_string(),
+            vault: None,
+            aws: None,
+            azure: None,
+            google: Some(GoogleConfig {
+                project_id: "dummy-project".to_string(),
+            }),
+        }),
+        data_type_config: Some(data_type_config),
+        ..Default::default()
+    };
 
-//     assert!(ironcrypt.is_ok());
-// }
+    // This test just checks that the Google client can be initialized without panicking.
+    // It doesn't make any real calls to Google Cloud.
+    let ironcrypt = IronCrypt::new(config, DataType::Generic)
+        .await;
+
+    assert!(ironcrypt.is_ok());
+}
 
 #[tokio::test]
 async fn test_azure_provider_initialization() {
@@ -143,6 +157,7 @@ async fn test_azure_provider_initialization() {
             azure: Some(AzureConfig {
                 vault_uri: "https://dummy.vault.azure.net".to_string(),
             }),
+            google: None,
         }),
         data_type_config: Some(data_type_config),
         ..Default::default()

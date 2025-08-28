@@ -147,6 +147,10 @@ pub mod standards;
 // Main configuration
 pub use config::{DataType, IronCryptConfig};
 
+// Configuration types for various providers
+#[cfg(feature = "gcp")]
+pub use config::GoogleConfig;
+
 // Key types
 pub use keys::{PrivateKey, PublicKey};
 

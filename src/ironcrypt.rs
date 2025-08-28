@@ -14,6 +14,8 @@ use crate::{
 use crate::secrets::aws::AwsStore;
 #[cfg(feature = "azure")]
 use crate::secrets::azure::AzureStore;
+#[cfg(feature = "gcp")]
+use crate::secrets::google::GoogleStore;
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{AeadCore, Aes256Gcm, Nonce};
 use argon2::password_hash::{PasswordHasher, SaltString};
@@ -210,9 +212,13 @@ impl IronCrypt {
                 }
                 #[cfg(feature = "gcp")]
                 "google" => {
-                    return Err(IronCryptError::ConfigurationError(
-                        "Google Cloud provider is not yet supported".to_string(),
-                    ))
+                    let google_config = secrets_config.google.as_ref().ok_or_else(|| {
+                        IronCryptError::ConfigurationError(
+                            "Google Cloud provider selected but no Google config provided".to_string(),
+                        )
+                    })?;
+                    let store = GoogleStore::new(google_config).await?;
+                    Some(Box::new(store) as Box<dyn SecretStore + Send + Sync>)
                 }
                 other => {
                     return Err(IronCryptError::ConfigurationError(format!(
