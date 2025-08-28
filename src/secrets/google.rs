@@ -9,6 +9,36 @@ use std::error::Error;
 use super::SecretStore;
 
 /// A secret store that uses Google Cloud Secret Manager.
+/// 
+/// This implementation provides secure secret storage and retrieval using Google Cloud's
+/// Secret Manager service. It automatically handles secret creation with default replication
+/// settings and manages secret versions.
+/// 
+/// # Authentication
+/// 
+/// This implementation uses the default Google Cloud authentication methods:
+/// - Service Account keys (via GOOGLE_APPLICATION_CREDENTIALS environment variable)
+/// - Application Default Credentials (ADC)
+/// - Google Cloud Shell credentials
+/// - gcloud user credentials
+/// 
+/// # Example
+/// 
+/// ```rust,no_run
+/// use ironcrypt::secrets::google::GoogleStore;
+/// use ironcrypt::config::GoogleConfig;
+/// 
+/// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+/// let config = GoogleConfig {
+///     project_id: "my-project-id".to_string(),
+/// };
+/// 
+/// let store = GoogleStore::new(&config).await?;
+/// store.set_secret("my-secret", "secret-value").await?;
+/// let value = store.get_secret("my-secret").await?;
+/// # Ok(())
+/// # }
+/// ```
 pub struct GoogleStore {
     client: SecretManagerService,
     project_id: String,
