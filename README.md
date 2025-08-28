@@ -9,6 +9,7 @@
   - [Installation](#installation)
   - [Usage](#usage)
     - [Command-Line Interface (CLI)](#command-line-interface-cli)
+    - [Getting Started with Examples](#getting-started-with-examples)
     - [As a Library (Crate)](#as-a-library-crate)
   - [Configuration](#configuration)
   - [Security Best Practices](#security-and-best-practices)
