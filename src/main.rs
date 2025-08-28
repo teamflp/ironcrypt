@@ -11,7 +11,7 @@ use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
 use std::fs::File;
-use std::io::Read;
+// use std::io::Read;  // Currently unused, commented out to avoid warning
 use std::process;
 #[cfg(feature = "interactive")]
 use std::time::Duration;
