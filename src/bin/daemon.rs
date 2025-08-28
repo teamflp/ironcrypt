@@ -1,18 +1,22 @@
 use axum::{
     body::Body,
     extract::{DefaultBodyLimit, State},
-    http::Request,
+    http::{header, Request, StatusCode},
+    middleware,
     response::Response,
     routing::post,
     Router,
 };
 use clap::{Parser, ValueEnum};
+use elliptic_curve::subtle::ConstantTimeEq;
 use futures::StreamExt;
 use ironcrypt::{
+    auth::{ApiKeyConfig, Permission},
     decrypt_stream, encrypt_stream,
     keys::{PrivateKey, PublicKey},
     load_private_key, load_public_key, Argon2Config, CryptoStandard, IronCryptConfig,
 };
+use sha2::{Digest, Sha512};
 use std::{io, net::SocketAddr, sync::Arc};
 use tokio::net::TcpListener;
 use tokio_util::io::{ReaderStream, SyncIoBridge};
@@ -26,6 +30,7 @@ struct AppState {
     private_key: Arc<PrivateKey>,
     key_version: String,
     config: Arc<IronCryptConfig>,
+    api_keys: Arc<Vec<ApiKeyConfig>>,
 }
 
 /// A `clap`-compatible enum for selecting the cryptographic standard.
@@ -69,6 +74,10 @@ struct Args {
     /// The cryptographic standard to use.
     #[arg(long, value_enum, default_value_t = CliCryptoStandard::Nist)]
     standard: CliCryptoStandard,
+
+    /// Path to the JSON file containing API key configurations.
+    #[arg(long, env = "IRONCRYPT_API_KEYS_FILE")]
+    api_keys_file: String,
 }
 
 #[tokio::main]
@@ -84,6 +93,26 @@ async fn main() {
 
     // Parse command-line arguments
     let args = Args::parse();
+
+    // Load and parse the API keys file
+    let api_keys_content = match std::fs::read_to_string(&args.api_keys_file) {
+        Ok(content) => content,
+        Err(e) => {
+            eprintln!(
+                "Failed to read API keys file at {}: {}",
+                args.api_keys_file, e
+            );
+            return;
+        }
+    };
+
+    let api_keys: Vec<ApiKeyConfig> = match serde_json::from_str(&api_keys_content) {
+        Ok(keys) => keys,
+        Err(e) => {
+            eprintln!("Failed to parse API keys file: {}", e);
+            return;
+        }
+    };
 
     // Load keys
     let public_key_path = format!("{}/public_key_{}.pem", args.key_directory, args.key_version);
@@ -123,12 +152,17 @@ async fn main() {
         private_key,
         key_version: args.key_version,
         config: Arc::new(config),
+        api_keys: Arc::new(api_keys),
     };
 
     // Build our application router
     let app = Router::new()
         .route("/encrypt", post(encrypt_handler))
         .route("/decrypt", post(decrypt_handler))
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            auth_middleware,
+        ))
         .with_state(state)
         .layer(TraceLayer::new_for_http())
         .layer(CorsLayer::permissive())
@@ -141,11 +175,69 @@ async fn main() {
     axum::serve(listener, app).await.unwrap();
 }
 
+use base64::Engine;
+
+async fn auth_middleware(
+    State(state): State<AppState>,
+    mut req: Request<Body>,
+    next: middleware::Next,
+) -> Result<Response, StatusCode> {
+    let auth_header = req
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|h| h.to_str().ok());
+    let token_b64 = match auth_header {
+        Some(h) if h.starts_with("Bearer ") => &h[7..],
+        _ => return Err(StatusCode::UNAUTHORIZED),
+    };
+
+    // Base64-decode the token first.
+    let token_bytes = match base64::engine::general_purpose::STANDARD.decode(token_b64) {
+        Ok(bytes) => bytes,
+        Err(_) => {
+            // If decoding fails, it's a bad token.
+            return Err(StatusCode::BAD_REQUEST);
+        }
+    };
+
+    // Now hash the decoded bytes.
+    let mut hasher = Sha512::new();
+    hasher.update(&token_bytes);
+    let received_hash_bytes = hasher.finalize();
+
+    for key_config in state.api_keys.iter() {
+        if let Ok(expected_hash_bytes) = hex::decode(&key_config.key_hash) {
+            if received_hash_bytes
+                .as_slice()
+                .ct_eq(&expected_hash_bytes)
+                .unwrap_u8()
+                == 1
+            {
+                // Match found, store permissions and proceed.
+                req.extensions_mut()
+                    .insert(Arc::new(key_config.permissions.clone()));
+                return Ok(next.run(req).await);
+            }
+        }
+    }
+
+    Err(StatusCode::UNAUTHORIZED)
+}
+
 /// Axum handler for the /encrypt endpoint.
 async fn encrypt_handler(
     State(state): State<AppState>,
     req: Request<Body>,
-) -> Response {
+) -> Result<Response, StatusCode> {
+    // Authorization check
+    let permissions = req
+        .extensions()
+        .get::<Arc<Vec<Permission>>>()
+        .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
+    if !permissions.contains(&Permission::Encrypt) {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
     // Get password from headers, or use an empty string
     let mut password = req
         .headers()
@@ -203,14 +295,23 @@ async fn encrypt_handler(
         }
     });
 
-    Response::new(response_body)
+    Ok(Response::new(response_body))
 }
 
 /// Axum handler for the /decrypt endpoint.
 async fn decrypt_handler(
     State(state): State<AppState>,
     req: Request<Body>,
-) -> Response {
+) -> Result<Response, StatusCode> {
+    // Authorization check
+    let permissions = req
+        .extensions()
+        .get::<Arc<Vec<Permission>>>()
+        .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
+    if !permissions.contains(&Permission::Decrypt) {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
     // Get password from headers
     let password = req
         .headers()
@@ -255,5 +356,5 @@ async fn decrypt_handler(
         }
     });
 
-    Response::new(response_body)
+    Ok(Response::new(response_body))
 }
