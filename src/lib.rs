@@ -129,6 +129,7 @@
 pub mod ffi;
 pub mod algorithms;
 pub mod audit;
+pub mod auth;
 pub mod config;
 pub mod criteria;
 pub mod ecc_utils;

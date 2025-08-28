@@ -1,0 +1,12 @@
+[
+  {
+    "description": "Clé pour une application de backup (chiffrement seul)",
+    "keyHash": "hash_de_votre_cle_generee_ici",
+    "permissions": ["encrypt"]
+  },
+  {
+    "description": "Clé pour un administrateur (accès complet)",
+    "keyHash": "hash_d_une_autre_cle_ici",
+    "permissions": ["encrypt", "decrypt"]
+  }
+]

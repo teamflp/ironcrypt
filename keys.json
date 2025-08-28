@@ -1,0 +1,12 @@
+[
+  {
+    "description": "Clé pour le chiffrement seulement",
+    "keyHash": "70ed0521f38abf0a2011673298654dc495961e381029d4039aad0ba6af84e026f905a41d9f99da9ea0233d79c758ea9390c1d9a138bfb3876ec3596e7e690bbf",
+    "permissions": ["encrypt"]
+  },
+  {
+    "description": "Clé avec accès complet",
+    "keyHash": "8c28843bb151da875945f057bff8f601078bdc5431b115a80910937ecc54a1e94ff071ff9ad9ace330efd8de8f7939aa1d1ad27328cf32082ac62c70123103a9",
+    "permissions": ["encrypt", "decrypt"]
+  }
+]

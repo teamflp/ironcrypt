@@ -583,6 +583,74 @@ ironcrypt daemon --key-version v3 --key-directory my_keys --passphrase "a-very-s
 
 The daemon will run in the foreground. For production use, you should run it as a system service (e.g., using `systemd`).
 
+#### Daemon Authentication
+
+To secure the daemon and control access, IronCrypt uses an API key system with granular permissions. This ensures that only authorized clients can perform encryption and decryption operations.
+
+**1. Generate an API Key**
+
+First, generate a new secret key and its corresponding hash using the `generate-api-key` command:
+
+```sh
+ironcrypt generate-api-key
+```
+
+The output will give you two crucial pieces of information:
+*   **Clé API secrète:** The secret key that your client applications will use. **Treat this like a password.**
+*   **Hash de la clé API:** A secure hash of the key that you will use to configure the daemon.
+
+**2. Create a Key Configuration File**
+
+Next, create a JSON file (e.g., `keys.json`) to define your keys and their permissions. The daemon will load this file at startup. Use the hash from the previous step.
+
+*Example `keys.json`:*
+```json
+[
+  {
+    "description": "Backup service key (encrypt-only)",
+    "keyHash": "hash_from_generate_api_key_command",
+    "permissions": ["encrypt"]
+  },
+  {
+    "description": "Admin key (full access)",
+    "keyHash": "hash_of_another_key",
+    "permissions": ["encrypt", "decrypt"]
+  }
+]
+```
+A template file named `keys.json.example` is available in the repository.
+
+**3. Start the Daemon with Authentication**
+
+Launch the daemon, pointing it to your key configuration file using the `--api-keys-file` argument.
+
+```sh
+ironcrypt daemon --key-version v1 --api-keys-file /path/to/your/keys.json
+```
+
+The daemon is now secured.
+
+**4. Make an Authenticated Request**
+
+Client applications must include the **secret API key** in the `Authorization` header as a Bearer token.
+
+*Example with `curl`:*
+```sh
+# Encrypt data using a key that has the "encrypt" permission
+curl --request POST \
+  --header "Authorization: Bearer VOTRE_CLÉ_API_SECRÈTE" \
+  --data "my secret data" \
+  http://localhost:3000/encrypt > encrypted.bin
+
+# Decrypt data using a key that has the "decrypt" permission
+cat encrypted.bin | curl --request POST \
+  --header "Authorization: Bearer VOTRE_CLÉ_API_SECRÈTE" \
+  --data-binary @- \
+  http://localhost:3000/decrypt
+```
+
+If the key is missing, invalid, or does not have the required permission, the daemon will return an appropriate HTTP error (`401 Unauthorized` or `403 Forbidden`).
+
 #### API Endpoints
 
 The daemon exposes two streaming endpoints:

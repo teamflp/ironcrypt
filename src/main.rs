@@ -1,15 +1,18 @@
 use clap::{Parser, Subcommand, ValueEnum};
 #[cfg(feature = "interactive")]
 use indicatif::{ProgressBar, ProgressStyle};
+use base64::Engine;
+use flate2::read::GzDecoder;
+use flate2::write::GzEncoder;
+use flate2::Compression;
 use ironcrypt::{
     algorithms::SymmetricAlgorithm,
     decrypt_stream, ecc_utils, encrypt_stream, generate_rsa_keys,
     keys::PublicKey,
     save_keys_to_files, Argon2Config, IronCrypt, IronCryptConfig, PasswordCriteria,
 };
-use flate2::read::GzDecoder;
-use flate2::write::GzEncoder;
-use flate2::Compression;
+use rand::RngCore;
+use sha2::{Digest, Sha512};
 use std::fs::File;
 use std::io::Read;
 use std::process;
@@ -288,6 +291,9 @@ enum Commands {
         passphrase: Option<String>,
     },
 
+    /// Generates a new API key for the daemon.
+    GenerateApiKey,
+
     /// Starts the transparent encryption daemon.
     #[cfg(feature = "daemon")]
     Daemon {
@@ -302,6 +308,10 @@ enum Commands {
         /// Key version to use (e.g., "v1")
         #[arg(short = 'v', long)]
         key_version: String,
+
+        /// Path to the JSON file containing API key configurations.
+        #[arg(long, env = "IRONCRYPT_API_KEYS_FILE")]
+        api_keys_file: String,
     },
 }
 
@@ -931,32 +941,83 @@ async fn main() {
                 metrics::metrics_finish("rotate_key", 0, start, result.is_ok());
                 result?;
             }
+            Commands::GenerateApiKey => {
+                let start = metrics::metrics_start();
+                let result: Result<(), String> = (async {
+                    // Generate a 32-byte random key
+                    let mut key = [0u8; 32];
+                    rand::thread_rng().fill_bytes(&mut key);
+
+                    // Hash the key with SHA-512
+                    let mut hasher = Sha512::new();
+                    hasher.update(key);
+                    let hash = hasher.finalize();
+
+                    // Encode for display
+                    let key_b64 = base64::engine::general_purpose::STANDARD.encode(key);
+                    let hash_hex = hex::encode(hash);
+
+                    println!("Clé API générée avec succès.");
+                    println!("---------------------------------");
+                    println!("Veuillez conserver ces valeurs en lieu sûr. La 'Clé API secrète' ne doit jamais être partagée publiquement.");
+                    println!();
+                    println!("Clé API secrète (pour les clients) :");
+                    println!("   {}", key_b64);
+                    println!();
+                    println!("Hash de la clé API (à mettre dans votre fichier de configuration) :");
+                    println!("   {}", hash_hex);
+                    println!();
+                    println!("Comment l'utiliser :");
+                    println!(" 1. Copiez le 'Hash de la clé API' ci-dessus.");
+                    println!(" 2. Créez ou ouvrez votre fichier de configuration des clés (ex: keys.json).");
+                    println!(" 3. Ajoutez une nouvelle entrée avec le hash et les permissions souhaitées, comme ceci :");
+                    println!();
+                    println!("    {{");
+                    println!("      \"description\": \"Nouvelle clé pour mon application\",");
+                    println!("      \"key_hash\": \"{}\",", hash_hex);
+                    println!("      \"permissions\": [\"encrypt\", \"decrypt\"]");
+                    println!("    }}");
+                    println!();
+                    println!(" 4. Démarrez le daemon en pointant vers ce fichier avec l'argument --api-keys-file.");
+                    println!(" 5. Vos applications clientes devront envoyer la 'Clé API secrète' dans les requêtes HTTP avec l'en-tête : 'Authorization: Bearer {}'", key_b64);
+
+                    Ok(())
+                })
+                .await;
+                metrics::metrics_finish("generate_api_key", 0, start, result.is_ok());
+                result?;
+            }
             #[cfg(feature = "daemon")]
             Commands::Daemon {
                 port,
                 key_directory,
                 key_version,
+                api_keys_file,
             } => {
                 let start = metrics::metrics_start();
                 let result: Result<(), String> = (async {
-                println!("Starting daemon...");
-                let mut daemon_path = std::env::current_exe()
-                    .map_err(|e| format!("Could not find current executable path: {}", e))?;
-                daemon_path.pop();
-                daemon_path.push("ironcryptd");
+                    println!("Starting daemon...");
+                    let mut daemon_path = std::env::current_exe()
+                        .map_err(|e| format!("Could not find current executable path: {}", e))?;
+                    daemon_path.pop();
+                    daemon_path.push("ironcryptd");
 
-                let mut child = std::process::Command::new(daemon_path)
-                    .arg("--port")
-                    .arg(port.to_string())
-                    .arg("--key-directory")
-                    .arg(key_directory)
-                    .arg("--key-version")
-                    .arg(key_version)
-                    .spawn()
-                    .map_err(|e| format!("Failed to start daemon: {}", e))?;
+                    let mut child = std::process::Command::new(daemon_path)
+                        .arg("--port")
+                        .arg(port.to_string())
+                        .arg("--key-directory")
+                        .arg(key_directory)
+                        .arg("--key-version")
+                        .arg(key_version)
+                        .arg("--api-keys-file")
+                        .arg(api_keys_file)
+                        .spawn()
+                        .map_err(|e| format!("Failed to start daemon: {}", e))?;
 
-                println!("Daemon started with PID: {}", child.id());
-                child.wait().map_err(|e| format!("Daemon process failed: {}", e))?;
+                    println!("Daemon started with PID: {}", child.id());
+                    child
+                        .wait()
+                        .map_err(|e| format!("Daemon process failed: {}", e))?;
                     Ok(())
                 })
                 .await;
