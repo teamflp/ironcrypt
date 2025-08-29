@@ -338,6 +338,8 @@ Here is a summary table of all available commands:
 | `encrypt-dir` | `encdir`                 | Encrypts an entire directory.               | `-i, --input-dir <INPUT>` <br> `-o, --output-file <OUTPUT>` <br> `-d, --public-key-directory <DIR>` <br> `-v, --key-version <VERSION>...` <br> `[-w, --password <PASSWORD>]` |
 | `decrypt-dir` | `decdir`                 | Decrypts an entire directory.               | `-i, --input-file <INPUT>` <br> `-o, --output-dir <OUTPUT>` <br> `-k, --private-key-directory <DIR>` <br> `-v, --key-version <VERSION>` <br> `[-w, --password <PASSWORD>]` <br> `[--passphrase <PASSPHRASE>]` |
 | `rotate-key`  | `rk`                     | Rotates encryption keys for encrypted data. | `--old-version <OLD_V>` <br> `--new-version <NEW_V>` <br> `-k, --key-directory <DIR>` <br> `[--file <FILE> | --directory <DIR>]` <br> `[--passphrase <PASSPHRASE>]` |
+| `sign`        |                          | Creates a detached signature for a file.    | `-i, --input-file <INPUT>` <br> `-o, --output-file <OUTPUT>` <br> `-k, --key-directory <DIR>` <br> `-v, --key-version <VERSION>` <br> `[--passphrase <PASSPHRASE>]` |
+| `verify`      |                          | Verifies a detached signature for a file.   | `-i, --input-file <INPUT>` <br> `-s, --signature-file <SIG>` <br> `-d, --public-key-directory <DIR>` <br> `-v, --key-version <VERSION>`                  |
 
 A full list of commands and their arguments can be viewed by running `ironcrypt --help`. To get help for a specific command, run `ironcrypt <command> --help`.
 
@@ -463,6 +465,37 @@ ironcrypt rotate-key --old-version <OLD_V> --new-version <NEW_V> --key-directory
 ```sh
 # Rotate keys from v1 to v2 for a single file
 ironcrypt rotate-key --old-version v1 --new-version v2 -k keys --file my_document.enc
+```
+
+#### `sign`
+Creates a detached signature for a file. This can be used to prove the file's authenticity and integrity.
+
+**Usage:**
+```sh
+ironcrypt sign --input-file <INPUT> --output-file <OUTPUT> --key-directory <DIR> --key-version <VERSION> [--passphrase <PASSPHRASE>]
+```
+
+**Example:**
+```sh
+# Sign a document with a v1 private key
+ironcrypt sign -i my_document.pdf -o my_document.sig -k keys -v v1
+
+# Sign a file with a passphrase-protected ECC key
+ironcrypt sign -i archive.zip -o archive.sig -k ecc_keys -v v1_ecc --passphrase "my-secret-phrase"
+```
+
+#### `verify`
+Verifies a detached signature against a file. This confirms that the file has not been tampered with since it was signed by the holder of the corresponding private key.
+
+**Usage:**
+```sh
+ironcrypt verify --input-file <INPUT> --signature-file <SIGNATURE> --public-key-directory <DIR> --key-version <VERSION>
+```
+
+**Example:**
+```sh
+# Verify the signature for my_document.pdf using the v1 public key
+ironcrypt verify -i my_document.pdf -s my_document.sig -d keys -v v1
 ```
 
 ### As a Library (Crate)

@@ -141,6 +141,7 @@ pub mod metrics;
 pub mod keys;
 pub mod rsa_utils;
 pub mod secrets;
+pub mod signing;
 pub mod standards;
 
 // --- Public Re-exports ---

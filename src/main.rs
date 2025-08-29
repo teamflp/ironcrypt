@@ -290,6 +290,48 @@ enum Commands {
         passphrase: Option<String>,
     },
 
+    /// Signs a file to create a detached signature.
+    Sign {
+        /// Path to the file to sign.
+        #[arg(short = 'i', long)]
+        input_file: String,
+
+        /// Path to write the signature file to.
+        #[arg(short = 'o', long)]
+        output_file: String,
+
+        /// Path to the private keys directory.
+        #[arg(short = 'k', long, default_value = "keys")]
+        key_directory: String,
+
+        /// Version of the private key to use for signing.
+        #[arg(short = 'v', long)]
+        key_version: String,
+
+        /// Passphrase for the private key.
+        #[arg(long)]
+        passphrase: Option<String>,
+    },
+
+    /// Verifies a detached signature for a file.
+    Verify {
+        /// Path to the file that was signed.
+        #[arg(short = 'i', long)]
+        input_file: String,
+
+        /// Path to the signature file.
+        #[arg(short = 's', long)]
+        signature_file: String,
+
+        /// Path to the public keys directory.
+        #[arg(short = 'd', long, default_value = "keys")]
+        public_key_directory: String,
+
+        /// Version of the public key to use for verification.
+        #[arg(short = 'v', long)]
+        key_version: String,
+    },
+
     /// Generates a new API key for the daemon.
     GenerateApiKey,
 
@@ -938,6 +980,86 @@ async fn main() {
                 })
                 .await;
                 metrics::metrics_finish("rotate_key", 0, start, result.is_ok());
+                result?;
+            }
+            Commands::Sign {
+                input_file,
+                output_file,
+                key_directory,
+                key_version,
+                passphrase,
+            } => {
+                let start = metrics::metrics_start();
+                let payload_size = std::fs::metadata(&input_file).map(|m| m.len()).unwrap_or(0);
+                let result: Result<(), String> = (async {
+                    // 1. Load private key
+                    let private_key_path =
+                        format!("{}/private_key_{}.pem", key_directory, key_version);
+                    let private_key = ironcrypt::load_any_private_key(
+                        &private_key_path,
+                        passphrase.as_deref(),
+                    )
+                    .map_err(|e| {
+                        format!("could not load private key '{}': {}", private_key_path, e)
+                    })?;
+
+                    // 2. Read file and hash it
+                    let input_data = std::fs::read(&input_file)
+                        .map_err(|e| format!("could not read input file '{}': {}", input_file, e))?;
+                    let hash = ironcrypt::hashing::hash_bytes(&input_data)
+                        .map_err(|e| format!("could not hash input file: {}", e))?;
+
+                    // 3. Sign the hash
+                    let signature = ironcrypt::signing::sign_hash_with_any_key(&private_key, &hash)
+                        .map_err(|e| format!("could not sign file: {}", e))?;
+
+                    // 4. Write signature to output file
+                    std::fs::write(&output_file, &signature)
+                        .map_err(|e| format!("could not write signature to file '{}': {}", output_file, e))?;
+
+                    println!("File '{}' signed successfully. Signature saved to '{}'.", input_file, output_file);
+                    Ok(())
+                })
+                .await;
+                metrics::metrics_finish("sign", payload_size, start, result.is_ok());
+                result?;
+            }
+            Commands::Verify {
+                input_file,
+                signature_file,
+                public_key_directory,
+                key_version,
+            } => {
+                let start = metrics::metrics_start();
+                let payload_size = std::fs::metadata(&input_file).map(|m| m.len()).unwrap_or(0);
+                let result: Result<(), String> = (async {
+                    // 1. Load public key
+                    let public_key_path =
+                        format!("{}/public_key_{}.pem", public_key_directory, key_version);
+                    let public_key = ironcrypt::load_any_public_key(&public_key_path)
+                        .map_err(|e| {
+                            format!("could not load public key '{}': {}", public_key_path, e)
+                        })?;
+
+                    // 2. Read file and hash it
+                    let input_data = std::fs::read(&input_file)
+                        .map_err(|e| format!("could not read input file '{}': {}", input_file, e))?;
+                    let hash = ironcrypt::hashing::hash_bytes(&input_data)
+                        .map_err(|e| format!("could not hash input file: {}", e))?;
+
+                    // 3. Read signature file
+                    let signature = std::fs::read(&signature_file)
+                        .map_err(|e| format!("could not read signature file '{}': {}", signature_file, e))?;
+
+                    // 4. Verify signature
+                    ironcrypt::signing::verify_signature_with_any_key(&public_key, &hash, &signature)
+                        .map_err(|e| format!("Verification failed: {}", e))?;
+
+                    println!("OK: Signature for '{}' is valid.", input_file);
+                    Ok(())
+                })
+                .await;
+                metrics::metrics_finish("verify", payload_size, start, result.is_ok());
                 result?;
             }
             Commands::GenerateApiKey => {
