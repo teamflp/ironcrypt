@@ -1,46 +1,35 @@
-events {}
+worker_processes auto;
+
+events {
+    worker_connections 1024;
+}
 
 http {
-    map $http_upgrade $connection_upgrade {
-        default upgrade;
-        ''      close;
+    # Define a group of upstream servers for the ironcryptd cluster
+    upstream ironcryptd_cluster {
+        # Docker's internal DNS will resolve 'ironcryptd' to the IPs of all
+        # replicas. Nginx will load balance between them.
+        # The 'resolve' parameter is not needed for the free version of Nginx
+        # when using Docker's DNS.
+        server ironcryptd:3000;
     }
 
     server {
         listen 80;
-        server_name _;
 
-        # Redirige tout HTTP vers HTTPS
-        return 301 https://$host$request_uri;
-    }
+        location / {
+            # Forward requests to the upstream cluster
+            proxy_pass http://ironcryptd_cluster;
 
-    server {
-        listen 443 ssl;
-        server_name _;
-
-        ssl_certificate     ${SSL_CERT_PATH};
-        ssl_certificate_key ${SSL_KEY_PATH};
-        ssl_protocols       TLSv1.2 TLSv1.3;
-        ssl_ciphers         HIGH:!aNULL:!MD5;
-
-        # Proxy normal vers Grafana
-        location /grafana/ {
+            # Set headers to pass client information to the daemon
             proxy_set_header Host $host;
-            proxy_pass http://grafana:3000/;
-            rewrite ^/grafana/(.*) /$1 break;
-        }
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
 
-        # WebSocket sécurisé avec token API Grafana
-        location /grafana/api/live/ws {
-            if ($http_authorization != "Bearer ${GRAFANA_API_TOKEN}") {
-                return 401;
-            }
+            # Settings for handling streaming bodies, which the daemon uses
+            proxy_request_buffering off;
             proxy_http_version 1.1;
-            proxy_set_header Upgrade $http_upgrade;
-            proxy_set_header Connection $connection_upgrade;
-            proxy_set_header Host $host;
-            proxy_pass http://grafana:3000/;
-            rewrite ^/grafana/(.*) /$1 break;
         }
     }
 }

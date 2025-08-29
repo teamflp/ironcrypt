@@ -51,6 +51,10 @@ struct Args {
     #[arg(short, long, default_value_t = 3000)]
     port: u16,
 
+    /// Host to listen on
+    #[arg(long, default_value = "127.0.0.1")]
+    host: String,
+
     /// Directory where keys are stored
     #[arg(short = 'd', long, default_value = "keys")]
     key_directory: String,
@@ -222,9 +226,23 @@ async fn main() {
         .layer(DefaultBodyLimit::disable()); // Disable default body limit for streaming
 
     // Run our app with hyper
-    let addr = SocketAddr::from(([127, 0, 0, 1], args.port));
+    let host_addr: std::net::IpAddr = match args.host.parse() {
+        Ok(addr) => addr,
+        Err(e) => {
+            tracing::error!("Invalid host address provided '{}': {}", args.host, e);
+            return;
+        }
+    };
+
+    let addr = SocketAddr::new(host_addr, args.port);
     tracing::debug!("listening on {}", addr);
-    let listener = TcpListener::bind(&addr).await.unwrap();
+    let listener = match TcpListener::bind(&addr).await {
+        Ok(l) => l,
+        Err(e) => {
+            tracing::error!("Failed to bind to address {}: {}", addr, e);
+            return;
+        }
+    };
     axum::serve(listener, app).await.unwrap();
 }
 
