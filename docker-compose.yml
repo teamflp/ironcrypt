@@ -1,25 +1,40 @@
 services:
-
-  ironcrypt:
+  ironcryptd:
     build: .
-    container_name: ironcrypt
-    command: sh -c "ironcrypt --help && tail -f /dev/null"
-    ports:
-      - "${IRONCRYPT_PORT}:${IRONCRYPT_PORT}"
-      - "${IRONCRYPT_METRICS_PORT}:${IRONCRYPT_METRICS_PORT}"
-    environment:
-      - IRONCRYPT_PORT=${IRONCRYPT_PORT}
-      - IRONCRYPT_METRICS_ENABLED=${IRONCRYPT_METRICS_ENABLED}
-      - IRONCRYPT_METRICS_PORT=${IRONCRYPT_METRICS_PORT}
+    deploy:
+      replicas: 2
+    command: >
+      ironcryptd
+      --host 0.0.0.0
+      --port 3000
+      --key-directory /keys
+      --key-version v1
+      --api-keys-file /etc/ironcrypt/keys.json
+      --config /etc/ironcrypt/ironcrypt.toml
+    volumes:
+      - ./keys:/keys:ro
+      - ./keys.json:/etc/ironcrypt/keys.json:ro
+      - ./ironcrypt.toml:/etc/ironcrypt/ironcrypt.toml:ro
     logging:
       driver: loki
       options:
         loki-url: "https://${GRAFANA_CLOUD_LOKI_USER}:${GRAFANA_CLOUD_LOKI_API_KEY}@logs-prod-eu-west-0.grafana.net/loki/api/v1/push"
     labels:
       env: prod
-      app: monitoring
+      app: ironcryptd
     networks:
       - monitoring_net
+
+  nginx:
+    image: nginx:latest
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx/nginx.conf.template:/etc/nginx/nginx.conf
+    networks:
+      - monitoring_net
+    depends_on:
+      - ironcryptd
 
   vault:
     image: hashicorp/vault:latest
