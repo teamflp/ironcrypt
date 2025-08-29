@@ -15,8 +15,8 @@ pub enum Outcome {
 #[serde(rename_all = "snake_case")]
 pub enum Operation {
     GenerateKey,
-    Encrypt,
-    Decrypt,
+    Write,
+    Read,
     Sign,
     Verify,
     Rekey,

@@ -313,7 +313,7 @@ impl IronCrypt {
         data: &[u8],
         password: &str,
     ) -> Result<String, IronCryptError> {
-        let mut event = AuditEvent::new(Operation::Encrypt);
+        let mut event = AuditEvent::new(Operation::Write);
         event.key_version = Some(self.key_version.to_string());
         event.symmetric_algorithm = Some(self.config.symmetric_algorithm.to_string());
 
@@ -415,7 +415,7 @@ impl IronCrypt {
         encrypted_json: &str,
         password: &str,
     ) -> Result<Vec<u8>, IronCryptError> {
-        let mut event = AuditEvent::new(Operation::Decrypt);
+        let mut event = AuditEvent::new(Operation::Read);
 
         let result: Result<Vec<u8>, IronCryptError> = (|| {
             let ed: EncryptedData = serde_json::from_str(encrypted_json)?;

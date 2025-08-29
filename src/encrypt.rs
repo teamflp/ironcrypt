@@ -152,7 +152,7 @@ pub fn encrypt_stream<'a, R: Read, W: Write>(
     hash_password: bool,
     sym_algo: SymmetricAlgorithm,
 ) -> Result<(), IronCryptError> {
-    let mut event = AuditEvent::new(Operation::Encrypt);
+    let mut event = AuditEvent::new(Operation::Write);
     event.symmetric_algorithm = Some(format!("{:?}", sym_algo));
     event.recipient_key_versions = recipients.clone().into_iter().map(|(_, v)| v.to_string()).collect();
     if let Some((_, version)) = signing_key {
@@ -323,7 +323,7 @@ pub fn decrypt_stream<R: Read, W: Write>(
     password: &str,
     verifying_key: Option<&PublicKey>,
 ) -> Result<(), IronCryptError> {
-    let mut event = AuditEvent::new(Operation::Decrypt);
+    let mut event = AuditEvent::new(Operation::Read);
     event.key_version = Some(key_version.to_string());
 
     let result = (|| {

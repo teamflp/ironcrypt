@@ -1,10 +1,13 @@
 use serde::Deserialize;
 
-#[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "lowercase")]
 pub enum Permission {
-    Encrypt,
-    Decrypt,
+    Write,
+    Read,
+    Delete,
+    Update,
+    Full,
 }
 
 #[derive(Debug, Deserialize, Clone)]
