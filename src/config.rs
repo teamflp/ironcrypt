@@ -4,6 +4,18 @@ pub use crate::PasswordCriteria;
 use crate::standards::CryptoStandard;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fs;
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum ConfigError {
+    #[error("Failed to read config file: {0}")]
+    Io(#[from] io::Error),
+    #[error("Failed to parse TOML config: {0}")]
+    Toml(#[from] toml::de::Error),
+}
+
+use std::io;
 
 /// Enum for classifying data types.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
@@ -168,6 +180,15 @@ pub struct IronCryptConfig {
     /// Configuration for auditing.
     #[serde(default)]
     pub audit: Option<AuditConfig>,
+}
+
+impl IronCryptConfig {
+    /// Loads configuration from a TOML file.
+    pub fn from_file(path: &str) -> Result<Self, ConfigError> {
+        let contents = fs::read_to_string(path)?;
+        let config: Self = toml::from_str(&contents)?;
+        Ok(config)
+    }
 }
 
 impl Default for IronCryptConfig {

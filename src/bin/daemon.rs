@@ -7,21 +7,28 @@ use axum::{
     routing::post,
     Router,
 };
-use clap::{Parser, ValueEnum};
+use clap::Parser;
 use elliptic_curve::subtle::ConstantTimeEq;
 use futures::StreamExt;
 use ironcrypt::{
+    audit::{AuditEvent, Operation, Outcome},
     auth::{ApiKeyConfig, Permission},
+    config::IronCryptConfig,
     decrypt_stream, encrypt_stream,
     keys::{PrivateKey, PublicKey},
-    load_private_key, load_public_key, Argon2Config, CryptoStandard, IronCryptConfig,
+    load_private_key, load_public_key, Argon2Config,
 };
 use sha2::{Digest, Sha512};
 use std::{io, net::SocketAddr, sync::Arc};
 use tokio::net::TcpListener;
 use tokio_util::io::{ReaderStream, SyncIoBridge};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{
+    filter::{self, LevelFilter},
+    prelude::*,
+    util::SubscriberInitExt,
+    Layer,
+};
 
 /// A struct to hold the application's shared state.
 #[derive(Clone)]
@@ -31,24 +38,6 @@ struct AppState {
     key_version: String,
     config: Arc<IronCryptConfig>,
     api_keys: Arc<Vec<ApiKeyConfig>>,
-}
-
-/// A `clap`-compatible enum for selecting the cryptographic standard.
-#[derive(ValueEnum, Clone, Debug, Copy)]
-enum CliCryptoStandard {
-    Nist,
-    Fips140_2,
-    Custom,
-}
-
-impl From<CliCryptoStandard> for CryptoStandard {
-    fn from(standard: CliCryptoStandard) -> Self {
-        match standard {
-            CliCryptoStandard::Nist => CryptoStandard::Nist,
-            CliCryptoStandard::Fips140_2 => CryptoStandard::Fips140_2,
-            CliCryptoStandard::Custom => CryptoStandard::Custom,
-        }
-    }
 }
 
 /// Command-line arguments for the daemon.
@@ -71,28 +60,60 @@ struct Args {
     #[arg(long)]
     passphrase: Option<String>,
 
-    /// The cryptographic standard to use.
-    #[arg(long, value_enum, default_value_t = CliCryptoStandard::Nist)]
-    standard: CliCryptoStandard,
-
     /// Path to the JSON file containing API key configurations.
     #[arg(long, env = "IRONCRYPT_API_KEYS_FILE")]
     api_keys_file: String,
+
+    /// Path to the TOML configuration file.
+    #[arg(long, env = "IRONCRYPT_CONFIG_FILE")]
+    config: String,
 }
 
 #[tokio::main]
 async fn main() {
-    // Initialize tracing
+    // Parse command-line arguments first, so we can get the config path.
+    let args = Args::parse();
+
+    // Load IronCrypt config
+    let config = match IronCryptConfig::from_file(&args.config) {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            eprintln!("Failed to load config file at {}: {}", args.config, e);
+            return;
+        }
+    };
+
+    // --- Logger setup ---
+    let stdout_layer = tracing_subscriber::fmt::layer()
+        .json()
+        .with_writer(io::stdout)
+        .with_filter(LevelFilter::INFO)
+        .with_filter(filter::filter_fn(|metadata| metadata.target() != "audit"));
+
+    // Keep the guard alive for the duration of the program.
+    let mut _guard = None;
+    let audit_layer = if let Some(audit_config) = &config.audit {
+        let file_appender =
+            tracing_appender::rolling::daily(&audit_config.log_path, "audit.log");
+        let (non_blocking_writer, guard) = tracing_appender::non_blocking(file_appender);
+        _guard = Some(guard); // This moves the guard into the outer scope.
+
+        let layer = tracing_subscriber::fmt::layer()
+            .json()
+            .with_writer(non_blocking_writer)
+            .with_filter(LevelFilter::INFO)
+            .with_filter(filter::filter_fn(|metadata| metadata.target() == "audit"));
+
+        Some(Box::new(layer) as Box<dyn Layer<_> + Send + Sync>)
+    } else {
+        None
+    };
+
     tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::fmt::layer()
-                .json()
-                .with_writer(io::stdout),
-        )
+        .with(stdout_layer)
+        .with(audit_layer)
         .init();
 
-    // Parse command-line arguments
-    let args = Args::parse();
 
     // Load and parse the API keys file
     let api_keys_content = match std::fs::read_to_string(&args.api_keys_file) {
@@ -134,17 +155,6 @@ async fn main() {
             return;
         }
     };
-
-    // Create IronCrypt config
-    let mut config = IronCryptConfig::default();
-    config.standard = args.standard.into();
-
-    // Apply the standard's parameters
-    if let Some(params) = config.standard.get_params() {
-        config.symmetric_algorithm = params.symmetric_algorithm;
-        config.asymmetric_algorithm = params.asymmetric_algorithm;
-        config.rsa_key_size = params.rsa_key_size;
-    }
 
     // Create application state
     let state = AppState {
@@ -238,6 +248,11 @@ async fn encrypt_handler(
         return Err(StatusCode::FORBIDDEN);
     }
 
+    // Create audit event
+    let mut audit_event = AuditEvent::new(Operation::Encrypt);
+    audit_event.key_version = Some(state.key_version.clone());
+    audit_event.symmetric_algorithm = Some(state.config.symmetric_algorithm.to_string());
+
     // Get password from headers, or use an empty string
     let mut password = req
         .headers()
@@ -280,7 +295,7 @@ async fn encrypt_handler(
         };
 
         let recipients = vec![(&*public_key, key_version.as_str())];
-        if let Err(e) = encrypt_stream(
+        let result = encrypt_stream(
             &mut request_reader,
             &mut response_writer,
             &mut password,
@@ -290,9 +305,19 @@ async fn encrypt_handler(
             argon_cfg,
             hash_password,
             config.symmetric_algorithm,
-        ) {
-            tracing::error!("Encryption failed: {}", e);
+        );
+
+        match result {
+            Ok(_) => {
+                audit_event.outcome = Outcome::Success;
+            }
+            Err(e) => {
+                audit_event.outcome = Outcome::Failure;
+                audit_event.error_message = Some(e.to_string());
+                tracing::error!("Encryption failed: {}", e);
+            }
         }
+        audit_event.log();
     });
 
     Ok(Response::new(response_body))
@@ -311,6 +336,10 @@ async fn decrypt_handler(
     if !permissions.contains(&Permission::Decrypt) {
         return Err(StatusCode::FORBIDDEN);
     }
+
+    // Create audit event
+    let mut audit_event = AuditEvent::new(Operation::Decrypt);
+    audit_event.key_version = Some(state.key_version.clone());
 
     // Get password from headers
     let password = req
@@ -344,16 +373,26 @@ async fn decrypt_handler(
     let private_key = state.private_key.clone();
     let key_version = state.key_version.clone();
     tokio::task::spawn_blocking(move || {
-        if let Err(e) = decrypt_stream(
+        let result = decrypt_stream(
             &mut request_reader,
             &mut response_writer,
             &private_key,
             &key_version,
             &password,
             None,
-        ) {
-            tracing::error!("Decryption failed: {}", e);
+        );
+
+        match result {
+            Ok(_) => {
+                audit_event.outcome = Outcome::Success;
+            }
+            Err(e) => {
+                audit_event.outcome = Outcome::Failure;
+                audit_event.error_message = Some(e.to_string());
+                tracing::error!("Decryption failed: {}", e);
+            }
         }
+        audit_event.log();
     });
 
     Ok(Response::new(response_body))
