@@ -233,48 +233,48 @@ docker run --rm -p 3000:3000 -v "$PWD/keys:/keys" ironcrypt:latest \
   ironcryptd -v v1 -d /keys -p 3000
 ```
 
-#### 6. Utiliser le Makefile (Docker Compose)
-Le Makefile du projet fournit des raccourcis pour piloter Docker Compose depuis le terminal.
+#### 6. Using the Makefile (Docker Compose)
+The project's Makefile provides shortcuts to manage Docker Compose from the terminal.
 
-Prérequis:
-- Docker et Docker Compose v2 (commande `docker compose`).
+Prerequisites:
+- Docker and Docker Compose v2 (`docker compose` command).
 
-Commandes courantes:
+Common Commands:
 ```sh
-# Aide et liste des cibles
+# Help and list of targets
 make help
 
-# Démarrer en développement (utilise .env par défaut)
+# Start in development mode (uses .env by default)
 make dev
 
-# Démarrer en production (utilise .env.prod)
+# Start in production mode (uses .env.prod)
 make prod
 
-# Construire les images sans démarrer
+# Build images without starting
 make build
 
-# Suivre les logs
+# Follow logs
 make logs
 
-# Arrêter les conteneurs
+# Stop containers
 make stop
 
-# Nettoyer (conteneurs, volumes, orphelins) + prune Docker [destructif]
+# Clean (containers, volumes, orphans) + prune Docker [destructive]
 make clean
 
-# Lancer les tests dans le service ironcrypt
+# Run tests in the ironcrypt service
 make test
 
-# Générer la couverture avec tarpaulin
+# Generate coverage with tarpaulin
 make coverage
 ```
 
 Notes:
-- Vous pouvez changer le fichier d'environnement utilisé par `dev` avec `ENV_FILE`, ex:
+- You can change the environment file used by `dev` with `ENV_FILE`, e.g.:
 ```sh
 make dev ENV_FILE=.env.local
 ```
-- La cible par défaut est `all -> dev`, donc un simple `make` équivaut à `make dev`.
+- The default target is `all -> dev`, so a simple `make` is equivalent to `make dev`.
 
 ### Optimized Builds with Feature Flags
 
@@ -623,8 +623,8 @@ ironcrypt generate-api-key
 ```
 
 The output will give you two crucial pieces of information:
-*   **Clé API secrète:** The secret key that your client applications will use. **Treat this like a password.**
-*   **Hash de la clé API:** A secure hash of the key that you will use to configure the daemon.
+*   **Secret API Key:** The secret key that your client applications will use. **Treat this like a password.**
+*   **API Key Hash:** A secure hash of the key that you will use to configure the daemon.
 
 **2. Create a Key Configuration File**
 
@@ -665,13 +665,13 @@ Client applications must include the **secret API key** in the `Authorization` h
 ```sh
 # Encrypt data using a key that has the "encrypt" permission
 curl --request POST \
-  --header "Authorization: Bearer VOTRE_CLÉ_API_SECRÈTE" \
+  --header "Authorization: Bearer YOUR_SECRET_API_KEY" \
   --data "my secret data" \
   http://localhost:3000/encrypt > encrypted.bin
 
 # Decrypt data using a key that has the "decrypt" permission
 cat encrypted.bin | curl --request POST \
-  --header "Authorization: Bearer VOTRE_CLÉ_API_SECRÈTE" \
+  --header "Authorization: Bearer YOUR_SECRET_API_KEY" \
   --data-binary @- \
   http://localhost:3000/decrypt
 ```
