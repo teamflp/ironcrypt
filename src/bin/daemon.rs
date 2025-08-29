@@ -1,10 +1,10 @@
 use axum::{
     body::Body,
-    extract::{DefaultBodyLimit, State},
+    extract::{DefaultBodyLimit, Extension, Path, State},
     http::{header, Request, StatusCode},
     middleware,
     response::Response,
-    routing::post,
+    routing::{get, post},
     Router,
 };
 use clap::Parser;
@@ -16,10 +16,12 @@ use ironcrypt::{
     config::IronCryptConfig,
     decrypt_stream, encrypt_stream,
     keys::{PrivateKey, PublicKey},
-    load_private_key, load_public_key, Argon2Config,
+    load_private_key, load_public_key,
+    secrets::{aws::AwsStore, SecretStore},
+    Argon2Config,
 };
 use sha2::{Digest, Sha512};
-use std::{io, net::SocketAddr, sync::Arc};
+use std::{collections::HashMap, io, net::SocketAddr, sync::Arc};
 use tokio::net::TcpListener;
 use tokio_util::io::{ReaderStream, SyncIoBridge};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
@@ -38,6 +40,7 @@ struct AppState {
     key_version: String,
     config: Arc<IronCryptConfig>,
     api_keys: Arc<Vec<ApiKeyConfig>>,
+    secret_stores: Arc<HashMap<String, Arc<dyn SecretStore + Send + Sync>>>,
 }
 
 /// Command-line arguments for the daemon.
@@ -169,19 +172,46 @@ async fn main() {
         }
     };
 
+    // Initialize secret stores based on config
+    let mut secret_stores: HashMap<String, Arc<dyn SecretStore + Send + Sync>> = HashMap::new();
+    if let Some(secrets_config) = &config.secrets {
+        // NOTE: This logic assumes multiple secret backends can be configured and used
+        // simultaneously, which is a departure from the original single-provider model.
+
+        #[cfg(feature = "aws")]
+        if let Some(aws_config) = &secrets_config.aws {
+            match ironcrypt::secrets::aws::AwsStore::new(aws_config).await {
+                Ok(store) => {
+                    secret_stores.insert("aws".to_string(), Arc::new(store));
+                    tracing::info!("Initialized AWS Secrets Manager store.");
+                }
+                Err(e) => {
+                    tracing::error!("Failed to initialize AWS store: {}", e);
+                }
+            }
+        }
+
+        // TODO: Add initialization for other providers like Azure, Vault, etc.
+    }
+
     // Create application state
     let state = AppState {
         public_key,
         private_key,
         key_version: args.key_version,
-        config: Arc::new(config),
+        config: Arc::new(config.clone()),
         api_keys: Arc::new(api_keys),
+        secret_stores: Arc::new(secret_stores),
     };
 
     // Build our application router
     let app = Router::new()
         .route("/write", post(write_handler))
         .route("/read", post(read_handler))
+        .route(
+            "/service/:service_name/secret/:secret_key",
+            get(get_secret_handler).post(set_secret_handler),
+        )
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
             auth_middleware,
@@ -205,6 +235,9 @@ async fn auth_middleware(
     mut req: Request<Body>,
     next: middleware::Next,
 ) -> Result<Response, StatusCode> {
+    let path = req.uri().path();
+    let is_service_route = path.starts_with("/service/");
+
     let auth_header = req
         .headers()
         .get(header::AUTHORIZATION)
@@ -236,6 +269,27 @@ async fn auth_middleware(
                 .unwrap_u8()
                 == 1
             {
+                // Key hash matches.
+
+                if is_service_route {
+                    let path_parts: Vec<&str> = path.split('/').collect();
+                    if path_parts.len() < 3 || path_parts[1] != "service" {
+                        return Err(StatusCode::BAD_REQUEST);
+                    }
+                    let service_name = path_parts[2];
+
+                    let authorized_for_service = match &key_config.allowed_services {
+                        Some(services) if !services.is_empty() => {
+                            services.iter().any(|s| s.eq_ignore_ascii_case(service_name))
+                        }
+                        _ => true,
+                    };
+
+                    if !authorized_for_service {
+                        return Err(StatusCode::FORBIDDEN);
+                    }
+                }
+
                 // Match found, store permissions and proceed.
                 req.extensions_mut()
                     .insert(Arc::new(key_config.permissions.clone()));
@@ -245,6 +299,65 @@ async fn auth_middleware(
     }
 
     Err(StatusCode::UNAUTHORIZED)
+}
+
+/// Axum handler for getting a secret from a secret store.
+async fn get_secret_handler(
+    State(state): State<AppState>,
+    Path((service_name, secret_key)): Path<(String, String)>,
+    permissions: Extension<Arc<Vec<Permission>>>,
+) -> Result<String, StatusCode> {
+    if !permissions.contains(&Permission::Read) {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    let secret_store = state.secret_stores.get(&service_name).ok_or_else(|| {
+        tracing::warn!("Requested service not found: {}", service_name);
+        StatusCode::NOT_FOUND
+    })?;
+
+    match secret_store.get_secret(&secret_key).await {
+        Ok(secret) => Ok(secret),
+        Err(e) => {
+            tracing::error!(
+                "Failed to get secret '{}' from service '{}': {}",
+                secret_key,
+                service_name,
+                e
+            );
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+/// Axum handler for setting a secret in a secret store.
+async fn set_secret_handler(
+    State(state): State<AppState>,
+    Path((service_name, secret_key)): Path<(String, String)>,
+    permissions: Extension<Arc<Vec<Permission>>>,
+    body: String,
+) -> Result<StatusCode, StatusCode> {
+    if !permissions.contains(&Permission::Write) {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    let secret_store = state.secret_stores.get(&service_name).ok_or_else(|| {
+        tracing::warn!("Requested service not found: {}", service_name);
+        StatusCode::NOT_FOUND
+    })?;
+
+    match secret_store.set_secret(&secret_key, &body).await {
+        Ok(()) => Ok(StatusCode::NO_CONTENT),
+        Err(e) => {
+            tracing::error!(
+                "Failed to set secret '{}' in service '{}': {}",
+                secret_key,
+                service_name,
+                e
+            );
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
 }
 
 /// Axum handler for the /write endpoint.

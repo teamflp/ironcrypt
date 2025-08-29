@@ -13,5 +13,16 @@
     "description": "Clé avec accès complet (full-access-key)",
     "keyHash": "f6ebc5808fb7fbb34e99e3b4068039680e9a51913adad9e12634e30551e0d2fef4048fa8b498b1dfe2a5ba3dbda954618c11db90eff119a9ab680b4e8243529c",
     "permissions": ["full"]
+  },
+  {
+    "description": "Clé pour AWS seulement",
+    "keyHash": "2fecca9bd87872aa79b76e0c463d86db59fcff92c854bb009c726d2722b62d522ceb5201eb90a35c5853eb18b2e362dbde146dfd0429a6f4f7e906570da9d35b",
+    "permissions": ["read", "write"],
+    "allowed_services": ["aws"]
+  },
+  {
+    "description": "Legacy key",
+    "keyHash": "337a4b5fbb25eb8590a93e83b1d27cace7e1ebfd58019e18331d84d66265c51fe69064ae21d29865520a7588742736dc90d07718ed558ef5980f2490b485889b",
+    "permissions": ["read", "write"]
   }
 ]

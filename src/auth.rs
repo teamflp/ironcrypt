@@ -16,4 +16,6 @@ pub struct ApiKeyConfig {
     pub description: String,
     pub key_hash: String,
     pub permissions: Vec<Permission>,
+    #[serde(default)]
+    pub allowed_services: Option<Vec<String>>,
 }
