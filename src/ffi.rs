@@ -121,7 +121,7 @@ pub extern "C" fn ironcrypt_password_encrypt(
             key_version: key_version.to_string(),
             encrypted_symmetric_key: base64_standard.encode(&encrypted_aes_key),
         },
-        nonce: base64_standard.encode(&nonce),
+        nonce: base64_standard.encode(nonce),
         ciphertext: base64_standard.encode(&ciphertext),
         password_hash: Some(password_hash),
     };

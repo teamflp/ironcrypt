@@ -113,7 +113,8 @@ default = ["full"]
 
 # Meta features
 full = ["cli", "daemon", "cloud", "interactive"]
-cloud = ["aws", "azure", "gcp", "vault"]
+cloud = ["aws", "azure", "vault"]
+# cloud = ["aws", "azure", "gcp", "vault"]
 
 # CLI features
 cli = ["dep:clap", "dep:tar", "dep:flate2", "dep:tempfile"]

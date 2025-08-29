@@ -30,6 +30,3 @@ http {
             # Settings for handling streaming bodies, which the daemon uses
             proxy_request_buffering off;
             proxy_http_version 1.1;
-        }
-    }
-}
