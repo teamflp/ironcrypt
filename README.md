@@ -568,19 +568,44 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 For seamless integration with applications written in any language, IronCrypt provides a daemon that exposes a simple, high-performance HTTP API for encryption and decryption. This allows you to run IronCrypt as a background service and have your other applications communicate with it locally, without needing to integrate the Rust library directly.
 
+#### Daemon Configuration
+
+The `ironcryptd` daemon is configured using a central TOML file (e.g., `ironcrypt.toml`). This approach is used to ensure that all instances in a high-availability cluster share the same settings.
+
+**Example `ironcrypt.toml`:**
+```toml
+# The cryptographic standard to use.
+# Options: "nist", "fips_140_2", "custom"
+standard = "nist"
+
+# The size of the buffer to use for streaming operations (in bytes).
+buffer_size = 8192
+
+# Configuration for the Argon2 password hashing algorithm.
+argon2_memory_cost = 65536
+argon2_time_cost = 3
+argon2_parallelism = 1
+
+# Optional: Configuration for auditing.
+[audit]
+# Path to the directory where audit logs will be stored.
+log_path = "/var/log/ironcrypt"
+# Optional: Path to a private key to sign the audit logs.
+# signing_key_path = "/path/to/audit_signing_key.pem"
+```
+
+A full example configuration file can be found at `ironcrypt.toml.example`.
+
 #### Starting the Daemon
 
-You can start the daemon using the `daemon` subcommand. You must specify the key version to use.
+You start the daemon by pointing it to your configuration file and providing the necessary runtime arguments.
 
 ```sh
-# Start the daemon using v1 keys from the default 'keys' directory, listening on port 3000
-ironcrypt daemon --key-version v1
-
-# Start the daemon on a different port and with a different key directory
-ironcrypt daemon --key-version v2 --key-directory my_keys --port 8080
-
-# Start the daemon with a passphrase-protected key
-ironcrypt daemon --key-version v3 --key-directory my_keys --passphrase "a-very-secret-phrase"
+# Start the daemon using a config file, specifying the key version and API key file
+ironcryptd --config /path/to/ironcrypt.toml \
+           --key-version v1 \
+           --api-keys-file /path/to/keys.json \
+           --port 3000
 ```
 
 The daemon will run in the foreground. For production use, you should run it as a system service (e.g., using `systemd`).
@@ -693,6 +718,54 @@ cat my_document.enc | curl --request POST --data-binary @- http://localhost:3000
 # Decrypt data that was encrypted with a password
 cat encrypted_with_pass.bin | curl --request POST -H "X-Password: MyStrongPassword" --data-binary @- http://localhost:3000/decrypt
 ```
+
+### High Availability
+
+The `ironcryptd` daemon is designed to be stateless, meaning it does not store any session or request-specific data between requests. This architecture makes it horizontally scalable and highly available. You can run multiple instances of the daemon behind a load balancer to distribute traffic and ensure service continuity even if one of the instances fails.
+
+**Key Requirements for a High-Availability Setup:**
+
+1.  **Shared Configuration:** All `ironcryptd` instances must be started with the same configuration. This is best achieved by using a centralized `ironcrypt.toml` configuration file for all instances.
+2.  **Shared Key Storage:** All instances must have access to the same set of encryption keys. This can be achieved by:
+    *   Placing the key directory on a shared network file system (e.g., NFS, GlusterFS).
+    *   Using a configuration management tool (e.g., Ansible, Puppet) to deploy the same key files to each node.
+3.  **Centralized Logging:** To monitor and audit the cluster, the logs from all instances (both standard and audit logs) should be forwarded to a centralized logging system (e.g., ELK Stack, Splunk, Graylog).
+
+**Example: Load Balancing with Nginx**
+
+Here is a sample Nginx configuration that demonstrates how to load balance traffic between two `ironcryptd` instances running on `localhost` at ports 3000 and 3001.
+
+```nginx
+# /etc/nginx/nginx.conf
+
+http {
+    # Define a group of upstream servers
+    upstream ironcryptd_cluster {
+        # Use a load balancing algorithm, e.g., round-robin (default) or least_conn
+        # least_conn;
+
+        server 127.0.0.1:3000;
+        server 127.0.0.1:3001;
+    }
+
+    server {
+        listen 80;
+
+        location / {
+            # Forward requests to the upstream cluster
+            proxy_pass http://ironcryptd_cluster;
+
+            # Set headers to pass client information to the daemon
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+    }
+}
+```
+
+With this configuration, Nginx will listen on port 80 and distribute incoming requests for `/encrypt` and `/decrypt` between the two daemon instances, providing both load balancing and redundancy.
 
 ---
 

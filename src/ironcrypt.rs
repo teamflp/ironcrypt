@@ -17,14 +17,12 @@ use crate::secrets::aws::AwsStore;
 #[cfg(feature = "azure")]
 use crate::secrets::azure::AzureStore;
 use aes_gcm::aead::{Aead, KeyInit};
-use aes_gcm::{AeadCore, Aes256Gcm, Nonce};
+use aes_gcm::{Aes256Gcm, Nonce};
 use argon2::password_hash::{PasswordHasher, SaltString};
 use argon2::{Algorithm, Argon2, Params, Version};
 use base64::engine::general_purpose::STANDARD as base64_standard;
 use base64::Engine;
 use chacha20poly1305::XChaCha20Poly1305;
-use hkdf::Hkdf;
-use p256::ecdh::{self, EphemeralSecret};
 use p256::pkcs8::spki::{DecodePublicKey, EncodePublicKey};
 use p256::pkcs8::LineEnding;
 use rand::rngs::OsRng;

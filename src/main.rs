@@ -14,7 +14,6 @@ use ironcrypt::{
 use rand::RngCore;
 use sha2::{Digest, Sha512};
 use std::fs::File;
-use std::io::Read;
 use std::process;
 #[cfg(feature = "interactive")]
 use std::time::Duration;
