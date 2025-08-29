@@ -17,8 +17,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     lld \
  && rm -rf /var/lib/apt/lists/*
 
-# Enable MUSL target
+# Enable MUSL target and set the linker for it
 RUN rustup target add x86_64-unknown-linux-musl
+ENV CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc
 
 WORKDIR /usr/src/app
 
