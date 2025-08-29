@@ -127,13 +127,26 @@ async fn main() {
         }
     };
 
-    let api_keys: Vec<ApiKeyConfig> = match serde_json::from_str(&api_keys_content) {
+    let mut api_keys: Vec<ApiKeyConfig> = match serde_json::from_str(&api_keys_content) {
         Ok(keys) => keys,
         Err(e) => {
             eprintln!("Failed to parse API keys file: {}", e);
             return;
         }
     };
+
+    // Expand "full" permission
+    for key_config in &mut api_keys {
+        if key_config.permissions.contains(&Permission::Full) {
+            key_config.permissions.retain(|p| *p != Permission::Full);
+            key_config.permissions.push(Permission::Read);
+            key_config.permissions.push(Permission::Write);
+            key_config.permissions.push(Permission::Delete);
+            key_config.permissions.push(Permission::Update);
+            key_config.permissions.sort();
+            key_config.permissions.dedup();
+        }
+    }
 
     // Load keys
     let public_key_path = format!("{}/public_key_{}.pem", args.key_directory, args.key_version);
@@ -167,8 +180,8 @@ async fn main() {
 
     // Build our application router
     let app = Router::new()
-        .route("/encrypt", post(encrypt_handler))
-        .route("/decrypt", post(decrypt_handler))
+        .route("/write", post(write_handler))
+        .route("/read", post(read_handler))
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
             auth_middleware,
@@ -234,8 +247,8 @@ async fn auth_middleware(
     Err(StatusCode::UNAUTHORIZED)
 }
 
-/// Axum handler for the /encrypt endpoint.
-async fn encrypt_handler(
+/// Axum handler for the /write endpoint.
+async fn write_handler(
     State(state): State<AppState>,
     req: Request<Body>,
 ) -> Result<Response, StatusCode> {
@@ -244,12 +257,12 @@ async fn encrypt_handler(
         .extensions()
         .get::<Arc<Vec<Permission>>>()
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
-    if !permissions.contains(&Permission::Encrypt) {
+    if !permissions.contains(&Permission::Write) {
         return Err(StatusCode::FORBIDDEN);
     }
 
     // Create audit event
-    let mut audit_event = AuditEvent::new(Operation::Encrypt);
+    let mut audit_event = AuditEvent::new(Operation::Write);
     audit_event.key_version = Some(state.key_version.clone());
     audit_event.symmetric_algorithm = Some(state.config.symmetric_algorithm.to_string());
 
@@ -323,8 +336,8 @@ async fn encrypt_handler(
     Ok(Response::new(response_body))
 }
 
-/// Axum handler for the /decrypt endpoint.
-async fn decrypt_handler(
+/// Axum handler for the /read endpoint.
+async fn read_handler(
     State(state): State<AppState>,
     req: Request<Body>,
 ) -> Result<Response, StatusCode> {
@@ -333,12 +346,12 @@ async fn decrypt_handler(
         .extensions()
         .get::<Arc<Vec<Permission>>>()
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
-    if !permissions.contains(&Permission::Decrypt) {
+    if !permissions.contains(&Permission::Read) {
         return Err(StatusCode::FORBIDDEN);
     }
 
     // Create audit event
-    let mut audit_event = AuditEvent::new(Operation::Decrypt);
+    let mut audit_event = AuditEvent::new(Operation::Read);
     audit_event.key_version = Some(state.key_version.clone());
 
     // Get password from headers

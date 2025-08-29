@@ -1,12 +1,17 @@
 [
   {
-    "description": "Clé pour le chiffrement seulement",
-    "keyHash": "70ed0521f38abf0a2011673298654dc495961e381029d4039aad0ba6af84e026f905a41d9f99da9ea0233d79c758ea9390c1d9a138bfb3876ec3596e7e690bbf",
-    "permissions": ["encrypt"]
+    "description": "Clé pour l'écriture seulement (write-only-key)",
+    "keyHash": "33935c90cb3b20202342e691b4104f67b49870793f975a7c72412538591b6ed40c7160d9aec40fe0d83778a29b71099207dcc5682d8f0afca2ff02bef7fc6e34",
+    "permissions": ["write"]
   },
   {
-    "description": "Clé avec accès complet",
-    "keyHash": "8c28843bb151da875945f057bff8f601078bdc5431b115a80910937ecc54a1e94ff071ff9ad9ace330efd8de8f7939aa1d1ad27328cf32082ac62c70123103a9",
-    "permissions": ["encrypt", "decrypt"]
+    "description": "Clé avec accès en lecture/écriture (read-write-key)",
+    "keyHash": "7fdd3beb30545e6b38d2fce4340380ce9c4c94542086f0db57ae64979deac563e7836e93349e010839493da6ebc300fb5ea34487615605e73d08cb08c2d4c133",
+    "permissions": ["write", "read"]
+  },
+  {
+    "description": "Clé avec accès complet (full-access-key)",
+    "keyHash": "f6ebc5808fb7fbb34e99e3b4068039680e9a51913adad9e12634e30551e0d2fef4048fa8b498b1dfe2a5ba3dbda954618c11db90eff119a9ab680b4e8243529c",
+    "permissions": ["full"]
   }
 ]
