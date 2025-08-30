@@ -6,7 +6,7 @@ ENV_FILE ?=.env
 # Production environment file
 PROD_ENV_FILE ?=.env.prod
 # Use Docker Compose V2 syntax, which is now standard.
-COMPOSE = docker compose
+COMPOSE = sudo docker compose
 
 .PHONY: help all build dev prod stop logs clean test coverage
 
@@ -67,8 +67,8 @@ clean:
 
 test:
 	@echo "🧪  Tests unitaires..."
-	$(COMPOSE) run --rm ironcrypt cargo test
+	$(COMPOSE) --env-file $(ENV_FILE) run --rm ironcryptd cargo test
 
 coverage:
 	@echo "📊 Couverture de test..."
-	$(COMPOSE) run --rm ironcrypt cargo tarpaulin --out Html
+	$(COMPOSE) --env-file $(ENV_FILE) run --rm ironcryptd cargo tarpaulin --out Html
