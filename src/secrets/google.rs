@@ -4,8 +4,8 @@ use async_trait::async_trait;
 use google_cloud_secretmanager_v1::{
     client::{Client, ClientConfig},
     model::{
-        AccessSecretVersionRequest, AddSecretVersionRequest, CreateSecretRequest, Replication,
-        Automatic, Secret, SecretPayload,
+        AccessSecretVersionRequest, AddSecretVersionRequest, Automatic, CreateSecretRequest,
+        Replication, Secret, SecretPayload,
     },
 };
 use std::error::Error;

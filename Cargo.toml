@@ -71,14 +71,14 @@ azure_security_keyvault_secrets = { version = "0.6.0", optional = true }
 azure_identity = { version = "0.27.0", optional = true }
 
 # Google Cloud feature
-google-cloud-secretmanager-v1 = { version = "0.4.4", optional = true }
-google-cloud-auth = { version = "0.22.3", optional = true }
+google-cloud-secretmanager-v1 = { version = "0.4.5", optional = true }
 
 # HSM feature
 pkcs11 = { version = "0.2.0", optional = true }
 
 # Vault feature
 vaultrs = { version = "0.7.4", optional = true }
+tonic = "0.14.1"
 
 
 [dev-dependencies]
@@ -114,7 +114,7 @@ default = ["full"]
 
 # Meta features
 full = ["cli", "daemon", "cloud", "interactive"]
-cloud = ["aws", "azure", "gcp", "vault"]
+cloud = ["aws", "azure", "vault"]
 
 # CLI features
 cli = ["dep:clap", "dep:tar", "dep:flate2", "dep:tempfile"]
@@ -134,7 +134,7 @@ daemon = [
 # Cloud provider features
 aws = ["dep:aws-config", "dep:aws-sdk-secretsmanager"]
 azure = ["dep:azure_security_keyvault_secrets", "dep:azure_identity"]
-gcp = ["dep:google-cloud-secretmanager-v1", "dep:google-cloud-auth"]
+gcp = ["dep:google-cloud-secretmanager-v1"]
 vault = ["dep:vaultrs"]
 
 # Hardware Security Module feature

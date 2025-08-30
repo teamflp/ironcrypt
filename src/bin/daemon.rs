@@ -17,7 +17,7 @@ use ironcrypt::{
     decrypt_stream, encrypt_stream,
     keys::{PrivateKey, PublicKey},
     load_private_key, load_public_key,
-    secrets::{aws::AwsStore, SecretStore},
+    secrets::{SecretStore},
     Argon2Config,
 };
 use sha2::{Digest, Sha512};
