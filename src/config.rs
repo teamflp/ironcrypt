@@ -53,10 +53,10 @@ pub struct SecretsConfig {
     /// Configuration for Azure Key Vault.
     #[serde(default)]
     pub azure: Option<AzureConfig>,
-    // TODO: Google provider disabled due to compilation errors.
-    // /// Configuration for Google Cloud Secret Manager.
-    // #[serde(default)]
-    // pub google: Option<GoogleConfig>,
+    /// Configuration for Google Cloud Secret Manager.
+    #[cfg(feature = "gcp")]
+    #[serde(default)]
+    pub google: Option<GoogleConfig>,
 }
 
 /// Configuration for auditing.
@@ -70,13 +70,12 @@ pub struct AuditConfig {
     pub signing_key_path: Option<String>,
 }
 
-// TODO: Google provider disabled due to compilation errors.
-// /// Configuration for Google Cloud Secret Manager.
-// #[derive(Serialize, Deserialize, Debug, Clone, Default)]
-// pub struct GoogleConfig {
-//     /// The Google Cloud project ID.
-//     pub project_id: String,
-// }
+/// Configuration for Google Cloud Secret Manager.
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub struct GoogleConfig {
+    /// The Google Cloud project ID.
+    pub project_id: String,
+}
 
 /// Configuration for Azure Key Vault.
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]

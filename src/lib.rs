@@ -127,6 +127,7 @@
 
 // --- Modules ---
 pub mod ffi;
+pub mod password;
 pub mod algorithms;
 pub mod audit;
 pub mod auth;
@@ -181,7 +182,9 @@ pub use ironcrypt::IronCrypt;
 pub use rsa_utils::{generate_rsa_keys, load_private_key, load_public_key, save_keys_to_files};
 
 // Secret management
-pub use secrets::{vault, SecretStore};
+#[cfg(feature = "vault")]
+pub use secrets::vault;
+pub use secrets::SecretStore;
 #[cfg(feature = "aws")]
 pub use secrets::aws;
 #[cfg(feature = "azure")]

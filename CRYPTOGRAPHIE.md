@@ -76,7 +76,7 @@ Commandes pour protéger et accéder à vos données au quotidien.
 *   **Exemple de code** :
     ```sh
     # Déchiffrer le fichier avec la clé privée v1
-    ironcrypt decrypt-file --input-file rapport.enc --output-file rapport_dechien.pdf --key-version v1 --passphrase "ma_phrase_secrete"
+    ironcrypt decrypt-file --input-file rapport.enc --output-file rapport_dechiffre.pdf --key-version v1 --passphrase "ma_phrase_secrete"
     ```
 
 ---

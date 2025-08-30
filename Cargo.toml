@@ -43,6 +43,7 @@ chrono = { version = "0.4", features = ["serde"] }
 toml = "0.8.14"
 tracing-appender = "0.2.3"
 tracing-subscriber = { version = "0.3", features = ["fmt", "json", "env-filter"] }
+subtle = "2.5.0"
 
 # --- Optional Dependencies ---
 
@@ -113,8 +114,7 @@ default = ["full"]
 
 # Meta features
 full = ["cli", "daemon", "cloud", "interactive"]
-cloud = ["aws", "azure", "vault"]
-# cloud = ["aws", "azure", "gcp", "vault"]
+cloud = ["aws", "azure", "gcp", "vault"]
 
 # CLI features
 cli = ["dep:clap", "dep:tar", "dep:flate2", "dep:tempfile"]
