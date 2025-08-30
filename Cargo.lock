@@ -2459,6 +2459,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "signature",
+ "subtle",
  "tar",
  "tempfile",
  "thiserror 2.0.14",

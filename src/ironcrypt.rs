@@ -273,7 +273,7 @@ impl IronCrypt {
     }
 
     pub fn encrypt_password(&self, password: &str) -> Result<String, IronCryptError> {
-        self.encrypt_binary_data(b"", password)
+        crate::password::encrypt(password, &self.public_key, &self.key_version)
     }
 
     pub fn verify_password(
@@ -281,11 +281,10 @@ impl IronCrypt {
         encrypted_json: &str,
         user_input_password: &str,
     ) -> Result<bool, IronCryptError> {
-        match self.decrypt_binary_data(encrypted_json, user_input_password) {
-            Ok(_) => Ok(true),
-            Err(IronCryptError::DecryptionError(_)) => Ok(false),
-            Err(e) => Err(e),
-        }
+        let private_key_path = format!("{}/private_key_{}.pem", self.key_directory, self.key_version);
+        let passphrase = self.get_passphrase()?;
+        let private_key = load_any_private_key(&private_key_path, passphrase.as_deref())?;
+        crate::password::verify(encrypted_json, user_input_password, &private_key)
     }
 
     pub async fn store_secret(&self, key: &str, value: &str) -> Result<(), IronCryptError> {

@@ -1,42 +1,27 @@
-// TODO: This module is commented out because it fails to compile after a
-// dependency update. The `google-cloud-secretmanager-v1` crate seems to have
-// had significant breaking changes, and the existing code is no longer valid.
-// This needs to be investigated and fixed by someone familiar with the new
-// Google Cloud Rust SDK APIs. For now, it is disabled to allow the rest of
-// the project to build.
-
-/*
 use crate::config::GoogleConfig;
+use crate::secrets::SecretStore;
 use async_trait::async_trait;
-use google_cloud_auth::project::Config;
-use google_cloud_auth::token::DefaultTokenSource;
-use google_cloud_secretmanager_v1::api::{
-    AccessSecretVersionRequest, AddSecretVersionRequest, CreateSecretRequest, GetSecretRequest,
-    Replication, Secret, SecretPayload,
+use google_cloud_secretmanager_v1::{
+    client::{Client, ClientConfig},
+    model::{
+        AccessSecretVersionRequest, AddSecretVersionRequest, CreateSecretRequest, Replication,
+        Automatic, Secret, SecretPayload,
+    },
 };
-use google_cloud_secretmanager_v1::SecretManagerClient;
 use std::error::Error;
-use std::sync::Arc;
-
-use super::SecretStore;
 
 /// A secret store that uses Google Cloud Secret Manager.
 pub struct GoogleStore {
-    client: SecretManagerClient,
+    client: Client,
     project_id: String,
 }
 
 impl GoogleStore {
     /// Creates a new `GoogleStore`.
     pub async fn new(config: &GoogleConfig) -> Result<Self, Box<dyn Error + Send + Sync>> {
-        let ts = Arc::new(
-            DefaultTokenSource::new(Config {
-                audience: None,
-                scopes: Some(&["https://www.googleapis.com/auth/cloud-platform"]),
-            })
-            .await?,
-        );
-        let client = SecretManagerClient::new(ts).await?;
+        // Assume the client can be created with a default config that handles auth automatically.
+        let client_config = ClientConfig::default().with_auth().await?;
+        let client = Client::new(client_config);
         Ok(Self {
             client,
             project_id: config.project_id.clone(),
@@ -47,14 +32,14 @@ impl GoogleStore {
 #[async_trait]
 impl SecretStore for GoogleStore {
     async fn get_secret(&self, key: &str) -> Result<String, Box<dyn Error + Send + Sync>> {
-        let version_name = format!(
-            "projects/{}/secrets/{}/versions/latest",
-            self.project_id, key
-        );
         let request = AccessSecretVersionRequest {
-            name: version_name,
+            name: format!(
+                "projects/{}/secrets/{}/versions/latest",
+                self.project_id, key
+            ),
             ..Default::default()
         };
+
         let response = self.client.access_secret_version(request).await?;
         let payload = response.payload.ok_or("Secret payload is empty")?;
         let data = payload.data.ok_or("Secret data is empty")?;
@@ -62,37 +47,31 @@ impl SecretStore for GoogleStore {
     }
 
     async fn set_secret(&self, key: &str, value: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
-        let secret_name = format!("projects/{}/secrets/{}", self.project_id, key);
+        let parent = format!("projects/{}", self.project_id);
+        let name = format!("{}/secrets/{}", parent, key);
 
-        // Check if the secret exists.
-        let get_request = GetSecretRequest {
-            name: secret_name.clone(),
-            ..Default::default()
-        };
-
-        if self.client.get_secret(get_request).await.is_err() {
-            // Secret does not exist, create it.
+        // Check if the secret exists. If not, create it.
+        if self.client.get_secret(&name).await.is_err() {
             let create_request = CreateSecretRequest {
-                parent: format!("projects/{}", self.project_id),
+                parent,
                 secret_id: key.to_string(),
-                secret: Some(Secret {
+                secret: Secret {
                     replication: Some(Replication {
                         replication: Some(
-                            google_cloud_secretmanager_v1::api::replication::Replication::Automatic(
-                                google_cloud_secretmanager_v1::api::Automatic::default(),
+                            google_cloud_secretmanager_v1::model::replication::Replication::Automatic(
+                                Automatic::default(),
                             ),
                         ),
                     }),
                     ..Default::default()
-                }),
+                },
                 ..Default::default()
             };
             self.client.create_secret(create_request).await?;
         }
 
-        // Add a new version to the secret.
         let add_version_request = AddSecretVersionRequest {
-            parent: secret_name,
+            parent: name,
             payload: Some(SecretPayload {
                 data: Some(value.as_bytes().to_vec()),
                 ..Default::default()
@@ -103,4 +82,3 @@ impl SecretStore for GoogleStore {
         Ok(())
     }
 }
-*/
