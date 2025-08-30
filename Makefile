@@ -67,7 +67,7 @@ clean:
 
 test:
 	@echo "🧪  Tests unitaires..."
-	$(COMPOSE) --env-file $(ENV_FILE) run --rm ironcryptd cargo test
+	$(COMPOSE) --env-file $(ENV_FILE) run --rm tests cargo test
 
 coverage:
 	@echo "📊 Couverture de test..."
