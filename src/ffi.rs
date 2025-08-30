@@ -3,13 +3,13 @@ use std::os::raw::c_char;
 
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::Aes256Gcm;
-use argon2::password_hash::{PasswordHasher, SaltString};
-use argon2::{Algorithm, Argon2, Params, Version, PasswordVerifier};
+use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
+use argon2::{Algorithm, Argon2, Params, Version};
 use base64::engine::general_purpose::STANDARD as base64_standard;
 use base64::Engine;
-use pkcs8::{DecodePublicKey, EncodePrivateKey, EncodePublicKey, LineEnding};
 use rand::rngs::OsRng;
 use rand::RngCore;
+use rsa::pkcs8::{DecodePublicKey, EncodePrivateKey, EncodePublicKey, LineEnding};
 use rsa::{Oaep, RsaPublicKey};
 use sha2::Sha256;
 
@@ -44,8 +44,8 @@ pub extern "C" fn ironcrypt_generate_rsa_keys(
         Err(_) => return -1,
     };
     unsafe {
-        *private_key_pem = CString::new(private_pem.as_bytes()).unwrap().into_raw();
-        *public_key_pem = CString::new(public_pem.as_bytes()).unwrap().into_raw();
+        *private_key_pem = CString::new(private_pem.as_str()).unwrap().into_raw();
+        *public_key_pem = CString::new(public_pem.as_str()).unwrap().into_raw();
     }
     0
 }
@@ -107,10 +107,14 @@ pub extern "C" fn ironcrypt_password_encrypt(
         Err(_) => return -1,
     };
 
-    let cipher = Aes256Gcm::new(&aes_key.into());
+    let cipher = match Aes256Gcm::new_from_slice(&aes_key) {
+        Ok(c) => c,
+        Err(_) => return -1,
+    };
     let mut nonce = [0u8; 12];
     OsRng.fill_bytes(&mut nonce);
-    let ciphertext = match cipher.encrypt(&nonce.into(), password_hash.as_bytes()) {
+    let nonce_ga = aes_gcm::Nonce::from_slice(&nonce);
+    let ciphertext = match cipher.encrypt(nonce_ga, password_hash.as_bytes()) {
         Ok(text) => text,
         Err(_) => return -1,
     };
@@ -193,12 +197,18 @@ pub extern "C" fn ironcrypt_password_verify(
         Ok(n) => n,
         Err(_) => return -1,
     };
+    if nonce_vec.len() != 12 {
+        return -1;
+    }
     let nonce = aes_gcm::Nonce::from_slice(&nonce_vec);
     let ciphertext = match base64_standard.decode(encrypted_data.ciphertext) {
         Ok(c) => c,
         Err(_) => return -1,
     };
-    let cipher = Aes256Gcm::new_from_slice(&aes_key).unwrap();
+    let cipher = match Aes256Gcm::new_from_slice(&aes_key) {
+        Ok(c) => c,
+        Err(_) => return -1,
+    };
     let decrypted_hash_bytes = match cipher.decrypt(nonce, ciphertext.as_ref()) {
         Ok(h) => h,
         Err(_) => return -1,
