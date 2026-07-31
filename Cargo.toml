@@ -63,6 +63,8 @@ tokio-util = { version = "0.7.11", features = ["io-util"], optional = true }
 futures = { version = "0.3", optional = true }
 tokio-rustls = { version = "0.26", optional = true }
 rustls = { version = "0.23", optional = true }
+# Floor for RUSTSEC-2026-0045/0046/0047/0048 (aws-lc-sys >= 0.39 via aws-lc-rs)
+aws-lc-rs = { version = "1.17.3", optional = true }
 rustls-pemfile = { version = "2", optional = true }
 hyper = { version = "1", optional = true }
 hyper-util = { version = "0.1", features = ["tokio", "server-auto", "service"], optional = true }
@@ -129,6 +131,7 @@ daemon = [
   "dep:futures",
   "dep:tokio-rustls",
   "dep:rustls",
+  "dep:aws-lc-rs",
   "dep:rustls-pemfile",
   "dep:hyper",
   "dep:hyper-util",
