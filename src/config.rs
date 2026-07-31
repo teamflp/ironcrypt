@@ -57,6 +57,10 @@ pub struct SecretsConfig {
     #[cfg(feature = "gcp")]
     #[serde(default)]
     pub google: Option<GoogleConfig>,
+    /// Configuration for a PKCS#11-compatible Hardware Security Module.
+    #[cfg(feature = "hsm")]
+    #[serde(default)]
+    pub hsm: Option<HsmConfig>,
 }
 
 /// Configuration for auditing.
@@ -89,6 +93,18 @@ pub struct AzureConfig {
 pub struct AwsConfig {
     /// The AWS region.
     pub region: String,
+}
+
+/// Configuration for a PKCS#11-compatible Hardware Security Module.
+#[cfg(feature = "hsm")]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub struct HsmConfig {
+    /// Path to the PKCS#11 module shared library.
+    pub module_path: String,
+    /// Label of the token to use.
+    pub token_label: String,
+    /// User PIN for logging into the token.
+    pub pin: String,
 }
 
 /// Configuration for HashiCorp Vault.

@@ -62,8 +62,8 @@ mod hsm_impl {
                 .into_iter()
                 .find(|s| {
                     if let Ok(info) = ctx.get_token_info(*s) {
-                        let label = std::str::from_utf8(&info.label).unwrap_or("").trim();
-                        label == self.config.token_label
+                        let label = String::from(info.label);
+                        label.trim() == self.config.token_label
                     } else {
                         false
                     }

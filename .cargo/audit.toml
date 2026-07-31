@@ -1,0 +1,6 @@
+[advisories]
+ignore = [
+  # No fixed release is available for the current rsa crate advisory.
+  # Revisit once RustCrypto publishes a patched stable release.
+  "RUSTSEC-2023-0071",
+]
