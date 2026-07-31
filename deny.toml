@@ -11,7 +11,12 @@ targets = [
 [advisories]
 yanked = "warn"
 # Ignore known issues that are accepted for this crate's threat model / transitive deps.
-ignore = []
+ignore = [
+  # No stable upstream fix exists for the rsa Marvin timing advisory.
+  "RUSTSEC-2023-0071",
+  # rustls-pemfile is still used transitively for PEM loading; tracked as unmaintained.
+  "RUSTSEC-2025-0134",
+]
 
 [licenses]
 allow = [
@@ -28,6 +33,7 @@ allow = [
   "CC0-1.0",
   "0BSD",
   "BSL-1.0",
+  "CDLA-Permissive-2.0",
   "MPL-2.0",
 ]
 confidence-threshold = 0.8
