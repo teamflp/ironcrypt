@@ -89,3 +89,4 @@ sdks/php/vendor/
 /loki/loki-data/
 /grafana/
 /promtail/
+.cargo-home/

@@ -13,10 +13,10 @@ repository = "https://github.com/teamflp/ironcrypt"
 
 [dependencies]
 # Core dependencies - always included
-serde = { version = "1.0.210", features = ["derive"] }
+serde = { version = "1.0.228", features = ["derive"] }
 argon2 = "0.5.3"
 base64 = "0.22.1"
-rsa = { version = "0.9.6", features = ["pem"] }
+rsa = { version = "0.9.10", features = ["pem"] }
 pkcs8 = { version = "0.10.2", features = ["pem", "encryption"] }
 serde_json = "1.0"
 sha2 = "0.10.6"
@@ -49,7 +49,7 @@ subtle = "2.5.0"
 
 # CLI feature
 clap = { version = "4.5.20", features = ["derive", "env"], optional = true }
-tar = { version = "0.4.45", optional = true }
+tar = { version = "0.4.46", optional = true }
 flate2 = { version = "1.0.30", optional = true }
 tempfile = { version = "3.20.0", optional = true }
 

@@ -1,3 +1,7 @@
+# Prefer sparse crates.io index (avoids hanging git index sync)
+[registries.crates-io]
+protocol = "sparse"
+
 # Configuration for static linking
 [target.x86_64-unknown-linux-gnu]
 rustflags = ["-C", "target-feature=+crt-static"]
@@ -5,4 +9,3 @@ rustflags = ["-C", "target-feature=+crt-static"]
 # Configuration for musl (Alpine) target
 [target.x86_64-unknown-linux-musl]
 rustflags = []
-
