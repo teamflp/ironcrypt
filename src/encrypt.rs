@@ -13,7 +13,7 @@ use argon2::{Algorithm, Argon2, Params, Version};
 use base64::engine::general_purpose::STANDARD as base64_standard;
 use base64::Engine;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
-use chacha20poly1305::XChaCha20Poly1305;
+use chacha20poly1305::{XChaCha20Poly1305, XNonce};
 use hex;
 use p256::pkcs8::spki::{DecodePublicKey};
 use p256::pkcs8::{EncodePublicKey, LineEnding};
@@ -155,31 +155,46 @@ pub fn encrypt_stream<'a, R: Read, W: Write>(
     let mut event = AuditEvent::new(Operation::Write);
     event.symmetric_algorithm = Some(format!("{:?}", sym_algo));
     event.recipient_key_versions = recipients.clone().into_iter().map(|(_, v)| v.to_string()).collect();
-    if let Some((_, version)) = signing_key {
+    if let Some((key, version)) = signing_key {
         event.signer_key_version = Some(version.to_string());
-        event.signature_algorithm = Some("rsa-pkcs1v15-sha256".to_string());
+        event.signature_algorithm = Some(match key {
+            PrivateKey::Rsa(_) => "rsa-pss-sha256".to_string(),
+            PrivateKey::Ecc(_) => "ecdsa-p256-sha256".to_string(),
+        });
     }
 
     let result = (|| {
-        let mut source_data = Vec::new();
-        source.read_to_end(&mut source_data)?;
-        let mut source_cursor = Cursor::new(&source_data);
+        // Pre-buffer only when required: signing needs the full plaintext for the
+        // header signature; XChaCha20-Poly1305 is one-shot AEAD (no stream API here).
+        // AES-GCM without signing streams directly from `source`.
+        let must_prebuffer =
+            signing_key.is_some() || matches!(sym_algo, SymmetricAlgorithm::ChaCha20Poly1305);
+
+        let prebuffered: Option<Vec<u8>> = if must_prebuffer {
+            let mut source_data = Vec::new();
+            source.read_to_end(&mut source_data)?;
+            Some(source_data)
+        } else {
+            None
+        };
 
         let (signature, signature_algorithm, signer_key_version) =
             if let Some((key, version)) = signing_key {
-                let hash = hashing::hash_bytes(&source_data)?;
-                let rsa_private_key = match key {
-                    PrivateKey::Rsa(k) => k,
-                    _ => {
-                        return Err(IronCryptError::SignatureError(
-                            "Only RSA keys are supported for signing.".to_string(),
-                        ))
-                    }
+                let source_data = prebuffered.as_ref().expect("signing requires prebuffer");
+                let hash = hashing::hash_bytes(source_data)?;
+                let (sig, algo) = match key {
+                    PrivateKey::Rsa(rsa_private_key) => (
+                        rsa_utils::sign_hash_pss(rsa_private_key, &hash)?,
+                        "rsa-pss-sha256".to_string(),
+                    ),
+                    PrivateKey::Ecc(ecc_secret_key) => (
+                        ecc_utils::sign_hash_ecc(ecc_secret_key, &hash)?,
+                        "ecdsa-p256-sha256".to_string(),
+                    ),
                 };
-                let sig = rsa_utils::sign_hash(rsa_private_key, &hash)?;
                 (
                     Some(hex::encode(sig)),
-                    Some("rsa-pkcs1v15-sha256".to_string()),
+                    Some(algo),
                     Some(version.to_string()),
                 )
             } else {
@@ -277,25 +292,37 @@ pub fn encrypt_stream<'a, R: Read, W: Write>(
                     Aes256GcmStreamEncryptor::new(symmetric_key, &file_content_nonce_bytes);
                 symmetric_key.zeroize();
                 let mut buffer = [0u8; BUFFER_SIZE];
-                loop {
-                    let bytes_read = source_cursor.read(&mut buffer)?;
-                    if bytes_read == 0 {
-                        break;
+                if let Some(ref data) = prebuffered {
+                    let mut source_cursor = Cursor::new(data.as_slice());
+                    loop {
+                        let bytes_read = source_cursor.read(&mut buffer)?;
+                        if bytes_read == 0 {
+                            break;
+                        }
+                        let ciphertext_chunk = encryptor.update(&buffer[..bytes_read]);
+                        destination.write_all(&ciphertext_chunk)?;
                     }
-                    let ciphertext_chunk = encryptor.update(&buffer[..bytes_read]);
-                    destination.write_all(&ciphertext_chunk)?;
+                } else {
+                    loop {
+                        let bytes_read = source.read(&mut buffer)?;
+                        if bytes_read == 0 {
+                            break;
+                        }
+                        let ciphertext_chunk = encryptor.update(&buffer[..bytes_read]);
+                        destination.write_all(&ciphertext_chunk)?;
+                    }
                 }
                 let (final_chunk, tag) = encryptor.finalize();
                 destination.write_all(&final_chunk)?;
                 destination.write_all(&tag)?;
             }
             SymmetricAlgorithm::ChaCha20Poly1305 => {
-                let mut source_data_inner = Vec::new();
-                source_cursor.read_to_end(&mut source_data_inner)?;
+                let plaintext = prebuffered.as_ref().expect("ChaCha requires prebuffer");
                 let cipher = XChaCha20Poly1305::new_from_slice(&symmetric_key)?;
-                let nonce = Nonce::from_slice(&file_content_nonce_bytes);
-                let ciphertext = cipher.encrypt(nonce, source_data_inner.as_ref())?;
+                let nonce = XNonce::from_slice(&file_content_nonce_bytes);
+                let ciphertext = cipher.encrypt(nonce, plaintext.as_ref())?;
                 destination.write_all(&ciphertext)?;
+                symmetric_key.zeroize();
             }
         }
 
@@ -542,68 +569,96 @@ pub fn decrypt_stream<R: Read, W: Write>(
             }
         };
 
-        // Decrypt into a temporary buffer first for potential signature verification
-        let mut plaintext_buffer = Vec::new();
-        match sym_algo {
-            SymmetricAlgorithm::Aes256Gcm => {
-                let key_array: [u8; 32] = symmetric_key.as_slice().try_into().map_err(|_| {
-                    IronCryptError::DecryptionError("Decrypted key has incorrect size.".to_string())
-                })?;
-                let mut decryptor = Aes256GcmStreamDecryptor::new(key_array, &nonce_bytes);
-
-                let mut buffer = [0u8; BUFFER_SIZE];
-                loop {
-                    let bytes_read = source.read(&mut buffer)?;
-                    if bytes_read == 0 {
-                        break;
-                    }
-                    let plaintext_chunk = decryptor.update(&buffer[..bytes_read]);
-                    plaintext_buffer.extend_from_slice(&plaintext_chunk);
-                }
-                let final_chunk = decryptor.finalize()?;
-                plaintext_buffer.extend_from_slice(&final_chunk);
-            }
-            SymmetricAlgorithm::ChaCha20Poly1305 => {
-                let mut source_data = Vec::new();
-                source.read_to_end(&mut source_data)?;
-                let cipher = XChaCha20Poly1305::new_from_slice(&symmetric_key)?;
-                let nonce = Nonce::from_slice(&nonce_bytes);
-                plaintext_buffer = cipher.decrypt(nonce, source_data.as_ref())?;
-            }
-        }
-
-        if let Some((signature_hex, algo, _signer_version)) = signature_info {
-            let key_for_verification = verifying_key.ok_or_else(|| {
-                IronCryptError::SignatureVerificationFailed(
-                    "Signature found in file but no verification key was provided.".to_string(),
-                )
-            })?;
-
-            if algo != "rsa-pkcs1v15-sha256" {
-                return Err(IronCryptError::SignatureVerificationFailed(format!(
-                    "Unsupported signature algorithm: {}",
-                    algo
-                )));
-            }
-
-            let rsa_public_key = match key_for_verification {
-                PublicKey::Rsa(k) => k,
-                _ => return Err(IronCryptError::SignatureVerificationFailed(
-                    "Only RSA keys are supported for verification.".to_string(),
-                )),
-            };
-
-            let hash = hashing::hash_bytes(&plaintext_buffer)?;
-            let signature = hex::decode(signature_hex)
-                .map_err(|e| IronCryptError::SignatureError(format!("Failed to decode signature: {}", e)))?;
-
-            rsa_utils::verify_signature(rsa_public_key, &hash, &signature)?;
-        }
-
-        destination.write_all(&plaintext_buffer)?;
-
+        // Reject wrong passwords before any plaintext leaves this function.
         if !password_ok {
             return Err(IronCryptError::PasswordVerificationError);
+        }
+
+        let needs_buffer = signature_info.is_some()
+            || matches!(sym_algo, SymmetricAlgorithm::ChaCha20Poly1305);
+
+        if needs_buffer {
+            let mut plaintext_buffer = Vec::new();
+            match sym_algo {
+                SymmetricAlgorithm::Aes256Gcm => {
+                    let key_array: [u8; 32] = symmetric_key.as_slice().try_into().map_err(|_| {
+                        IronCryptError::DecryptionError(
+                            "Decrypted key has incorrect size.".to_string(),
+                        )
+                    })?;
+                    let mut decryptor = Aes256GcmStreamDecryptor::new(key_array, &nonce_bytes);
+
+                    let mut buffer = [0u8; BUFFER_SIZE];
+                    loop {
+                        let bytes_read = source.read(&mut buffer)?;
+                        if bytes_read == 0 {
+                            break;
+                        }
+                        let plaintext_chunk = decryptor.update(&buffer[..bytes_read]);
+                        plaintext_buffer.extend_from_slice(&plaintext_chunk);
+                    }
+                    let final_chunk = decryptor.finalize()?;
+                    plaintext_buffer.extend_from_slice(&final_chunk);
+                }
+                SymmetricAlgorithm::ChaCha20Poly1305 => {
+                    let mut source_data = Vec::new();
+                    source.read_to_end(&mut source_data)?;
+                    let cipher = XChaCha20Poly1305::new_from_slice(&symmetric_key)?;
+                    let nonce = XNonce::from_slice(&nonce_bytes);
+                    plaintext_buffer = cipher.decrypt(nonce, source_data.as_ref())?;
+                }
+            }
+
+            if let Some((signature_hex, algo, _signer_version)) = signature_info {
+                let key_for_verification = verifying_key.ok_or_else(|| {
+                    IronCryptError::SignatureVerificationFailed(
+                        "Signature found in file but no verification key was provided.".to_string(),
+                    )
+                })?;
+
+                let hash = hashing::hash_bytes(&plaintext_buffer)?;
+                let signature = hex::decode(signature_hex).map_err(|e| {
+                    IronCryptError::SignatureError(format!("Failed to decode signature: {}", e))
+                })?;
+
+                match (algo.as_str(), key_for_verification) {
+                    ("rsa-pss-sha256", PublicKey::Rsa(k)) => {
+                        rsa_utils::verify_signature_pss(k, &hash, &signature)?;
+                    }
+                    ("rsa-pkcs1v15-sha256", PublicKey::Rsa(k)) => {
+                        rsa_utils::verify_signature_pkcs1v15(k, &hash, &signature)?;
+                    }
+                    ("ecdsa-p256-sha256", PublicKey::Ecc(k)) => {
+                        ecc_utils::verify_signature_ecc(k, &hash, &signature)?;
+                    }
+                    (other, _) => {
+                        return Err(IronCryptError::SignatureVerificationFailed(format!(
+                            "Unsupported signature algorithm or key type: {}",
+                            other
+                        )));
+                    }
+                }
+            }
+
+            destination.write_all(&plaintext_buffer)?;
+        } else {
+            // AES-GCM without signature: decrypt and write in streaming fashion.
+            let key_array: [u8; 32] = symmetric_key.as_slice().try_into().map_err(|_| {
+                IronCryptError::DecryptionError("Decrypted key has incorrect size.".to_string())
+            })?;
+            let mut decryptor = Aes256GcmStreamDecryptor::new(key_array, &nonce_bytes);
+
+            let mut buffer = [0u8; BUFFER_SIZE];
+            loop {
+                let bytes_read = source.read(&mut buffer)?;
+                if bytes_read == 0 {
+                    break;
+                }
+                let plaintext_chunk = decryptor.update(&buffer[..bytes_read]);
+                destination.write_all(&plaintext_chunk)?;
+            }
+            let final_chunk = decryptor.finalize()?;
+            destination.write_all(&final_chunk)?;
         }
 
         Ok(())
@@ -635,4 +690,59 @@ pub(crate) fn check_password_hash(hash_b64: &str, password: &str) -> bool {
     Argon2::default()
         .verify_password(password.as_bytes(), &parsed_hash)
         .is_ok()
+}
+
+/// Derives a dedicated AES-GCM nonce for sealing an optional password hash field.
+fn derive_password_hash_nonce(content_nonce: &[u8]) -> [u8; 12] {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(b"ironcrypt-pwd-hash-nonce-v1");
+    hasher.update(content_nonce);
+    let digest = hasher.finalize();
+    let mut out = [0u8; 12];
+    out.copy_from_slice(&digest[..12]);
+    out
+}
+
+/// Encrypts an Argon2 hash string so it is never stored in cleartext inside EncryptedData JSON.
+pub(crate) fn seal_password_hash(
+    symmetric_key: &[u8],
+    content_nonce: &[u8],
+    hash_str: &str,
+) -> Result<String, IronCryptError> {
+    let nonce = derive_password_hash_nonce(content_nonce);
+    let cipher = Aes256Gcm::new_from_slice(symmetric_key)?;
+    let ciphertext = cipher
+        .encrypt(Nonce::from_slice(&nonce), hash_str.as_bytes())
+        .map_err(|e| IronCryptError::EncryptionError(format!("Failed to seal password hash: {e}")))?;
+    Ok(base64_standard.encode(ciphertext))
+}
+
+/// Verifies a password against a sealed (or legacy cleartext) password_hash field.
+pub(crate) fn verify_sealed_or_legacy_password_hash(
+    symmetric_key: &[u8],
+    content_nonce: &[u8],
+    password_hash_field: &str,
+    password: &str,
+) -> bool {
+    // Preferred: sealed Argon2 string encrypted under the content key.
+    if let Ok(sealed_bytes) = base64_standard.decode(password_hash_field) {
+        let nonce = derive_password_hash_nonce(content_nonce);
+        if let Ok(cipher) = Aes256Gcm::new_from_slice(symmetric_key) {
+            if let Ok(hash_bytes) =
+                cipher.decrypt(Nonce::from_slice(&nonce), sealed_bytes.as_ref())
+            {
+                if let Ok(hash_str) = String::from_utf8(hash_bytes) {
+                    if let Ok(parsed) = PasswordHash::new(&hash_str) {
+                        return Argon2::default()
+                            .verify_password(password.as_bytes(), &parsed)
+                            .is_ok();
+                    }
+                }
+            }
+        }
+    }
+
+    // Legacy payloads stored the Argon2 PHC string base64-encoded in cleartext.
+    check_password_hash(password_hash_field, password)
 }

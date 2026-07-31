@@ -1,12 +1,18 @@
 [
   {
-    "description": "Clé pour une application de backup (chiffrement seul)",
-    "keyHash": "hash_de_votre_cle_generee_ici",
-    "permissions": ["encrypt"]
+    "description": "DEMO ONLY — write-only API key hash (replace with output of `ironcrypt generate-api-key`)",
+    "keyHash": "REPLACE_WITH_SHA512_HEX_OF_YOUR_API_KEY",
+    "permissions": ["write"]
   },
   {
-    "description": "Clé pour un administrateur (accès complet)",
-    "keyHash": "hash_d_une_autre_cle_ici",
-    "permissions": ["encrypt", "decrypt"]
+    "description": "DEMO ONLY — read/write API key hash",
+    "keyHash": "REPLACE_WITH_SHA512_HEX_OF_YOUR_API_KEY",
+    "permissions": ["write", "read"]
+  },
+  {
+    "description": "DEMO ONLY — full access expands to read/write/delete/update",
+    "keyHash": "REPLACE_WITH_SHA512_HEX_OF_YOUR_API_KEY",
+    "permissions": ["full"],
+    "allowedServices": ["aws", "azure", "vault"]
   }
 ]

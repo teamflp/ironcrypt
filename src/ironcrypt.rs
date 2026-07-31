@@ -22,7 +22,7 @@ use argon2::password_hash::{PasswordHasher, SaltString};
 use argon2::{Algorithm, Argon2, Params, Version};
 use base64::engine::general_purpose::STANDARD as base64_standard;
 use base64::Engine;
-use chacha20poly1305::XChaCha20Poly1305;
+use chacha20poly1305::{XChaCha20Poly1305, XNonce};
 use p256::pkcs8::spki::{DecodePublicKey, EncodePublicKey};
 use p256::pkcs8::LineEnding;
 use rand::rngs::OsRng;
@@ -333,7 +333,8 @@ impl IronCrypt {
                 let hash_str = argon2
                     .hash_password(pwd_string.as_bytes(), &salt)?
                     .to_string();
-                Some(base64_standard.encode(hash_str))
+                // Will be sealed after the content nonce is generated.
+                Some(hash_str)
             } else {
                 None
             };
@@ -350,6 +351,15 @@ impl IronCrypt {
             let mut nonce_bytes = vec![0u8; nonce_len];
             OsRng.fill_bytes(&mut nonce_bytes);
 
+            let sealed_password_hash = match &password_hash {
+                Some(hash_str) => Some(crate::encrypt::seal_password_hash(
+                    &symmetric_key,
+                    &nonce_bytes,
+                    hash_str,
+                )?),
+                None => None,
+            };
+
             let ciphertext = match sym_algo {
                 SymmetricAlgorithm::Aes256Gcm => {
                     let cipher = Aes256Gcm::new_from_slice(&symmetric_key)?;
@@ -357,7 +367,7 @@ impl IronCrypt {
                 }
                 SymmetricAlgorithm::ChaCha20Poly1305 => {
                     let cipher = XChaCha20Poly1305::new_from_slice(&symmetric_key)?;
-                    cipher.encrypt(Nonce::from_slice(&nonce_bytes), data)?
+                    cipher.encrypt(XNonce::from_slice(&nonce_bytes), data)?
                 }
             };
 
@@ -391,7 +401,7 @@ impl IronCrypt {
                 recipient_info,
                 nonce: base64_standard.encode(&nonce_bytes),
                 ciphertext: base64_standard.encode(&ciphertext),
-                password_hash,
+                password_hash: sealed_password_hash,
             };
 
             symmetric_key.zeroize();
@@ -467,6 +477,25 @@ impl IronCrypt {
             let ciphertext = base64_standard.decode(&ed.ciphertext)?;
             let nonce_bytes = base64_standard.decode(&ed.nonce)?;
 
+            // Verify optional password before decrypting the payload to plaintext.
+            let password_ok = if let Some(hash_field) = ed.password_hash.as_ref() {
+                crate::encrypt::verify_sealed_or_legacy_password_hash(
+                    &symmetric_key,
+                    &nonce_bytes,
+                    hash_field,
+                    password,
+                )
+            } else {
+                true
+            };
+
+            if !password_ok {
+                symmetric_key.zeroize();
+                return Err(IronCryptError::DecryptionError(
+                    "Invalid password or ciphertext".to_string(),
+                ));
+            }
+
             let plaintext_result = match ed.symmetric_algorithm {
                 SymmetricAlgorithm::Aes256Gcm => {
                     let cipher = Aes256Gcm::new_from_slice(&symmetric_key)?;
@@ -474,25 +503,15 @@ impl IronCrypt {
                 }
                 SymmetricAlgorithm::ChaCha20Poly1305 => {
                     let cipher = XChaCha20Poly1305::new_from_slice(&symmetric_key)?;
-                    cipher.decrypt(Nonce::from_slice(&nonce_bytes), ciphertext.as_ref())
+                    cipher.decrypt(XNonce::from_slice(&nonce_bytes), ciphertext.as_ref())
                 }
             };
 
             symmetric_key.zeroize();
 
-            let password_ok = if let Some(hash_b64) = ed.password_hash.as_ref() {
-                crate::encrypt::check_password_hash(hash_b64, password)
-            } else {
-                true
-            };
-
-            if plaintext_result.is_err() || !password_ok {
-                return Err(IronCryptError::DecryptionError(
-                    "Invalid password or ciphertext".to_string(),
-                ));
-            }
-
-            Ok(plaintext_result.unwrap())
+            plaintext_result.map_err(|_| {
+                IronCryptError::DecryptionError("Invalid password or ciphertext".to_string())
+            })
         })();
 
         if let Err(e) = &result {
@@ -624,7 +643,6 @@ impl IronCrypt {
     pub fn sign(&self, data_to_sign: &[u8]) -> Result<String, IronCryptError> {
         let mut event = AuditEvent::new(Operation::Sign);
         event.key_version = Some(self.key_version.to_string());
-        event.signature_algorithm = Some("rsa-pkcs1v15-sha256".to_string());
 
         let result: Result<String, IronCryptError> = (|| {
             let private_key_path =
@@ -636,10 +654,17 @@ impl IronCrypt {
             hasher.update(data_to_sign);
             let hash = hasher.finalize();
 
-            let signature = match private_key {
-                PrivateKey::Rsa(key) => rsa_utils::sign_hash(&key, &hash)?,
-                PrivateKey::Ecc(key) => ecc_utils::sign_hash_ecc(&key, &hash)?,
+            let (signature, algo) = match private_key {
+                PrivateKey::Rsa(key) => (
+                    rsa_utils::sign_hash_pss(&key, &hash)?,
+                    "rsa-pss-sha256",
+                ),
+                PrivateKey::Ecc(key) => (
+                    ecc_utils::sign_hash_ecc(&key, &hash)?,
+                    "ecdsa-p256-sha256",
+                ),
             };
+            event.signature_algorithm = Some(algo.to_string());
 
             Ok(base64_standard.encode(signature))
         })();
@@ -662,7 +687,10 @@ impl IronCrypt {
     ) -> Result<bool, IronCryptError> {
         let mut event = AuditEvent::new(Operation::Verify);
         event.key_version = Some(self.key_version.to_string());
-        event.signature_algorithm = Some("rsa-pkcs1v15-sha256".to_string());
+        event.signature_algorithm = Some(match &self.public_key {
+            PublicKey::Rsa(_) => "rsa-pss-sha256".to_string(),
+            PublicKey::Ecc(_) => "ecdsa-p256-sha256".to_string(),
+        });
 
         let verification_result = (|| {
             let signature_bytes = base64_standard.decode(signature)?;
@@ -673,6 +701,7 @@ impl IronCrypt {
 
             match &self.public_key {
                 PublicKey::Rsa(key) => {
+                    // Accept PSS (current) and PKCS#1 v1.5 (legacy).
                     rsa_utils::verify_signature(key, &hash, &signature_bytes)
                 }
                 PublicKey::Ecc(key) => {
@@ -687,10 +716,9 @@ impl IronCrypt {
                 event.log();
                 Ok(true)
             }
-            Err(IronCryptError::SignatureError(_)) => {
+            Err(IronCryptError::SignatureError(_))
+            | Err(IronCryptError::SignatureVerificationFailed(_)) => {
                 event.outcome = Outcome::Failure;
-                // Don't log the full signature error message, as it can be verbose
-                // and is expected in a verification failure scenario.
                 event.error_message = Some("Signature verification failed.".to_string());
                 event.log();
                 Ok(false)

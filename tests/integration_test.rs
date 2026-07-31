@@ -164,8 +164,10 @@ async fn test_key_rotation() {
     let encrypted_data_v1 = crypt_v1.encrypt_password(STRONG_PASSWORD).unwrap();
 
     // 2. Create a new key version (v2)
-    let mut config_v2 = IronCryptConfig::default();
-    config_v2.rsa_key_size = 2048; // Can be different
+    let mut config_v2 = IronCryptConfig {
+        rsa_key_size: 2048, // Can be different
+        ..IronCryptConfig::default()
+    };
     data_type_config.insert(
         DataType::Generic,
         ironcrypt::config::KeyManagementConfig {
@@ -447,18 +449,13 @@ fn test_multi_recipient_encryption_decryption() {
     let mut source = std::io::Cursor::new(original_data);
     let mut dest = std::io::Cursor::new(Vec::new());
     let mut password = "MultiUserPassword1!".to_string();
-    let recipients = vec![
-        (ironcrypt::keys::PublicKey::Rsa(pub1), "v1"),
-        (ironcrypt::keys::PublicKey::Rsa(pub2), "v2"),
-    ];
+    let pk1 = ironcrypt::keys::PublicKey::Rsa(pub1);
+    let pk2 = ironcrypt::keys::PublicKey::Rsa(pub2);
     encrypt_stream(
         &mut source,
         &mut dest,
         &mut password,
-        recipients
-            .iter()
-            .map(|(k, v)| (k, *v))
-            .collect::<Vec<(&ironcrypt::keys::PublicKey, &str)>>(),
+        [(&pk1, "v1"), (&pk2, "v2")],
         None,
         &PasswordCriteria::default(),
         Argon2Config::default(),

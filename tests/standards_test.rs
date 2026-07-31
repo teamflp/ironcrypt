@@ -6,8 +6,10 @@ async fn test_nist_standard_applies_correct_params() {
     // Arrange
     let temp_dir = tempfile::tempdir().unwrap();
     let key_dir = temp_dir.path().to_str().unwrap();
-    let mut config = IronCryptConfig::default();
-    config.standard = CryptoStandard::Nist;
+    let mut config = IronCryptConfig {
+        standard: CryptoStandard::Nist,
+        ..IronCryptConfig::default()
+    };
 
     let mut data_type_config = HashMap::new();
     data_type_config.insert(
@@ -35,8 +37,10 @@ async fn test_fips_standard_applies_correct_params() {
     // Arrange
     let temp_dir = tempfile::tempdir().unwrap();
     let key_dir = temp_dir.path().to_str().unwrap();
-    let mut config = IronCryptConfig::default();
-    config.standard = CryptoStandard::Fips140_2;
+    let mut config = IronCryptConfig {
+        standard: CryptoStandard::Fips140_2,
+        ..IronCryptConfig::default()
+    };
 
     let mut data_type_config = HashMap::new();
     data_type_config.insert(
@@ -98,8 +102,10 @@ async fn test_anssi_standard_applies_correct_params() {
     // Arrange
     let temp_dir = tempfile::tempdir().unwrap();
     let key_dir = temp_dir.path().to_str().unwrap();
-    let mut config = IronCryptConfig::default();
-    config.standard = CryptoStandard::Anssi;
+    let mut config = IronCryptConfig {
+        standard: CryptoStandard::Anssi,
+        ..IronCryptConfig::default()
+    };
 
     let mut data_type_config = HashMap::new();
     data_type_config.insert(

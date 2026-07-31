@@ -12,7 +12,7 @@ use argon2::password_hash::{PasswordHasher, PasswordVerifier, SaltString};
 use argon2::{Algorithm, Argon2, Params, Version};
 use base64::engine::general_purpose::STANDARD as base64_standard;
 use base64::Engine;
-use chacha20poly1305::XChaCha20Poly1305;
+use chacha20poly1305::{XChaCha20Poly1305, XNonce};
 use p256::pkcs8::spki::{DecodePublicKey, EncodePublicKey};
 use p256::pkcs8::LineEnding;
 use rand::rngs::OsRng;
@@ -25,6 +25,9 @@ use zeroize::Zeroize;
 ///
 /// This function centralizes the password encryption logic, making it reusable
 /// by both the main library and the FFI layer.
+///
+/// The Argon2 hash is stored only inside the ciphertext (envelope encryption).
+/// The `password_hash` JSON field is left empty so the hash is never exposed in cleartext.
 pub fn encrypt(
     password: &str,
     public_key: &PublicKey,
@@ -82,10 +85,8 @@ pub fn encrypt(
         recipient_info,
         nonce: base64_standard.encode(&nonce_bytes),
         ciphertext: base64_standard.encode(&ciphertext),
-        // The password_hash field is now redundant since the ciphertext IS the encrypted hash.
-        // However, keeping it for compatibility with the existing struct.
-        // In a new version, this could be removed.
-        password_hash: Some(password_hash),
+        // Hash lives only in ciphertext — never duplicate it in cleartext JSON.
+        password_hash: None,
     };
 
     symmetric_key.zeroize();
@@ -145,7 +146,7 @@ pub fn verify(
         }
         SymmetricAlgorithm::ChaCha20Poly1305 => {
             let cipher = XChaCha20Poly1305::new_from_slice(&symmetric_key)?;
-            cipher.decrypt(Nonce::from_slice(&nonce_bytes), ciphertext.as_ref())
+            cipher.decrypt(XNonce::from_slice(&nonce_bytes), ciphertext.as_ref())
         }
     }
     .map_err(|_| IronCryptError::DecryptionError("Invalid ciphertext or key".to_string()))?;
@@ -162,5 +163,48 @@ pub fn verify(
         Ok(_) => Ok(true),
         Err(argon2::password_hash::Error::Password) => Ok(false),
         Err(_) => Err(IronCryptError::PasswordVerificationError),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::rsa_utils;
+
+    #[test]
+    fn encrypt_verify_roundtrip_does_not_leak_hash() {
+        let (priv_key, pub_key) = rsa_utils::generate_rsa_keys(2048).unwrap();
+        let json = encrypt(
+            "Str0ngP@ssw0rd42!",
+            &PublicKey::Rsa(pub_key),
+            "v1",
+        )
+        .unwrap();
+
+        let ed: EncryptedData = serde_json::from_str(&json).unwrap();
+        assert!(
+            ed.password_hash.is_none(),
+            "Argon2 hash must not appear in cleartext JSON"
+        );
+
+        assert!(verify(
+            &json,
+            "Str0ngP@ssw0rd42!",
+            &PrivateKey::Rsa(priv_key),
+        )
+        .unwrap());
+    }
+
+    #[test]
+    fn encrypt_verify_rejects_wrong_password() {
+        let (priv_key, pub_key) = rsa_utils::generate_rsa_keys(2048).unwrap();
+        let json = encrypt(
+            "Str0ngP@ssw0rd42!",
+            &PublicKey::Rsa(pub_key),
+            "v1",
+        )
+        .unwrap();
+
+        assert!(!verify(&json, "WrongP@ssw0rd99!", &PrivateKey::Rsa(priv_key)).unwrap());
     }
 }

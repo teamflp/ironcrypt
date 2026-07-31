@@ -1,107 +1,25 @@
-services:
-  ironcryptd:
-    build: .
-    deploy:
-      replicas: 2
-    command: >
-      ironcryptd 
-      --host 0.0.0.0 
-      --port 3000 
-      --key-directory /keys
-      --key-version v1 
-      --api-keys-file /etc/ironcrypt/keys.json 
-      --config /etc/ironcrypt/ironcrypt.toml
-    volumes:
-      - ./keys:/keys:ro
-      - ./keys.json:/etc/ironcrypt/keys.json:ro
-      - ./ironcrypt.toml:/etc/ironcrypt/ironcrypt.toml:ro
-    logging:
-      driver: loki
-      options:
-        loki-url: "https://${GRAFANA_CLOUD_LOKI_USER}:${GRAFANA_CLOUD_LOKI_API_KEY}@logs-prod-eu-west-0.grafana.net/loki/api/v1/push"
-    labels:
-      env: prod
-      app: ironcryptd
-    networks:
-      - monitoring_net
+# IronCrypt — base Compose file
+# Usage:
+#   Lab:  docker compose --profile lab -f docker-compose.yml -f docker-compose.lab.yml up --build
+#   Prod: docker compose --profile prod -f docker-compose.yml -f docker-compose.prod.yml up --build
+# Or via Makefile: `make lab` / `make prod`
+#
+# Copy examples first:
+#   cp keys.json.example keys.json
+#   cp ironcrypt.toml.example ironcrypt.toml
+#   mkdir -p keys && cp private_key_v1.pem.example keys/private_key_v1.pem
+#   cp public_key_v1.pem.example keys/public_key_v1.pem
 
+networks:
+  monitoring_net:
+    driver: bridge
+
+services:
   tests:
+    profiles: ["lab"]
     build:
       context: .
       target: builder
     volumes:
       - .:/usr/src/app
     working_dir: /usr/src/app
-
-  nginx:
-    image: nginx:latest
-    ports:
-      - "8080:80"
-    volumes:
-      - ./nginx/nginx.conf.template:/etc/nginx/nginx.conf
-    networks:
-      - monitoring_net
-    depends_on:
-      - ironcryptd
-
-  vault:
-    image: hashicorp/vault:latest
-    container_name: vault
-    ports:
-      - "8200:8200"
-    environment:
-      - VAULT_DEV_ROOT_TOKEN_ID=my-root-token
-      - VAULT_DEV_LISTEN_ADDRESS=0.0.0.0:8200
-    cap_add:
-      - IPC_LOCK
-    networks:
-      - monitoring_net
-
-  prometheus:
-    image: prom/prometheus
-    env_file: .env
-    ports:
-      - "${PROMETHEUS_PORT}"
-    volumes:
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
-    labels:
-      env: prod
-      app: monitoring
-    networks:
-      - monitoring_net
-
-  loki:
-    image: grafana/loki:2.9.4
-    env_file: .env
-    volumes:
-      - ./loki/loki-config.yml.template:/etc/loki/local-config.yml.template:ro
-      - ./loki/entrypoint.sh:/entrypoint.sh:ro
-      - /var/lib/docker/containers:/var/lib/docker/containers:ro
-    entrypoint: /entrypoint.sh
-    ports:
-      - "${PROMETHEUS_PORT}"
-    labels:
-      env: prod
-      app: monitoring
-    networks:
-      - monitoring_net
-
-  alertmanager:
-    image: prom/alertmanager
-    env_file: .env
-    volumes:
-      - ./alertmanager/config.yml.template:/etc/alertmanager/config.yml.template:ro
-      - ./alertmanager/entrypoint.sh:/entrypoint.sh:ro
-    entrypoint: /entrypoint.sh
-    ports:
-      - "${ALERTMANAGER_PORT}"
-    labels:
-      env: prod
-      app: monitoring
-    networks:
-      - monitoring_net
-
-# Réseau dédié pour la communication entre les services
-networks:
-  monitoring_net:
-    driver: bridge

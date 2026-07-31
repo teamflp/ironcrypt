@@ -5,86 +5,80 @@ namespace IronCrypt\Sdk;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\RequestException;
 
+/**
+ * Client for the IronCrypt HTTP daemon (`ironcryptd`).
+ *
+ * Endpoints: POST /write (encrypt), POST /read (decrypt).
+ * Pass the secret API key from `ironcrypt generate-api-key` as-is
+ * (already base64) in Authorization: Bearer — do not re-encode.
+ */
 class IronCryptClient
 {
     protected $client;
     protected $baseUrl;
 
-    /**
-     * IronCryptClient constructor.
-     * @param string $baseUrl The base URL of the IronCrypt daemon.
-     */
-    public function __construct(string $baseUrl = 'http://localhost:3000')
+    public function __construct(string $baseUrl = 'http://127.0.0.1:3000')
     {
-        $this->baseUrl = $baseUrl;
+        $this->baseUrl = rtrim($baseUrl, '/');
         $this->client = new Client([
-            'base_uri' => $this->baseUrl,
-            'timeout'  => 5.0,
+            'base_uri' => $this->baseUrl . '/',
+            'timeout'  => 30.0,
         ]);
     }
 
     /**
-     * Encrypts data by calling the daemon's /encrypt endpoint.
+     * Encrypts data via POST /write.
      *
-     * @param string|resource $data The data to encrypt (string or stream resource).
-     * @param string $apiKey The API key for authentication.
-     * @param string $keyVersion The key version to use for encryption.
-     * @return string The encrypted data as a binary string.
-     * @throws RequestException if the request fails.
+     * @param string|resource $data
+     * @param string $apiKey Secret API key (base64 from generate-api-key)
+     * @param string|null $password Optional Argon2 gate (X-Password)
+     * @return string Ciphertext bytes
+     * @throws RequestException
      */
-    public function encrypt($data, string $apiKey, string $keyVersion = 'v1'): string
+    public function encrypt($data, string $apiKey, ?string $password = null): string
     {
-        $headers = $this->getHeaders($apiKey, $keyVersion);
-
-        $response = $this->client->post('/encrypt', [
-            'headers' => $headers,
-            'body' => $data
+        $response = $this->client->post('write', [
+            'headers' => $this->getHeaders($apiKey, $password),
+            'body' => $data,
         ]);
 
         return $response->getBody()->getContents();
     }
 
     /**
-     * Decrypts data by calling the daemon's /decrypt endpoint.
+     * Decrypts data via POST /read.
      *
-     * @param string|resource $encryptedData The encrypted data to decrypt.
-     * @param string $apiKey The API key for authentication.
-     * @param string $keyVersion The key version used for the original encryption.
-     * @return string The decrypted data as a binary string.
-     * @throws RequestException if the request fails.
-     */
-    public function decrypt($encryptedData, string $apiKey, string $keyVersion = 'v1'): string
-    {
-        $headers = $this->getHeaders($apiKey, $keyVersion);
-
-        $response = $this->client->post('/decrypt', [
-            'headers' => $headers,
-            'body' => $encryptedData
-        ]);
-
-        return $response->getBody()->getContents();
-    }
-
-    /**
-     * Constructs the necessary headers for API requests.
-     *
+     * @param string|resource $encryptedData
      * @param string $apiKey
-     * @param string $keyVersion
-     * @return array
+     * @param string|null $password
+     * @return string Plaintext bytes
+     * @throws RequestException
      */
-    private function getHeaders(string $apiKey, string $keyVersion): array
+    public function decrypt($encryptedData, string $apiKey, ?string $password = null): string
     {
-        if (empty($apiKey)) {
-            throw new \InvalidArgumentException("API key must be a non-empty string.");
+        $response = $this->client->post('read', [
+            'headers' => $this->getHeaders($apiKey, $password),
+            'body' => $encryptedData,
+        ]);
+
+        return $response->getBody()->getContents();
+    }
+
+    private function getHeaders(string $apiKey, ?string $password): array
+    {
+        if ($apiKey === '') {
+            throw new \InvalidArgumentException('API key must be a non-empty string.');
         }
 
-        // The daemon expects the API key to be base64 encoded
-        $encodedApiKey = base64_encode($apiKey);
-
-        return [
-            'Authorization' => 'Bearer ' . $encodedApiKey,
+        $headers = [
+            'Authorization' => 'Bearer ' . $apiKey,
             'Content-Type' => 'application/octet-stream',
-            'X-Key-Version' => $keyVersion,
         ];
+
+        if ($password !== null && $password !== '') {
+            $headers['X-Password'] = $password;
+        }
+
+        return $headers;
     }
 }

@@ -141,29 +141,42 @@ Commandes pour protéger et accéder à vos données au quotidien.
     *   `--data <DATA>`: Le hash chiffré à comparer.
 *   **Exemple de code** :
     ```sh
-    # 1. Chiffrer un mot de passe pour le stocker
-    ENCRYPTED=$(ironcrypt encrypt --password "MotDePasse123!")
+    # 1. Chiffrer un mot de passe (sortie JSON → fichier)
+    ironcrypt encrypt -w "MotDePasse123!" -d keys -v v1 > secret.json
 
-    # 2. Plus tard, vérifier si un mot de passe fourni est correct
-    ironcrypt decrypt --password "MotDePasse123!" --data "$ENCRYPTED"
+    # 2. Vérifier plus tard
+    ironcrypt decrypt -w "MotDePasse123!" -k keys -f secret.json
     # Output: Password correct.
     ```
 
 ---
 
-### `daemon`
+### `daemon` / binaire `ironcryptd`
 
-*   **Domaine** : Chiffrement transparent et automatisé.
-*   **Définition** : Lance `ironcrypt` en tant que service d'arrière-plan (démon) pour des opérations de chiffrement/déchiffrement à la volée, typiquement via une API réseau pour d'autres applications.
-*   **Utilisation** :
-    *   `--port <PORT>`: Port d'écoute (défaut: 3000).
-    *   `--key-directory <KEY_DIRECTORY>`: Répertoire des clés.
-    *   `--key-version <KEY_VERSION>`: Version de la clé à utiliser.
-*   **Exemple de code** :
+*   **Domaine** : chiffrement transparent via HTTP.
+*   **Définition** : service d’arrière-plan exposant une API HTTP. Permissions API : `write`, `read`, `delete`, `update`, `full`. Endpoints principaux : **`POST /write`** (chiffrer) et **`POST /read`** (déchiffrer).
+*   **Utilisation typique** :
     ```sh
-    # Démarrer le démon pour qu'il écoute sur le port 3000 avec la clé v1
-    ironcrypt daemon --port 3000 --key-directory ./keys --key-version v1
+    # 1. Clé API
+    ironcrypt generate-api-key
+    # → Clé secrète (base64) + Hash (hex) pour keys.json (champ keyHash)
+
+    # 2. Démarrer (loopback ; hors loopback → TLS ou --allow-insecure-http)
+    ironcryptd \
+      --host 127.0.0.1 --port 3000 \
+      --key-directory keys --key-version v1 \
+      --api-keys-file keys.json \
+      --config ironcrypt.toml
+
+    # 3. Chiffrer / déchiffrer
+    export API_KEY='CLE_SECRETE_BASE64'
+    echo 'secret' | curl -sS -X POST -H "Authorization: Bearer ${API_KEY}" \
+      --data-binary @- http://127.0.0.1:3000/write > out.enc
+    curl -sS -X POST -H "Authorization: Bearer ${API_KEY}" \
+      --data-binary @out.enc http://127.0.0.1:3000/read
     ```
+*   **En-tête optionnel** : `X-Password` pour un gate Argon2 sur le payload.
+*   **Secrets cloud** : `GET|POST /service/:name/secret/:key` (`name` = `aws` | `azure` | `vault` | `gcp`).
 
 ## 4. Fonctionnalités Avancées
 

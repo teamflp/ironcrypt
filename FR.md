@@ -2,6 +2,9 @@
 
 - [IronCrypt](#ironcrypt)
   - [Fonctionnalités](#fonctionnalités)
+  - [Démarrage rapide](#démarrage-rapide)
+  - [Utiliser IronCrypt depuis PHP](#utiliser-ironcrypt-depuis-php)
+  - [Utiliser IronCrypt via FFI (ABI C)](#utiliser-ironcrypt-via-ffi-abi-c)
   - [Scénarios d'utilisation](#scénarios-dutilisation)
     - [Chiffrement/Déchiffrement de mot de passe](#chiffrementdéchiffrement-de-mot-de-passe)
     - [Chiffrement/Déchiffrement de fichier](#chiffrementdéchiffrement-de-fichier)
@@ -28,9 +31,256 @@
 - **Hachage de mot de passe de pointe :** Pour les mots de passe, IronCrypt utilise Argon2, actuellement considéré comme l'un des algorithmes de hachage les plus sécurisés au monde. Il est spécifiquement conçu pour résister aux attaques par force brute modernes basées sur les GPU, offrant une sécurité bien plus grande que les anciens algorithmes.
 - **Gestion avancée des clés :** Le système de gestion de versions de clés intégré (`-v v1`, `-v v2`) et la commande dédiée `rotate-key` vous permettent de mettre à jour vos clés de chiffrement au fil du temps. Cela automatise le processus de migration vers une nouvelle clé sans avoir à déchiffrer et rechiffrer manuellement toutes vos données. IronCrypt peut charger à la fois les clés PKCS#8 modernes et les clés PKCS#1 héritées, garantissant une large compatibilité.
 - **Configuration flexible :** Vous pouvez affiner les paramètres de sécurité via le fichier `ironcrypt.toml`, les variables d'environnement ou la structure `IronCryptConfig` dans le code. Cela inclut la taille de la clé RSA et les "coûts" de calcul de l'algorithme Argon2, vous permettant d'équilibrer la sécurité et les performances en fonction de vos besoins.
-- **Chiffrement en flux (streaming) :** Pour les opérations sur les fichiers et les répertoires, IronCrypt utilise une approche de streaming. Cela signifie qu'il peut chiffrer et déchiffrer de très gros fichiers sans les charger entièrement en mémoire, ce qui le rend très efficace pour toutes les tailles de fichiers.
+- **Chiffrement en flux (streaming) :** Pour **AES-256-GCM sans signature**, IronCrypt chiffre et déchiffre par morceaux sans charger tout le fichier en mémoire. **Limites :** (1) **XChaCha20-Poly1305** est one-shot (le plaintext est bufferisé) ; (2) une **signature** dans l’en-tête impose aussi un pré-buffer du contenu pour le hachage. Choisissez AES sans signature pour les très gros fichiers.
 - **Chiffrement complet des données :** IronCrypt est conçu pour gérer plus que de simples mots de passe. Il peut chiffrer n'importe quel fichier (images, PDF, documents), des répertoires entiers (en les archivant d'abord), ou toute autre donnée pouvant être représentée comme un flux d'octets.
 - **Double usage (CLI et bibliothèque) :** IronCrypt est conçu dès le départ pour être à double usage. Vous pouvez l'utiliser comme un outil en ligne de commande rapide pour des tâches simples, ou l'intégrer comme une bibliothèque (crate) directement dans vos propres applications Rust pour une logique plus complexe.
+
+---
+
+## Démarrage rapide
+
+Exemples copier-coller, alignés sur le comportement actuel du code.
+
+### 1. Préparer le lab local
+
+```sh
+git clone https://github.com/teamflp/ironcrypt.git
+cd ironcrypt
+
+# Compile CLI + daemon (features `full` par défaut)
+cargo build --release
+
+# Copie les fixtures d'exemple (ne jamais committer vos vraies clés)
+make bootstrap-lab
+# → keys.json, ironcrypt.toml, keys/private_key_v1.pem, keys/public_key_v1.pem
+```
+
+### 2. CLI — clés, fichier, mot de passe
+
+```sh
+# Générer une paire RSA (ou --key-type ecc)
+./target/release/ironcrypt generate -v v1 -d keys -s 2048
+
+# Chiffrer / déchiffrer un fichier (AES enveloppe + clé publique v1)
+./target/release/ironcrypt encrypt-file \
+  -i rapport.pdf -o rapport.enc -d keys -v v1
+
+./target/release/ironcrypt decrypt-file \
+  -i rapport.enc -o rapport.out.pdf -k keys -v v1
+
+# Mot de passe (hash Argon2id chiffré dans un JSON — jamais de hash en clair)
+./target/release/ironcrypt encrypt -w 'Str0ngP@ssw0rd42!' -d keys -v v1 > secret.json
+./target/release/ironcrypt decrypt -w 'Str0ngP@ssw0rd42!' -k keys -f secret.json
+```
+
+### 3. Daemon HTTP (`ironcryptd`)
+
+Permissions API : `read`, `write`, `delete`, `update`, `full`.  
+Endpoints : **`POST /write`** (chiffrer) et **`POST /read`** (déchiffrer).
+
+```sh
+# 1) Créer une clé API
+./target/release/ironcrypt generate-api-key
+# → notez la « Clé API secrète » (base64) et le « Hash » (hex SHA-512)
+
+# 2) Remplir keys.json (camelCase) à partir de keys.json.example
+# {
+#   "description": "lab write/read",
+#   "keyHash": "<HASH_HEX>",
+#   "permissions": ["write", "read"]
+# }
+
+# 3) Démarrer (loopback ; HTTP non-loopback exige TLS ou --allow-insecure-http)
+./target/release/ironcryptd \
+  --host 127.0.0.1 --port 3000 \
+  --key-directory keys --key-version v1 \
+  --api-keys-file keys.json \
+  --config ironcrypt.toml \
+  --rate-limit-per-sec 20 --rate-limit-burst 40
+
+# 4) Appels curl
+export API_KEY='<CLE_API_SECRETE_BASE64>'
+
+echo 'hello ironcrypt' | curl -sS --request POST \
+  --header "Authorization: Bearer ${API_KEY}" \
+  --data-binary @- \
+  http://127.0.0.1:3000/write > payload.enc
+
+curl -sS --request POST \
+  --header "Authorization: Bearer ${API_KEY}" \
+  --data-binary @payload.enc \
+  http://127.0.0.1:3000/read
+
+# Mot de passe optionnel (Argon2) via en-tête :
+#   -H "X-Password: Str0ngP@ssw0rd42!"
+```
+
+HTTPS in-process :
+
+```sh
+./target/release/ironcryptd \
+  --host 0.0.0.0 --port 3443 \
+  --tls-cert cert.pem --tls-key key.pem \
+  --key-directory keys --key-version v1 \
+  --api-keys-file keys.json --config ironcrypt.toml
+```
+
+### 4. Docker Compose (lab vs prod)
+
+```sh
+make bootstrap-lab
+make lab    # Vault -dev + token lab (jamais en prod)
+# make prod # stack prod sans root token Vault
+```
+
+### 5. Bibliothèque Rust (streaming AES)
+
+```rust
+use ironcrypt::{
+    algorithms::SymmetricAlgorithm,
+    decrypt_stream, encrypt_stream, generate_rsa_keys,
+    keys::{PrivateKey, PublicKey},
+    Argon2Config, PasswordCriteria,
+};
+use std::io::Cursor;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let (sk, pk) = generate_rsa_keys(2048)?;
+    let public_key = PublicKey::Rsa(pk);
+    let private_key = PrivateKey::Rsa(sk);
+
+    let original = b"message secret en flux";
+    let mut src = Cursor::new(original.as_slice());
+    let mut enc = Cursor::new(Vec::new());
+    let mut password = String::new(); // pas de gate Argon2
+
+    encrypt_stream(
+        &mut src,
+        &mut enc,
+        &mut password,
+        [(&public_key, "v1")],
+        None, // pas de signature → vrai streaming AES
+        &PasswordCriteria::default(),
+        Argon2Config::default(),
+        false,
+        SymmetricAlgorithm::Aes256Gcm,
+    )?;
+
+    enc.set_position(0);
+    let mut out = Cursor::new(Vec::new());
+    decrypt_stream(&mut enc, &mut out, &private_key, "v1", "", None)?;
+    assert_eq!(out.into_inner(), original);
+    Ok(())
+}
+```
+
+---
+
+## Utiliser IronCrypt depuis PHP
+
+Une appli PHP **ne lie pas** la crate Rust. Elle parle au démon HTTP **`ironcryptd`** via le client [`sdks/php`](sdks/php/) (`IronCryptClient`).
+
+```text
+App PHP  --POST /write|/read + Bearer-->  ironcryptd  (détient les clés PEM)
+```
+
+### Pourquoi ce modèle ?
+
+- Un seul service crypto partagé (PHP, Python, curl…)
+- Clés API avec permissions (`write`, `read`, …)
+- Pas besoin d’embarquer les clés privées dans chaque conteneur PHP
+
+### Mise en place
+
+```bash
+# 1) Démon (racine du dépôt)
+cargo build --release && make bootstrap-lab
+./target/release/ironcrypt generate-api-key   # secret (base64) + hash → keys.json
+./target/release/ironcryptd \
+  --host 127.0.0.1 --port 3000 \
+  --key-directory keys --key-version v1 \
+  --api-keys-file keys.json --config ironcrypt.toml
+
+# 2) SDK PHP
+cd sdks/php && composer install
+```
+
+`keys.json` en camelCase (`keyHash`), permissions du type `["write", "read"]`.  
+Envoyer la clé **secrète** telle quelle : `Authorization: Bearer …` (sans re-encoder).
+
+### Exemple minimal PHP
+
+```php
+<?php
+require_once __DIR__ . '/vendor/autoload.php';
+
+use IronCrypt\Sdk\IronCryptClient;
+
+$client = new IronCryptClient(getenv('IRONCRYPT_URL') ?: 'http://127.0.0.1:3000');
+$apiKey = getenv('IRONCRYPT_API_KEY'); // secret base64 de generate-api-key
+
+$ciphertext = $client->encrypt('payload sensible', $apiKey); // POST /write
+$plaintext  = $client->decrypt($ciphertext, $apiKey);       // POST /read
+
+// Gate Argon2 optionnel :
+// $client->encrypt($data, $apiKey, 'Str0ngP@ssw0rd42!');
+```
+
+Stocker le ciphertext en BLOB SQL ou via `base64_encode($ciphertext)`.
+
+Guide complet (Composer path, cURL sans SDK, erreurs `401`/`403`/`429`, alternatives CLI/FFI) : **[`sdks/php/README.md`](sdks/php/README.md)**.  
+Client HTTP Python : [`sdks/python`](sdks/python/).
+
+---
+
+## Utiliser IronCrypt via FFI (ABI C)
+
+Pour un usage **in-process** (sans démon HTTP), chargez la bibliothèque dynamique produite par Cargo (`cdylib`) et appelez l’API C de [`ironcrypt.h`](ironcrypt.h).
+
+```text
+Python / Java / C# / C / PHP-FFI  --appels natifs-->  libironcrypt (.so / .dylib / .dll)
+```
+
+### FFI vs démon
+
+| | **FFI (`libironcrypt`)** | **HTTP (`ironcryptd` + SDKs)** |
+| --- | --- | --- |
+| Processus | Même processus que l’appli | Service séparé |
+| Auth | Vous fournissez les PEM | Clé API Bearer + permissions |
+| Idéal pour | Apps natives, JVM/.NET, faible latence | PHP/web, microservices multi-langages |
+| Portée API C actuelle | Workflow **mot de passe** (Argon2 + enveloppe RSA) | Fichiers/flux via `/write` `/read`, secrets… |
+
+### Compiler la bibliothèque
+
+```bash
+cargo build --release
+# Linux :  target/release/libironcrypt.so
+# macOS :  target/release/libironcrypt.dylib
+# Windows : target/release/ironcrypt.dll
+```
+
+### Surface API
+
+| Fonction | Succès | Rôle |
+| --- | --- | --- |
+| `ironcrypt_generate_rsa_keys` | `0` | Alloue les chaînes PEM privée/publique |
+| `ironcrypt_password_encrypt` | `0` | Mot de passe → JSON scellé |
+| `ironcrypt_password_verify` | `1` / `0` / `-1` | Valide / invalide / erreur |
+| `ironcrypt_free_string` | — | **Obligatoire** pour chaque chaîne allouée par Rust |
+
+### Idée minimale (Python ctypes)
+
+```python
+import ctypes
+lib = ctypes.CDLL("target/release/libironcrypt.dylib")  # .so sous Linux
+
+lib.ironcrypt_generate_rsa_keys.restype = ctypes.c_int32
+# … argtypes, encrypt/verify, puis :
+# lib.ironcrypt_free_string(ptr)
+```
+
+Exemple C : [`examples/c_api_usage.c`](examples/c_api_usage.c).  
+Exemples complets (ctypes, JNA, P/Invoke, PHP `FFI`, compilation, dépannage) : **[`FFI_EXAMPLES.md`](FFI_EXAMPLES.md)**.
 
 ---
 
@@ -61,10 +311,9 @@ L'objectif ici n'est pas de chiffrer le mot de passe lui-même, mais de chiffrer
 
 4.  **Stockage des données sécurisées** :
     *   Le résultat final est un objet JSON structuré qui contient toutes les informations nécessaires à la vérification future :
-        *   Le **hash chiffré** par AES.
-        *   La **clé AES chiffrée** par RSA.
-        *   Les paramètres techniques (publics) utilisés pour le hachage et le chiffrement (comme le "sel" et le "nonce").
-        *   La version de la clé RSA utilisée pour le sceau.
+        *   Le **hash Argon2 chiffré** (ciphertext AES) — le hash **n’est jamais dupliqué en clair** dans le JSON.
+        *   La **clé AES chiffrée** par RSA/ECC (enveloppe).
+        *   Les paramètres techniques publics (nonce, version de clé, algorithme).
     *   C'est cet objet JSON qui est stocké en toute sécurité dans votre base de données.
 
 ---
@@ -99,7 +348,7 @@ Ce processus utilise également le chiffrement d'enveloppe (AES + RSA) pour gara
 
 #### **1. Processus de chiffrement**
 
-1.  **Ouverture des flux de fichiers** : IronCrypt ouvre le fichier d'entrée en lecture et le fichier de sortie en écriture, sans charger l'intégralité du contenu en mémoire.
+1.  **Ouverture des flux de fichiers** : IronCrypt ouvre le fichier d'entrée en lecture et le fichier de sortie en écriture. En mode **AES-256-GCM sans signature**, le contenu est traité par morceaux (streaming). Avec **XChaCha20** ou une **signature**, un buffer mémoire du contenu est requis (voir la section Fonctionnalités).
 2.  **Création de l'en-tête de l'enveloppe** :
     *   Une nouvelle clé **AES-256** à usage unique est générée aléatoirement.
     *   Cette clé AES est chiffrée avec une ou plusieurs **clés publiques RSA** (une pour chaque destinataire).
@@ -234,47 +483,27 @@ docker run --rm -p 3000:3000 -v "$PWD/keys:/keys" ironcrypt:latest \
 ```
 
 #### 6. Utiliser le Makefile (Docker Compose)
-Le Makefile du projet fournit des raccourcis pour gérer Docker Compose depuis le terminal.
+Le Makefile fournit des raccourcis lab / prod.
 
-Prérequis :
-- Docker et Docker Compose v2 (commande `docker compose`).
+Prérequis : Docker et Docker Compose v2 (`docker compose`).
 
-Commandes courantes :
 ```sh
-# Aide et liste des cibles
 make help
-
-# Démarrer en mode développement (utilise .env par défaut)
-make dev
-
-# Démarrer en mode production (utilise .env.prod)
-make prod
-
-# Compiler les images sans démarrer
-make build
-
-# Suivre les logs
-make logs
-
-# Arrêter les conteneurs
+make bootstrap-lab   # copie *.example → fichiers locaux (sans écraser)
+make lab             # alias: make dev — stack lab (Vault -dev)
+make prod            # stack prod (pas de root token Vault)
 make stop
-
-# Nettoyer (conteneurs, volumes, orphelins) + élaguer Docker [destructif]
-make clean
-
-# Exécuter les tests dans le service ironcrypt
+make logs
 make test
-
-# Générer la couverture avec tarpaulin
 make coverage
 ```
 
 Notes :
-- Vous pouvez changer le fichier d'environnement utilisé par `dev` avec `ENV_FILE`, par exemple :
 ```sh
-make dev ENV_FILE=.env.local
+make lab ENV_FILE=.env.local
+make prod PROD_ENV_FILE=.env.prod
 ```
-- La cible par défaut est `all -> dev`, donc un simple `make` est équivalent à `make dev`.
+La cible par défaut est `all -> lab`.
 
 ### Compilations optimisées avec les "Feature Flags"
 
@@ -286,13 +515,11 @@ Par défaut, toutes les fonctionnalités sont activées. Pour créer une compila
 
 *   `cli` : Compile l'outil en ligne de commande `ironcrypt`.
 *   `daemon` : Compile le démon `ironcryptd` et active la sous-commande `daemon` dans le CLI.
-*   `interactive` : Active les éléments interactifs comme les indicateurs de progression dans le CLI. Nécessite `cli`.
-*   `aws` : Active la prise en charge d'AWS Secrets Manager.
-*   `azure` : Active la prise en charge d'Azure Key Vault.
-*   `gcp` : Active la prise en charge de Google Cloud Secret Manager. (Note : Actuellement non fonctionnel, entraînera une erreur à l'exécution).
-*   `vault` : Active la prise en charge de HashiCorp Vault.
-*   `cloud` : Une méta-fonctionnalité qui active tous les fournisseurs cloud (`aws`, `azure`, `gcp`, `vault`).
-*   `full` : Une méta-fonctionnalité qui active toutes les fonctionnalités ci-dessus. C'est la valeur par défaut.
+*   `interactive` : Active les indicateurs de progression dans le CLI (nécessite `cli`).
+*   `aws` / `azure` / `vault` : backends secrets.
+*   `gcp` : Google Secret Manager (**optionnel**, tire `tonic` — hors méta `cloud` / `full`).
+*   `cloud` : `aws` + `azure` + `vault` (sans `gcp`).
+*   `full` : `cli` + `daemon` + `cloud` + `interactive` (valeur par défaut).
 
 **Compilations locales avec `cargo` :**
 
@@ -549,49 +776,48 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
 #### Chiffrer et déchiffrer un fichier (en flux)
 ```rust
-use ironcrypt::{encrypt_stream, decrypt_stream, generate_rsa_keys, PasswordCriteria, Argon2Config};
+use ironcrypt::{
+    algorithms::SymmetricAlgorithm,
+    decrypt_stream, encrypt_stream, generate_rsa_keys,
+    keys::{PrivateKey, PublicKey},
+    Argon2Config, PasswordCriteria,
+};
 use std::io::Cursor;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // 1. Générer une paire de clés RSA (dans une application réelle, chargez-les depuis un fichier).
-    let (private_key, public_key) = generate_rsa_keys(2048)?;
+    let (sk, pk) = generate_rsa_keys(2048)?;
+    let public_key = PublicKey::Rsa(pk);
+    let private_key = PrivateKey::Rsa(sk);
 
-    // 2. Préparer les flux source et destination.
     let original_data = "Ceci est un message secret qui sera chiffré en flux.";
     let mut source = Cursor::new(original_data.as_bytes());
     let mut encrypted_dest = Cursor::new(Vec::new());
+    let mut password = String::new();
 
-    // 3. Chiffrer le flux pour un seul destinataire.
-    let mut password = "UnAutreMotDePasseFort123!".to_string();
-    let recipients = vec![(&public_key, "v1")];
     encrypt_stream(
         &mut source,
         &mut encrypted_dest,
         &mut password,
-        recipients,
+        [(&public_key, "v1")],
+        None, // signature absente → streaming AES réel
         &PasswordCriteria::default(),
         Argon2Config::default(),
-        true, // Indique que le mot de passe doit être haché
+        false,
+        SymmetricAlgorithm::Aes256Gcm,
     )?;
 
-    // 4. Revenir au début du flux chiffré pour le lire.
     encrypted_dest.set_position(0);
-
-    // 5. Déchiffrer le flux.
     let mut decrypted_dest = Cursor::new(Vec::new());
     decrypt_stream(
         &mut encrypted_dest,
         &mut decrypted_dest,
         &private_key,
-        "v1", // La version de la clé du destinataire
-        "UnAutreMotDePasseFort123!",
+        "v1",
+        "",
+        None,
     )?;
 
-    // 6. Vérifier que les données déchiffrées correspondent aux données d'origine.
-    let decrypted_data = String::from_utf8(decrypted_dest.into_inner())?;
-    assert_eq!(original_data, decrypted_data);
-    println!("Chiffrement et déchiffrement en flux réussis !");
-
+    assert_eq!(original_data, String::from_utf8(decrypted_dest.into_inner())?);
     Ok(())
 }
 ```
@@ -602,154 +828,107 @@ Pour une intégration transparente avec des applications écrites dans n'importe
 
 #### Configuration du démon
 
-Le démon `ironcryptd` est configuré à l'aide d'un fichier TOML central (par exemple, `ironcrypt.toml`). Cette approche est utilisée pour garantir que toutes les instances d'un cluster à haute disponibilité partagent les mêmes paramètres.
+Le démon `ironcryptd` lit un TOML **plat** (champs au premier niveau), voir `ironcrypt.toml.example`.
 
-**Exemple `ironcrypt.toml` :**
+**Exemple minimal `ironcrypt.toml` :**
 ```toml
-# La norme cryptographique à utiliser.
-# Options : "nist", "fips_140_2", "custom"
-standard = "nist"
-
-# La taille du tampon à utiliser pour les opérations de streaming (en octets).
+standard = "Nist"
 buffer_size = 8192
-
-# Configuration de l'algorithme de hachage de mot de passe Argon2.
+rsa_key_size = 2048
 argon2_memory_cost = 65536
 argon2_time_cost = 3
 argon2_parallelism = 1
 
-# Optionnel : Configuration pour l'audit.
-[audit]
-# Chemin vers le répertoire où les journaux d'audit seront stockés.
-log_path = "/var/log/ironcrypt"
-# Optionnel : Chemin vers une clé privée pour signer les journaux d'audit.
-# signing_key_path = "/path/to/audit_signing_key.pem"
+[password_criteria]
+min_length = 12
 ```
-
-Un exemple complet de fichier de configuration se trouve à `ironcrypt.toml.example`.
 
 #### Démarrage du démon
 
-Vous démarrez le démon en lui indiquant votre fichier de configuration et en fournissant les arguments d'exécution nécessaires.
-
 ```sh
-# Démarrer le démon en utilisant un fichier de configuration, en spécifiant la version de la clé et le fichier de clés API
-ironcryptd --config /path/to/ironcrypt.toml \
-           --key-version v1 \
-           --api-keys-file /path/to/keys.json \
-           --port 3000
+ironcryptd \
+  --config ironcrypt.toml \
+  --key-directory keys \
+  --key-version v1 \
+  --api-keys-file keys.json \
+  --host 127.0.0.1 \
+  --port 3000
 ```
-
-Le démon s'exécutera au premier plan. Pour une utilisation en production, vous devriez l'exécuter comme un service système (par exemple, en utilisant `systemd`).
 
 #### Authentification du démon
 
-Pour sécuriser le démon et contrôler l'accès, IronCrypt utilise un système de clés API avec des autorisations granulaires. Cela garantit que seuls les clients autorisés peuvent effectuer des opérations de chiffrement et de déchiffrement.
-
 **1. Générer une clé API**
-
-Tout d'abord, générez une nouvelle clé secrète et son hash correspondant à l'aide de la commande `generate-api-key` :
 
 ```sh
 ironcrypt generate-api-key
 ```
 
-La sortie vous donnera deux informations cruciales :
-*   **Clé API secrète :** La clé secrète que vos applications clientes utiliseront. **Traitez-la comme un mot de passe.**
-*   **Hash de la clé API :** Un hash sécurisé de la clé que vous utiliserez pour configurer le démon.
+Vous obtenez :
+* **Clé API secrète** (base64) — à envoyer dans `Authorization: Bearer …`
+* **Hash** (hex SHA-512) — à mettre dans `keys.json` sous `keyHash`
 
-**2. Créer un fichier de configuration de clés**
+**2. Fichier `keys.json` (camelCase)**
 
-Ensuite, créez un fichier JSON (par exemple, `keys.json`) pour définir vos clés et leurs autorisations. Le démon chargera ce fichier au démarrage. Utilisez le hash de l'étape précédente.
-
-*Exemple `keys.json` :*
 ```json
 [
   {
-    "description": "Clé du service de sauvegarde (chiffrement uniquement)",
-    "keyHash": "hash_de_la_commande_generate_api_key",
-    "permissions": ["encrypt"]
+    "description": "Service backup (écriture seule)",
+    "keyHash": "HASH_HEX_DE_GENERATE_API_KEY",
+    "permissions": ["write"]
   },
   {
-    "description": "Clé administrateur (accès complet)",
-    "keyHash": "hash_d_une_autre_cle",
-    "permissions": ["encrypt", "decrypt"]
+    "description": "Service lecture/écriture",
+    "keyHash": "AUTRE_HASH_HEX",
+    "permissions": ["write", "read"]
+  },
+  {
+    "description": "Accès secrets AWS uniquement",
+    "keyHash": "ENCORE_UN_HASH",
+    "permissions": ["read", "write"],
+    "allowedServices": ["aws"]
   }
 ]
 ```
-Un fichier modèle nommé `keys.json.example` est disponible dans le dépôt.
 
-**3. Démarrer le démon avec authentification**
+Permissions valides : `write`, `read`, `delete`, `update`, `full`.
 
-Lancez le démon en lui indiquant votre fichier de configuration de clés à l'aide de l'argument `--api-keys-file`.
+**3. Requêtes authentifiées**
 
 ```sh
-ironcrypt daemon --key-version v1 --api-keys-file /path/to/your/keys.json
-```
+export API_KEY='CLE_API_SECRETE_BASE64'
 
-Le démon est maintenant sécurisé.
-
-**4. Effectuer une requête authentifiée**
-
-Les applications clientes doivent inclure la **clé API secrète** dans l'en-tête `Authorization` en tant que jeton Bearer.
-
-*Exemple avec `curl` :*
-```sh
-# Chiffrer des données en utilisant une clé qui a la permission "encrypt"
-curl --request POST \
-  --header "Authorization: Bearer VOTRE_CLE_API_SECRETE" \
-  --data "mes données secrètes" \
-  http://localhost:3000/encrypt > encrypted.bin
-
-# Déchiffrer des données en utilisant une clé qui a la permission "decrypt"
-cat encrypted.bin | curl --request POST \
-  --header "Authorization: Bearer VOTRE_CLE_API_SECRETE" \
+# Chiffrer → POST /write
+echo "mes données secrètes" | curl -sS --request POST \
+  --header "Authorization: Bearer ${API_KEY}" \
   --data-binary @- \
-  http://localhost:3000/decrypt
+  http://127.0.0.1:3000/write > encrypted.bin
+
+# Déchiffrer → POST /read
+curl -sS --request POST \
+  --header "Authorization: Bearer ${API_KEY}" \
+  --data-binary @encrypted.bin \
+  http://127.0.0.1:3000/read
+
+# Avec mot de passe Argon2 optionnel
+echo "secret" | curl -sS --request POST \
+  --header "Authorization: Bearer ${API_KEY}" \
+  --header "X-Password: Str0ngP@ssw0rd42!" \
+  --data-binary @- \
+  http://127.0.0.1:3000/write > encrypted_with_pass.bin
 ```
 
-Si la clé est manquante, invalide ou n'a pas l'autorisation requise, le démon renverra une erreur HTTP appropriée (`401 Unauthorized` ou `403 Forbidden`).
+Erreurs typiques : `401` (clé absente/invalide), `403` (permission), `429` (rate limit), `400` (crypto / mauvais mot de passe).
 
 #### Points de terminaison de l'API
 
-Le démon expose deux points de terminaison de streaming :
+| Méthode | Chemin | Permission | Rôle |
+| --- | --- | --- | --- |
+| `POST` | `/write` | `write` | Chiffre le corps de la requête |
+| `POST` | `/read` | `read` | Déchiffre le corps de la requête |
+| `GET` | `/service/:name/secret/:key` | `read` | Lit un secret cloud |
+| `POST` | `/service/:name/secret/:key` | `write` | Écrit un secret cloud |
 
-*   `POST /encrypt` : Chiffre un flux de données.
-*   `POST /decrypt` : Déchiffre un flux de données.
-
-Vous pouvez éventuellement fournir un mot de passe pour le hachage Argon2id dans l'en-tête HTTP `X-Password`.
-
-#### Exemples avec `curl`
-
-**Chiffrer des données :**
-
-Envoyez n'importe quelle donnée au point de terminaison `/encrypt`. Les données brutes et chiffrées seront retournées dans le corps de la réponse.
-
-```sh
-# Chiffrer la chaîne "mes données secrètes"
-echo "mes données secrètes" | curl --request POST --data-binary @- http://localhost:3000/encrypt > encrypted.bin
-
-# Chiffrer un fichier
-cat mon_document.pdf | curl --request POST --data-binary @- http://localhost:3000/encrypt > mon_document.enc
-
-# Chiffrer avec un mot de passe supplémentaire
-echo "mes données secrètes" | curl --request POST -H "X-Password: MonMotDePasseFort" --data-binary @- http://localhost:3000/encrypt > encrypted_with_pass.bin
-```
-
-**Déchiffrer des données :**
-
-Envoyez les données chiffrées au point de terminaison `/decrypt`. Les données d'origine en clair seront retournées.
-
-```sh
-# Déchiffrer les données du premier exemple
-cat encrypted.bin | curl --request POST --data-binary @- http://localhost:3000/decrypt
-
-# Déchiffrer un fichier
-cat mon_document.enc | curl --request POST --data-binary @- http://localhost:3000/decrypt > decrypted_document.pdf
-
-# Déchiffrer des données qui ont été chiffrées avec un mot de passe
-cat encrypted_with_pass.bin | curl --request POST -H "X-Password: MonMotDePasseFort" --data-binary @- http://localhost:3000/decrypt
-```
+CORS : désactivé par défaut ; whitelist via `--cors-origins https://app.example.com`.
 
 ### Haute disponibilité
 
@@ -797,7 +976,7 @@ http {
 }
 ```
 
-Avec cette configuration, Nginx écoutera sur le port 80 et distribuera les requêtes entrantes pour `/encrypt` et `/decrypt` entre les deux instances du démon, offrant à la fois une répartition de charge et une redondance.
+Avec cette configuration, Nginx écoutera sur le port 80 et distribuera les requêtes entrantes (`/write`, `/read`, …) entre les deux instances du démon, offrant à la fois une répartition de charge et une redondance.
 
 ---
 
@@ -1010,28 +1189,31 @@ Pour l'utilisation en bibliothèque, vous pouvez construire une structure `IronC
 
 ### Configuration de l'algorithme cryptographique
 
-Vous pouvez personnaliser les algorithmes cryptographiques utilisés par IronCrypt dans votre fichier `ironcrypt.toml`.
+Personnalisez les algorithmes via `ironcrypt.toml` (champs plats, voir `ironcrypt.toml.example`).
 
 ```toml
-# Définir une norme prédéfinie pour les algorithmes et les tailles de clés.
-# Options : "nist_p256", "nist_p384", "rsa_2048", "rsa_4096"
-# S'il est défini, les paramètres d'algorithme spécifiques ci-dessous sont ignorés.
-standard = "nist_p256"
+# Normes : "Nist" | "Fips140_2" | "Anssi" | "Custom"
+standard = "Nist"
+rsa_key_size = 2048
+buffer_size = 8192
+argon2_memory_cost = 65536
+argon2_time_cost = 3
+argon2_parallelism = 1
+
+[password_criteria]
+min_length = 12
 ```
 
-Alternativement, vous pouvez spécifier une combinaison personnalisée d'algorithmes :
+Mode personnalisé :
 
 ```toml
-standard = "custom"
-# Algorithme symétrique pour le chiffrement des données. Options : "aes_256_gcm", "chacha20_poly1305"
-symmetric_algorithm = "chacha20_poly1305"
-# Algorithme asymétrique pour l'encapsulation de clé. Options : "rsa", "ecc"
-asymmetric_algorithm = "ecc"
-# Taille de la clé RSA (en bits), utilisée uniquement si asymmetric_algorithm est "rsa".
-rsa_key_size = 4096
+standard = "Custom"
+symmetric_algorithm = "ChaCha20Poly1305"  # ou "Aes256Gcm"
+asymmetric_algorithm = "Ecc"              # ou "Rsa"
+rsa_key_size = 4096                       # ignoré si Ecc
 ```
 
-L'utilisation de **ECC (nist_p256)** est recommandée pour les nouvelles applications en raison de ses excellentes performances et de ses tailles de clés plus petites par rapport à RSA.
+`Anssi` force AES-256-GCM + RSA 3072. Pour ECC, utilisez `standard = "Custom"` avec `asymmetric_algorithm = "Ecc"`.
 
 ### Configuration de la gestion des secrets
 

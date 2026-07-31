@@ -124,6 +124,25 @@ fn test_e2e_encryption_with_signature() {
 }
 
 #[test]
+fn test_e2e_encryption_with_ecdsa_signature() {
+    let (enc_priv_key, enc_pub_key) = rsa_utils::generate_rsa_keys(2048).unwrap();
+    let (sign_priv_key, sign_pub_key) = ecc_utils::generate_ecc_keys().unwrap();
+
+    let enc_private_key = PrivateKey::Rsa(enc_priv_key);
+    let enc_public_key = PublicKey::Rsa(enc_pub_key);
+    let sign_private_key = PrivateKey::Ecc(sign_priv_key);
+    let sign_public_key = PublicKey::Ecc(sign_pub_key);
+
+    test_e2e_encryption(
+        enc_private_key,
+        enc_public_key,
+        SymmetricAlgorithm::Aes256Gcm,
+        Some((&sign_private_key, "v1_ecc_signer")),
+        Some(&sign_public_key),
+    );
+}
+
+#[test]
 fn test_e2e_encryption_with_tampered_data() {
     let (private_key, public_key) = rsa_utils::generate_rsa_keys(2048).unwrap();
     let (sign_priv_key, sign_pub_key) = rsa_utils::generate_rsa_keys(2048).unwrap();

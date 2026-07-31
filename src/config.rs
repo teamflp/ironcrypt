@@ -104,6 +104,7 @@ pub struct VaultConfig {
     pub mount: String,
 }
 
+#[cfg(feature = "vault")]
 fn default_mount() -> String {
     "secret".to_string()
 }

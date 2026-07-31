@@ -5,9 +5,11 @@ use std::error::Error;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     // 1. Configure IronCrypt
-    let mut config = IronCryptConfig::default();
-    config.rsa_key_size = 2048; // Example: Use 2048-bit keys
-    config.argon2_memory_cost = 32768; // Lower memory cost for example
+    let config = IronCryptConfig {
+        rsa_key_size: 2048, // Example: Use 2048-bit keys
+        argon2_memory_cost: 32768, // Lower memory cost for example
+        ..IronCryptConfig::default()
+    };
 
     // 2. Initialize IronCrypt
     // This will create the 'keys/' directory and 'private_key_v1.pem' / 'public_key_v1.pem' if they don't exist.

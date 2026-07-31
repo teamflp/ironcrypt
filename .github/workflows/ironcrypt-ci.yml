@@ -8,69 +8,67 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  # Nom de l'image Docker pour éviter la répétition
   DOCKER_IMAGE_NAME: ${{ secrets.DOCKER_USERNAME }}/ironcrypt
 
 jobs:
-  # --- JOB 1: Vérifier le code et lancer les tests ---
-  test:
-    name: Test and Lint
+  lint:
+    name: Clippy and Format
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: clippy
+        run: cargo clippy --all-targets --features full -- -D warnings
 
-      # Installer la toolchain Rust stable (action recommandée)
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+  audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-audit and cargo-deny
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit,cargo-deny
+      - name: cargo audit
+        run: cargo audit
+      - name: cargo deny
+        run: cargo deny check
 
-      # Mettre en cache les dépendances pour accélérer les builds futurs
-      - name: Cache dependencies
-        uses: Swatinem/rust-cache@v2
-
-      # Lancer les tests en mode debug (plus rapide)
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    needs: [lint, audit]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
       - name: Run tests
-        run: cargo test --verbose
+        run: cargo test --features full --verbose
 
-  # --- JOB 2: Construire et pousser l'image Docker ---
   build_and_push:
     name: Build and Push Docker Image
-    # Ce job ne s'exécute que si le job 'test' a réussi
     needs: test
     runs-on: ubuntu-latest
-    # Ne s'exécute que lors d'un push sur la branche master, pas sur les pull requests
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      # Action recommandée pour se connecter à Docker Hub
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
-
-      # Met en place QEMU pour les builds multi-architectures (bonne pratique)
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      # Met en place Docker Buildx pour des builds plus rapides et un meilleur cache
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      # Action moderne qui construit et pousse l'image en une seule étape
-      # et gère le cache de manière intelligente.
-      - name: Build and push
-        uses: docker/build-push-action@v5
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v5
         with:
           context: .
           push: true
-          # Crée deux tags : 'latest' et un tag basé sur le hash du commit
           tags: |
             ${{ env.DOCKER_IMAGE_NAME }}:latest
             ${{ env.DOCKER_IMAGE_NAME }}:${{ github.sha }}
-          # Utilise le cache de GitHub pour accélérer les builds
           cache-from: type=gha
           cache-to: type=gha,mode=max

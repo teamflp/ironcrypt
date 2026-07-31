@@ -88,15 +88,37 @@ pub fn load_private_key(
     }
 }
 
-use rsa::pkcs1v15::{Signature, SigningKey, VerifyingKey};
 use sha2::Sha256;
-use signature::hazmat::{PrehashSigner, PrehashVerifier};
+use signature::hazmat::{PrehashSigner, PrehashVerifier, RandomizedPrehashSigner};
 use signature::SignatureEncoding;
 
+/// Signs a pre-hash with RSA-PSS (SHA-256). Preferred modern default.
 pub fn sign_hash(
     private_key: &RsaPrivateKey,
     hash: &[u8],
 ) -> Result<Vec<u8>, IronCryptError> {
+    sign_hash_pss(private_key, hash)
+}
+
+/// Signs a pre-hash with RSA-PSS (SHA-256).
+pub fn sign_hash_pss(
+    private_key: &RsaPrivateKey,
+    hash: &[u8],
+) -> Result<Vec<u8>, IronCryptError> {
+    use rsa::pss::{BlindedSigningKey, Signature};
+    let signing_key = BlindedSigningKey::<Sha256>::new(private_key.clone());
+    let signature: Signature = signing_key
+        .sign_prehash_with_rng(&mut OsRng, hash)
+        .map_err(|e| IronCryptError::SignatureError(e.to_string()))?;
+    Ok(signature.to_vec())
+}
+
+/// Legacy PKCS#1 v1.5 signatures (kept for verifying older payloads).
+pub fn sign_hash_pkcs1v15(
+    private_key: &RsaPrivateKey,
+    hash: &[u8],
+) -> Result<Vec<u8>, IronCryptError> {
+    use rsa::pkcs1v15::{Signature, SigningKey};
     let signing_key = SigningKey::<Sha256>::new_unprefixed(private_key.clone());
     let signature: Signature = signing_key
         .sign_prehash(hash)
@@ -104,11 +126,38 @@ pub fn sign_hash(
     Ok(signature.to_vec())
 }
 
+/// Verifies RSA-PSS (preferred) then falls back to PKCS#1 v1.5 for legacy signatures.
 pub fn verify_signature(
     public_key: &RsaPublicKey,
     hash: &[u8],
     signature_bytes: &[u8],
 ) -> Result<(), IronCryptError> {
+    match verify_signature_pss(public_key, hash, signature_bytes) {
+        Ok(()) => Ok(()),
+        Err(_) => verify_signature_pkcs1v15(public_key, hash, signature_bytes),
+    }
+}
+
+pub fn verify_signature_pss(
+    public_key: &RsaPublicKey,
+    hash: &[u8],
+    signature_bytes: &[u8],
+) -> Result<(), IronCryptError> {
+    use rsa::pss::{Signature, VerifyingKey};
+    let signature = Signature::try_from(signature_bytes)
+        .map_err(|e| IronCryptError::SignatureError(e.to_string()))?;
+    let verifying_key = VerifyingKey::<Sha256>::new(public_key.clone());
+    verifying_key
+        .verify_prehash(hash, &signature)
+        .map_err(|e| IronCryptError::SignatureVerificationFailed(e.to_string()))
+}
+
+pub fn verify_signature_pkcs1v15(
+    public_key: &RsaPublicKey,
+    hash: &[u8],
+    signature_bytes: &[u8],
+) -> Result<(), IronCryptError> {
+    use rsa::pkcs1v15::{Signature, VerifyingKey};
     let signature = Signature::try_from(signature_bytes)
         .map_err(|e| IronCryptError::SignatureError(e.to_string()))?;
     let verifying_key = VerifyingKey::<Sha256>::new_unprefixed(public_key.clone());

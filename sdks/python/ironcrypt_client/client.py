@@ -1,72 +1,49 @@
 import requests
-import base64
+
 
 class IronCryptClient:
     """
-    A client for interacting with the IronCrypt daemon.
+    Client for the IronCrypt HTTP daemon (`ironcryptd`).
+
+    Endpoints: POST /write (encrypt), POST /read (decrypt).
+    The API key is the secret base64 value from `ironcrypt generate-api-key`
+    (send as-is in Authorization: Bearer — do not re-encode).
     """
 
-    def __init__(self, base_url="http://localhost:3000"):
-        """
-        Initializes the client with the base URL of the IronCrypt daemon.
+    def __init__(self, base_url="http://127.0.0.1:3000"):
+        self.base_url = base_url.rstrip("/")
 
-        :param base_url: The base URL of the daemon (e.g., "http://localhost:3000").
-        """
-        self.base_url = base_url
-
-    def _get_headers(self, api_key, key_version):
-        """
-        Constructs the necessary headers for API requests.
-        """
+    def _get_headers(self, api_key, password=None):
         if not isinstance(api_key, str) or not api_key:
             raise ValueError("API key must be a non-empty string.")
 
-        # The daemon expects the API key to be base64 encoded
-        encoded_api_key = base64.b64encode(api_key.encode('utf-8')).decode('utf-8')
-
         headers = {
-            "Authorization": f"Bearer {encoded_api_key}",
+            "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/octet-stream",
         }
-        if key_version:
-            headers["X-Key-Version"] = key_version
+        if password:
+            headers["X-Password"] = password
         return headers
 
-    def encrypt(self, data, api_key, key_version="v1"):
-        """
-        Encrypts data by calling the daemon's /encrypt endpoint.
-
-        :param data: The data to encrypt (bytes or string).
-        :param api_key: The API key for authentication.
-        :param key_version: The key version to use for encryption (e.g., "v1").
-        :return: The encrypted data as bytes.
-        :raises requests.exceptions.RequestException: For network or HTTP errors.
-        """
-        url = f"{self.base_url}/encrypt"
-        headers = self._get_headers(api_key, key_version)
+    def encrypt(self, data, api_key, password=None):
+        """Encrypt via POST /write. Returns ciphertext bytes."""
+        url = f"{self.base_url}/write"
+        headers = self._get_headers(api_key, password)
 
         if isinstance(data, str):
-            data = data.encode('utf-8')
+            data = data.encode("utf-8")
 
         response = requests.post(url, headers=headers, data=data, stream=True)
-        response.raise_for_status()  # Raises an HTTPError for bad responses (4xx or 5xx)
-
+        response.raise_for_status()
         return response.content
 
-    def decrypt(self, encrypted_data, api_key, key_version="v1"):
-        """
-        Decrypts data by calling the daemon's /decrypt endpoint.
+    def decrypt(self, encrypted_data, api_key, password=None):
+        """Decrypt via POST /read. Returns plaintext bytes."""
+        url = f"{self.base_url}/read"
+        headers = self._get_headers(api_key, password)
 
-        :param encrypted_data: The encrypted data to decrypt (bytes).
-        :param api_key: The API key for authentication.
-        :param key_version: The key version used for the original encryption.
-        :return: The decrypted data as bytes.
-        :raises requests.exceptions.RequestException: For network or HTTP errors.
-        """
-        url = f"{self.base_url}/decrypt"
-        headers = self._get_headers(api_key, key_version)
-
-        response = requests.post(url, headers=headers, data=encrypted_data, stream=True)
+        response = requests.post(
+            url, headers=headers, data=encrypted_data, stream=True
+        )
         response.raise_for_status()
-
         return response.content

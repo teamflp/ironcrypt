@@ -1,18 +1,78 @@
-# IronCrypt FFI Usage Examples
+# IronCrypt — FFI (API C)
 
-This document provides examples of how to use the `ironcrypt` C-style API from various programming languages.
+Ce document explique comment appeler IronCrypt **en process** depuis un autre langage, via la bibliothèque dynamique et l’en-tête C [`ironcrypt.h`](ironcrypt.h).
 
-## Prerequisites
+Contrairement au [SDK PHP HTTP](sdks/php/README.md) (qui parle à `ironcryptd`), le FFI **charge `libironcrypt` dans le même processus** : pas de démon, pas de Bearer — vous passez les PEM vous‑même.
 
-You must have a compiled dynamic library of `ironcrypt` (`libironcrypt.so` on Linux, `libironcrypt.dylib` on macOS, or `ironcrypt.dll` on Windows). You can compile it by running `cargo build --release` in the project root.
+```text
+┌──────────────────┐     appel natif (C ABI)     ┌─────────────────────┐
+│ Python / Java /  │ ──────────────────────────► │ libironcrypt(.so/    │
+│ C# / C / PHP FFI │   ironcrypt_*.c             │  .dylib / .dll)     │
+└──────────────────┘                             └─────────────────────┘
+```
 
-The C header file `ironcrypt.h` is also required for reference.
+## Quand utiliser le FFI ?
+
+| Approche | Intérêt |
+| --- | --- |
+| **HTTP + `ironcryptd`** ([`sdks/php`](sdks/php/), [`sdks/python`](sdks/python/)) | Apps web, microservices, clés centralisées, permissions API |
+| **FFI / `cdylib`** (ce guide) | CLI natives, services sans HTTP, intégration JVM/.NET/C, latence minimale |
+| **Crate Rust** | Applications Rust (`encrypt_stream`, etc.) |
+
+**Portée actuelle de l’API C :** workflow **mots de passe** (hash Argon2 + enveloppe RSA) — génération de clés, chiffrement, vérification. Le chiffrement de fichiers / streaming reste côté CLI, crate Rust, ou démon HTTP (`/write` / `/read`).
+
+## Fonctions exposées (`ironcrypt.h`)
+
+| Fonction | Retour | Rôle |
+| --- | --- | --- |
+| `ironcrypt_generate_rsa_keys(bits, &priv, &pub)` | `0` ok, `-1` erreur | Génère une paire RSA (PEM PKCS#8 / SPKI) |
+| `ironcrypt_password_encrypt(password, pub_pem, version, &out)` | `0` ok, `-1` erreur | Produit le JSON chiffré (hash Argon2 encapsulé) |
+| `ironcrypt_password_verify(json, password, priv_pem, passphrase)` | `1` valide, `0` invalide, `-1` erreur | Vérifie un mot de passe |
+| `ironcrypt_free_string(ptr)` | — | **Obligatoire** pour toute chaîne allouée par Rust |
+
+Règles mémoire :
+
+- Toute `char*` remplie par la lib **doit** être libérée avec `ironcrypt_free_string`.
+- Ne pas utiliser `free()` du C standard sur ces pointeurs.
+- `passphrase` peut être `NULL` si la clé privée n’est pas protégée.
+
+## Compiler la bibliothèque
+
+```bash
+# À la racine du dépôt (Cargo.toml : crate-type = ["lib", "cdylib"])
+cargo build --release
+```
+
+Artefacts typiques :
+
+| OS | Fichier |
+| --- | --- |
+| Linux | `target/release/libironcrypt.so` |
+| macOS | `target/release/libironcrypt.dylib` |
+| Windows | `target/release/ironcrypt.dll` |
+
+En-tête de référence : [`ironcrypt.h`](ironcrypt.h).  
+Exemple C natif : [`examples/c_api_usage.c`](examples/c_api_usage.c).
+
+### Compiler / lancer l’exemple C
+
+```bash
+# Linux
+cc -O2 examples/c_api_usage.c -o c_api_usage \
+  -I. -L target/release -lironcrypt -Wl,-rpath,$PWD/target/release
+./c_api_usage
+
+# macOS
+cc -O2 examples/c_api_usage.c -o c_api_usage \
+  -I. -L target/release -lironcrypt -Wl,-rpath,@loader_path/target/release
+./c_api_usage
+```
 
 ---
 
 ## Python (ctypes)
 
-This example uses the built-in `ctypes` library to call the C functions.
+Utilise la bibliothèque standard `ctypes` (pas de dépendance extra).
 
 ```python
 import ctypes
@@ -22,82 +82,102 @@ import platform
 # --- 1. Load the library ---
 def get_lib_path():
     """Determines the path to the dynamic library based on the OS."""
-    lib_name = ""
     if platform.system() == "Linux":
         lib_name = "libironcrypt.so"
-    elif platform.system() == "Darwin": # macOS
+    elif platform.system() == "Darwin":  # macOS
         lib_name = "libironcrypt.dylib"
     elif platform.system() == "Windows":
         lib_name = "ironcrypt.dll"
     else:
         raise Exception(f"Unsupported OS: {platform.system()}")
 
-    # Assumes the library is in target/release relative to this script
+    # Assumes the library is in target/release relative to the project root
     script_dir = os.path.dirname(os.path.abspath(__file__))
     return os.path.join(script_dir, "target/release", lib_name)
 
 lib_path = get_lib_path()
 if not os.path.exists(lib_path):
-    raise FileNotFoundError(f"Library not found at {lib_path}. Please compile with 'cargo build --release'.")
+    raise FileNotFoundError(
+        f"Library not found at {lib_path}. Please compile with 'cargo build --release'."
+    )
 
 lib = ctypes.CDLL(lib_path)
 
 # --- 2. Define function signatures ---
-# ironcrypt_generate_rsa_keys
-lib.ironcrypt_generate_rsa_keys.argtypes = [ctypes.c_uint32, ctypes.POINTER(ctypes.c_char_p), ctypes.POINTER(ctypes.c_char_p)]
+lib.ironcrypt_generate_rsa_keys.argtypes = [
+    ctypes.c_uint32,
+    ctypes.POINTER(ctypes.c_char_p),
+    ctypes.POINTER(ctypes.c_char_p),
+]
 lib.ironcrypt_generate_rsa_keys.restype = ctypes.c_int32
 
-# ironcrypt_password_encrypt
-lib.ironcrypt_password_encrypt.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.POINTER(ctypes.c_char_p)]
+lib.ironcrypt_password_encrypt.argtypes = [
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.POINTER(ctypes.c_char_p),
+]
 lib.ironcrypt_password_encrypt.restype = ctypes.c_int32
 
-# ironcrypt_password_verify
-lib.ironcrypt_password_verify.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p]
+lib.ironcrypt_password_verify.argtypes = [
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+]
 lib.ironcrypt_password_verify.restype = ctypes.c_int32
 
-# ironcrypt_free_string
-lib.ironcrypt_free_string.argtypes = [ctypes.c_void_p] # Use c_void_p for broader compatibility
+lib.ironcrypt_free_string.argtypes = [ctypes.c_void_p]
 lib.ironcrypt_free_string.restype = None
 
 # --- 3. Use the functions ---
 print("--- Python ctypes Example ---")
 
-# Generate keys
 private_key_ptr = ctypes.c_char_p()
 public_key_ptr = ctypes.c_char_p()
 print("Generating keys...")
-result = lib.ironcrypt_generate_rsa_keys(2048, ctypes.byref(private_key_ptr), ctypes.byref(public_key_ptr))
+result = lib.ironcrypt_generate_rsa_keys(
+    2048, ctypes.byref(private_key_ptr), ctypes.byref(public_key_ptr)
+)
 if result != 0:
     raise Exception("Key generation failed")
 
-private_key = private_key_ptr.value.decode('utf-8')
-public_key = public_key_ptr.value.decode('utf-8')
+private_key = private_key_ptr.value.decode("utf-8")
+public_key = public_key_ptr.value.decode("utf-8")
 print(f"Generated Public Key length: {len(public_key)}")
 
-# Encrypt password
 password = b"PythonistasSecret123!"
 key_version = b"v1-python"
 encrypted_json_ptr = ctypes.c_char_p()
 print("\nEncrypting password...")
-result = lib.ironcrypt_password_encrypt(password, public_key.encode('utf-8'), key_version, ctypes.byref(encrypted_json_ptr))
+result = lib.ironcrypt_password_encrypt(
+    password,
+    public_key.encode("utf-8"),
+    key_version,
+    ctypes.byref(encrypted_json_ptr),
+)
 if result != 0:
     raise Exception("Password encryption failed")
 
-encrypted_json = encrypted_json_ptr.value.decode('utf-8')
+encrypted_json = encrypted_json_ptr.value.decode("utf-8")
 print(f"Encrypted JSON length: {len(encrypted_json)}")
 
-# Verify correct password
 print("\nVerifying correct password...")
-result = lib.ironcrypt_password_verify(encrypted_json.encode('utf-8'), password, private_key.encode('utf-8'), None)
+result = lib.ironcrypt_password_verify(
+    encrypted_json.encode("utf-8"), password, private_key.encode("utf-8"), None
+)
 print(f"Verification result: {'OK' if result == 1 else 'FAIL'}")
 
-# Verify incorrect password
 print("\nVerifying incorrect password...")
 wrong_password = b"NotThePassword"
-result = lib.ironcrypt_password_verify(encrypted_json.encode('utf-8'), wrong_password, private_key.encode('utf-8'), None)
+result = lib.ironcrypt_password_verify(
+    encrypted_json.encode("utf-8"),
+    wrong_password,
+    private_key.encode("utf-8"),
+    None,
+)
 print(f"Verification result: {'OK (rejected)' if result == 0 else 'FAIL'}")
 
-# --- 4. Free memory ---
 print("\nCleaning up memory...")
 lib.ironcrypt_free_string(private_key_ptr)
 lib.ironcrypt_free_string(public_key_ptr)
@@ -109,9 +189,10 @@ print("Done.")
 
 ## Java (JNA)
 
-This example requires the [JNA](https://github.com/java-native-access/jna) library. You would need to add `jna.jar` and `jna-platform.jar` to your classpath.
+Nécessite [JNA](https://github.com/java-native-access/jna) (`jna` + éventuellement `jna-platform` sur le classpath).
 
-**`pom.xml` dependency:**
+**Dépendance `pom.xml` :**
+
 ```xml
 <dependencies>
     <dependency>
@@ -122,7 +203,8 @@ This example requires the [JNA](https://github.com/java-native-access/jna) libra
 </dependencies>
 ```
 
-**Java code:**
+**Code Java :**
+
 ```java
 import com.sun.jna.Library;
 import com.sun.jna.Native;
@@ -132,13 +214,9 @@ import com.sun.jna.ptr.PointerByReference;
 public class IronCryptJNAExample {
 
     public interface IronCryptLib extends Library {
-        // Load the native library.
-        // On Linux, this will look for "libironcrypt.so"
-        // On Windows, "ironcrypt.dll"
-        // On macOS, "libironcrypt.dylib"
+        // Linux: libironcrypt.so — Windows: ironcrypt.dll — macOS: libironcrypt.dylib
         IronCryptLib INSTANCE = Native.load("ironcrypt", IronCryptLib.class);
 
-        // Define function mappings
         int ironcrypt_generate_rsa_keys(int bits, PointerByReference private_key_pem, PointerByReference public_key_pem);
         void ironcrypt_free_string(Pointer s);
         int ironcrypt_password_encrypt(String password, String public_key_pem, String key_version, PointerByReference encrypted_output);
@@ -148,11 +226,9 @@ public class IronCryptJNAExample {
     public static void main(String[] args) {
         System.out.println("--- Java JNA Example ---");
 
-        // Set jna.library.path if the library is not in a standard location.
-        // For example, if running from the project root:
+        // Si la lib n'est pas dans le chemin système :
         // System.setProperty("jna.library.path", "target/release");
 
-        // 1. Generate keys
         System.out.println("Generating keys...");
         PointerByReference private_key_ref = new PointerByReference();
         PointerByReference public_key_ref = new PointerByReference();
@@ -167,30 +243,26 @@ public class IronCryptJNAExample {
         String public_key = public_key_ptr.getString(0);
         System.out.println("Generated Public Key length: " + public_key.length());
 
-        // 2. Encrypt password
         System.out.println("\nEncrypting password...");
         String password = "JavasSecretPassword123!";
         String key_version = "v1-java";
         PointerByReference encrypted_json_ref = new PointerByReference();
         result = IronCryptLib.INSTANCE.ironcrypt_password_encrypt(password, public_key, key_version, encrypted_json_ref);
-         if (result != 0) {
+        if (result != 0) {
             throw new RuntimeException("Password encryption failed");
         }
         Pointer encrypted_json_ptr = encrypted_json_ref.getValue();
         String encrypted_json = encrypted_json_ptr.getString(0);
         System.out.println("Encrypted JSON length: " + encrypted_json.length());
 
-        // 3. Verify passwords
         System.out.println("\nVerifying correct password...");
         result = IronCryptLib.INSTANCE.ironcrypt_password_verify(encrypted_json, password, private_key, null);
         System.out.println("Verification result: " + (result == 1 ? "OK" : "FAIL"));
 
         System.out.println("\nVerifying incorrect password...");
-        String wrong_password = "NotThePassword";
-        result = IronCryptLib.INSTANCE.ironcrypt_password_verify(encrypted_json, wrong_password, private_key, null);
+        result = IronCryptLib.INSTANCE.ironcrypt_password_verify(encrypted_json, "NotThePassword", private_key, null);
         System.out.println("Verification result: " + (result == 0 ? "OK (rejected)" : "FAIL"));
 
-        // 4. Free memory
         System.out.println("\nCleaning up memory...");
         IronCryptLib.INSTANCE.ironcrypt_free_string(private_key_ptr);
         IronCryptLib.INSTANCE.ironcrypt_free_string(public_key_ptr);
@@ -204,18 +276,13 @@ public class IronCryptJNAExample {
 
 ## C# (P/Invoke)
 
-This example uses the standard P/Invoke mechanism in .NET.
-
 ```csharp
 using System;
 using System.Runtime.InteropServices;
-using System.Text;
 
 public class IronCryptExample
 {
-    // The name of the library as it will be found by the dynamic linker.
-    // On Linux, it will look for "libironcrypt.so".
-    // On Windows, "ironcrypt.dll".
+    // Linux: libironcrypt.so — Windows: ironcrypt.dll — macOS: libironcrypt.dylib
     private const string LibName = "ironcrypt";
 
     [DllImport(LibName, CallingConvention = CallingConvention.Cdecl)]
@@ -234,7 +301,6 @@ public class IronCryptExample
     {
         Console.WriteLine("--- C# P/Invoke Example ---");
 
-        // 1. Generate keys
         Console.WriteLine("Generating keys...");
         int result = ironcrypt_generate_rsa_keys(2048, out IntPtr private_key_ptr, out IntPtr public_key_ptr);
         if (result != 0) throw new Exception("Key generation failed");
@@ -243,7 +309,6 @@ public class IronCryptExample
         string publicKey = Marshal.PtrToStringAnsi(public_key_ptr);
         Console.WriteLine($"Public Key length: {publicKey.Length}");
 
-        // 2. Encrypt password
         Console.WriteLine("\nEncrypting password...");
         string password = "CSharpSecretPassword123!";
         string keyVersion = "v1-csharp";
@@ -253,17 +318,14 @@ public class IronCryptExample
         string encryptedJson = Marshal.PtrToStringAnsi(encrypted_json_ptr);
         Console.WriteLine($"Encrypted JSON length: {encryptedJson.Length}");
 
-        // 3. Verify passwords
         Console.WriteLine("\nVerifying correct password...");
         result = ironcrypt_password_verify(encryptedJson, password, privateKey, null);
         Console.WriteLine($"Verification result: {(result == 1 ? "OK" : "FAIL")}");
 
         Console.WriteLine("\nVerifying incorrect password...");
-        string wrongPassword = "NotThePassword";
-        result = ironcrypt_password_verify(encryptedJson, wrongPassword, privateKey, null);
+        result = ironcrypt_password_verify(encryptedJson, "NotThePassword", privateKey, null);
         Console.WriteLine($"Verification result: {(result == 0 ? "OK (rejected)" : "FAIL")}");
 
-        // 4. Free memory
         Console.WriteLine("\nCleaning up memory...");
         ironcrypt_free_string(private_key_ptr);
         ironcrypt_free_string(public_key_ptr);
@@ -272,3 +334,52 @@ public class IronCryptExample
     }
 }
 ```
+
+Placez `libironcrypt` à côté de l’exécutable ou dans le chemin de recherche du chargeur dynamique (`LD_LIBRARY_PATH`, `DYLD_LIBRARY_PATH`, ou répertoire de l’app).
+
+---
+
+## PHP (extension FFI)
+
+Pour du chiffrement de **fichiers / flux** en PHP, préférez le [SDK HTTP](sdks/php/README.md).  
+L’API C actuelle cible surtout les **mots de passe** ; avec l’extension [`ffi`](https://www.php.net/manual/en/book.ffi.php) :
+
+```php
+<?php
+$ffi = FFI::cdef('
+    int32_t ironcrypt_generate_rsa_keys(uint32_t bits, char **private_key_pem, char **public_key_pem);
+    int32_t ironcrypt_password_encrypt(const char *password, const char *public_key_pem, const char *key_version, char **encrypted_output);
+    int32_t ironcrypt_password_verify(const char *encrypted_json, const char *password, const char *private_key_pem, const char *passphrase);
+    void ironcrypt_free_string(char *s);
+', 'target/release/libironcrypt.dylib'); // .so sous Linux
+
+$priv = FFI::new('char*');
+$pub = FFI::new('char*');
+if ($ffi->ironcrypt_generate_rsa_keys(2048, FFI::addr($priv), FFI::addr($pub)) !== 0) {
+    throw new RuntimeException('keygen failed');
+}
+// … encrypt / verify, puis :
+$ffi->ironcrypt_free_string($priv);
+$ffi->ironcrypt_free_string($pub);
+```
+
+Activez `ffi.enable=true` (ou `preload`) dans `php.ini`. Gérez les fuites : toujours `ironcrypt_free_string`.
+
+---
+
+## Bonnes pratiques
+
+- Ne loggez jamais les PEM privés ni les mots de passe en clair.
+- Appelez **toujours** `ironcrypt_free_string` (y compris après une erreur partielle si un pointeur a été alloué).
+- Alignez la version de `libironcrypt` avec celle de `ironcrypt.h` (rebuild après `git pull`).
+- Pour plusieurs services / permissions / gros fichiers : utilisez plutôt **`ironcryptd`**.
+
+## Dépannage
+
+| Symptôme | Cause probable |
+| --- | --- |
+| `Library not found` / `UnsatisfiedLinkError` | `cargo build --release` manquant, ou mauvais `jna.library.path` / `LD_LIBRARY_PATH` |
+| Crash / double free | `free()` C au lieu de `ironcrypt_free_string`, ou double free |
+| Verify retourne `-1` | JSON invalide, mauvaise clé, ou passphrase incorrecte |
+| Verify retourne `0` | Mot de passe incorrect (comportement attendu) |
+| Besoin de chiffrer un fichier depuis PHP | Utiliser [`sdks/php`](sdks/php/) + démon, pas cette API C |

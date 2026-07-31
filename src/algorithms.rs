@@ -2,18 +2,13 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 /// Defines the supported symmetric encryption algorithms.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Default)]
 pub enum SymmetricAlgorithm {
     /// AES-256-GCM, a widely used and secure symmetric cipher.
+    #[default]
     Aes256Gcm,
     /// ChaCha20-Poly1305, a modern and fast symmetric cipher.
     ChaCha20Poly1305,
-}
-
-impl Default for SymmetricAlgorithm {
-    fn default() -> Self {
-        SymmetricAlgorithm::Aes256Gcm
-    }
 }
 
 impl fmt::Display for SymmetricAlgorithm {
@@ -23,16 +18,11 @@ impl fmt::Display for SymmetricAlgorithm {
 }
 
 /// Defines the supported asymmetric encryption algorithms.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Default)]
 pub enum AsymmetricAlgorithm {
     /// RSA, a widely used public-key cryptosystem.
+    #[default]
     Rsa,
     /// Elliptic Curve Cryptography (ECC), a modern alternative to RSA.
     Ecc,
-}
-
-impl Default for AsymmetricAlgorithm {
-    fn default() -> Self {
-        AsymmetricAlgorithm::Rsa
-    }
 }

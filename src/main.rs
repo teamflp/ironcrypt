@@ -1095,12 +1095,13 @@ async fn main() {
                     println!();
                     println!("    {{");
                     println!("      \"description\": \"Nouvelle clé pour mon application\",");
-                    println!("      \"key_hash\": \"{}\",", hash_hex);
-                    println!("      \"permissions\": [\"encrypt\", \"decrypt\"]");
+                    println!("      \"keyHash\": \"{}\",", hash_hex);
+                    println!("      \"permissions\": [\"write\", \"read\"]");
                     println!("    }}");
                     println!();
-                    println!(" 4. Démarrez le daemon en pointant vers ce fichier avec l'argument --api-keys-file.");
-                    println!(" 5. Vos applications clientes devront envoyer la 'Clé API secrète' dans les requêtes HTTP avec l'en-tête : 'Authorization: Bearer {}'", key_b64);
+                    println!(" 4. Démarrez ironcryptd avec --api-keys-file pointant vers ce fichier.");
+                    println!(" 5. Les clients envoient la clé secrète : Authorization: Bearer {}", key_b64);
+                    println!(" 6. Endpoints : POST /write (chiffrer), POST /read (déchiffrer).");
 
                     Ok(())
                 })
