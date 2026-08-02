@@ -1,0 +1,73 @@
+# Lab / local development stack.
+# Includes Vault in -dev mode with a well-known root token — NEVER use for production.
+#
+#   docker compose --profile lab -f docker-compose.yml -f docker-compose.lab.yml up --build
+
+services:
+  ironcryptd:
+    profiles: ["lab"]
+    build: .
+    command: >
+      ironcryptd
+      --host 0.0.0.0
+      --port 3000
+      --key-directory /keys
+      --key-version v1
+      --api-keys-file /etc/ironcrypt/keys.json
+      --config /etc/ironcrypt/ironcrypt.toml
+      --allow-insecure-http
+      --rate-limit-per-sec 100
+      --rate-limit-burst 200
+    volumes:
+      - ./keys:/keys:ro
+      - ./keys.json:/etc/ironcrypt/keys.json:ro
+      - ./ironcrypt.toml:/etc/ironcrypt/ironcrypt.toml:ro
+    labels:
+      env: lab
+      app: ironcryptd
+    networks:
+      - monitoring_net
+
+  nginx:
+    profiles: ["lab"]
+    image: nginx:latest
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx/nginx.conf.template:/etc/nginx/nginx.conf
+    networks:
+      - monitoring_net
+    depends_on:
+      - ironcryptd
+
+  vault:
+    profiles: ["lab"]
+    image: hashicorp/vault:latest
+    container_name: vault-lab
+    ports:
+      - "8200:8200"
+    environment:
+      # Lab-only intentionally weak token for local experiments.
+      - VAULT_DEV_ROOT_TOKEN_ID=lab-root-token
+      - VAULT_DEV_LISTEN_ADDRESS=0.0.0.0:8200
+    cap_add:
+      - IPC_LOCK
+    labels:
+      env: lab
+      app: vault
+    networks:
+      - monitoring_net
+
+  prometheus:
+    profiles: ["lab"]
+    image: prom/prometheus
+    env_file: .env
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    labels:
+      env: lab
+      app: monitoring
+    networks:
+      - monitoring_net

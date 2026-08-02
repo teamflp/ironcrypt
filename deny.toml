@@ -1,0 +1,49 @@
+# cargo-deny configuration for IronCrypt
+# https://embarkstudios.github.io/cargo-deny/
+
+[graph]
+targets = [
+  { triple = "x86_64-unknown-linux-gnu" },
+  { triple = "x86_64-apple-darwin" },
+  { triple = "aarch64-apple-darwin" },
+]
+
+[advisories]
+yanked = "warn"
+# Accepted risks / no upstream fix yet — keep reasons short; revisit regularly.
+ignore = [
+  { id = "RUSTSEC-2023-0071", reason = "rsa Marvin Attack: no patched 0.9.x; track rsa 0.10" },
+  { id = "RUSTSEC-2026-0098", reason = "legacy rustls 0.21/webpki 0.101 via AWS Smithy; daemon TLS on 0.23/0.103.13" },
+  { id = "RUSTSEC-2026-0099", reason = "legacy rustls 0.21/webpki 0.101 via AWS Smithy; daemon TLS on 0.23/0.103.13" },
+  { id = "RUSTSEC-2026-0104", reason = "legacy rustls 0.21/webpki 0.101 via AWS Smithy; daemon TLS on 0.23/0.103.13" },
+]
+
+[licenses]
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Unicode-3.0",
+  "Unicode-DFS-2016",
+  "Zlib",
+  "OpenSSL",
+  "CC0-1.0",
+  "0BSD",
+  "BSL-1.0",
+  "MPL-2.0",
+  "CDLA-Permissive-2.0",
+]
+confidence-threshold = 0.8
+
+[bans]
+multiple-versions = "warn"
+wildcards = "allow"
+highlight = "all"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "warn"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

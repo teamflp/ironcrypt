@@ -1,0 +1,50 @@
+name: Publish Crate
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'  # Déclenche la publication seulement sur les tags versionnés SemVer
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    container:
+      image: rust:latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Test library (no default features)
+        run: cargo test --verbose --lib --tests
+
+      - name: Test full feature set (binaries + cloud)
+        run: cargo test --verbose --features full
+
+      - name: Package dry-run
+        run: cargo publish --dry-run --registry crates-io
+
+      - name: Verify version string consistency
+        run: |
+          VERSION_TAG=${GITHUB_REF#refs/tags/}
+          VERSION_TAG=${VERSION_TAG#v}
+          CARGO_VERSION=$(cargo pkgid | sed 's/.*#//')
+          if [ "$VERSION_TAG" != "$CARGO_VERSION" ]; then
+            echo "Version tag ($VERSION_TAG) does not match Cargo.toml version ($CARGO_VERSION)"
+            exit 1
+          fi
+
+      - name: List packaged files (sanity)
+        run: cargo package --list
+
+      - name: Publish crate to crates.io
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish --registry crates-io

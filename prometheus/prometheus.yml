@@ -1,0 +1,16 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'ironcrypt'
+    static_configs:
+      # IRONCRYPT_METRICS_ENABLED=true — port défaut 9000 (IRONCRYPT_METRICS_PORT)
+      - targets: ['ironcryptd:9000']
+
+# Optional remote_write (e.g. Grafana Cloud). Do NOT commit credentials.
+# Prefer injecting a rendered config from env / secrets manager in production.
+# remote_write:
+#   - url: "https://prometheus-xxx.grafana.net/api/prom/push"
+#     basic_auth:
+#       username: "<PROM_REMOTE_USER>"
+#       password: "<PROM_REMOTE_PASSWORD>"

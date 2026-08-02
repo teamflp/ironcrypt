@@ -1,0 +1,32 @@
+worker_processes auto;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    # Define a group of upstream servers for the ironcryptd cluster
+    upstream ironcryptd_cluster {
+        # Docker's internal DNS will resolve 'ironcryptd' to the IPs of all
+        # replicas. Nginx will load balance between them.
+        # The 'resolve' parameter is not needed for the free version of Nginx
+        # when using Docker's DNS.
+        server ironcryptd:3000;
+    }
+
+    server {
+        listen 80;
+
+        location / {
+            # Forward requests to the upstream cluster
+            proxy_pass http://ironcryptd_cluster;
+
+            # Set headers to pass client information to the daemon
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+
+            # Settings for handling streaming bodies, which the daemon uses
+            proxy_request_buffering off;
+            proxy_http_version 1.1;

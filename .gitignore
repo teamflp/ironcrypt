@@ -1,0 +1,93 @@
+# Rust & Cargo
+/target/
+**/*.rs.bk
+*.pdb
+
+# Couverture / profiling
+/coverage/
+cobertura.xml
+lcov.info
+tarpaulin-report.html
+perf.data*
+flamegraph.svg
+*.profraw
+*.profdata
+
+# IDEs & éditeurs
+/.idea/
+/.vscode/
+/.cursor/
+/.claude/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Secrets / runtime — NE JAMAIS COMMIT
+/keys/
+/my_keys/
+/test_keys/
+/test_keys_config/
+/test_keys_env/
+
+# Environnements locaux (garder *.example)
+.env
+.env.*
+!.env.example
+.envrc
+
+# Config & clés API locales (garder *.example)
+ironcrypt.toml
+/keys.json
+/private_key_*.pem
+/public_key_*.pem
+*.pem
+!*.pem.example
+!tests/fixtures/**/*.pem
+
+# Certificats / TLS générés pour le daemon
+*.crt
+*.key
+*.p12
+*.pfx
+cert.pem
+key.pem
+tls/
+
+# Artefacts crypto / démo (CLI, curl, quick start)
+*.enc
+secret.json
+encrypted_data.json
+encrypted*.json
+payload.bin
+encrypted.bin
+daemon.log
+*.log
+audit.log
+test.txt
+
+# Docker local
+docker-compose.override.yml
+
+# SDKs (artefacts locaux)
+sdks/python/**/__pycache__/
+sdks/python/**/*.pyc
+sdks/python/.venv/
+sdks/python/*.egg-info/
+sdks/php/vendor/
+
+# Fichiers temporaires / poubelle
+/demo/
+/Zpoubelle/
+*.tmp
+*.bak
+*.orig
+*.old
+.cache/
+
+# Données runtime monitoring (ne jamais committer)
+/loki/loki-data/
+/grafana/
+/promtail/
+.cargo-home/

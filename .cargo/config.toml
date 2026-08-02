@@ -1,0 +1,7 @@
+# Prefer sparse crates.io index (avoids hanging git index sync)
+[registries.crates-io]
+protocol = "sparse"
+
+# Configuration for musl (Alpine) target
+[target.x86_64-unknown-linux-musl]
+rustflags = []

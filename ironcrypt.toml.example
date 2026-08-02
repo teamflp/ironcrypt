@@ -1,0 +1,54 @@
+# ===================================================================
+# IronCrypt — exemple de configuration (champs plats = IronCryptConfig)
+# ===================================================================
+# Copier vers ironcrypt.toml (ex. : make bootstrap-lab) puis adapter.
+
+# Standard : "Nist" | "Fips140_2" | "Anssi" | "Custom"
+# Sous "Custom", renseigner symmetric_algorithm / asymmetric_algorithm / rsa_key_size.
+standard = "Nist"
+
+# Utilisés seulement si standard = "Custom"
+# symmetric_algorithm = "Aes256Gcm"   # ou "ChaCha20Poly1305"
+# asymmetric_algorithm = "Rsa"        # ou "Ecc"
+rsa_key_size = 2048
+
+# Taille du tampon pour le streaming (octets)
+buffer_size = 8192
+
+# Argon2id (coût mémoire en KiB, itérations, parallélisme)
+argon2_memory_cost = 65536
+argon2_time_cost = 3
+argon2_parallelism = 1
+
+# Politique de force des mots de passe (sous-table password_criteria)
+[password_criteria]
+min_length = 12
+max_length = 128
+uppercase = 1
+lowercase = 1
+digits = 1
+special_chars = 1
+disallowed_patterns = []
+
+# Optionnel — journal d'audit
+# [audit]
+# log_path = "/var/log/ironcrypt/audit.log"
+# signing_key_path = "/path/to/audit_signing_key.pem"
+
+# Optionnel — backends secrets (selon features aws/azure/vault/gcp)
+# [secrets]
+# provider = "vault"   # ou "aws" | "azure" | "google"
+#
+# [secrets.aws]
+# region = "eu-west-1"
+#
+# [secrets.azure]
+# vault_uri = "https://my-vault.vault.azure.net/"
+#
+# [secrets.vault]
+# address = "http://127.0.0.1:8200"
+# token = "s.xxx"
+# mount = "secret"
+#
+# [secrets.google]
+# project_id = "my-gcp-project"
