@@ -758,7 +758,7 @@ ironcrypt verify -i mon_document.pdf -s mon_document.sig -d keys -v v1
 Vous pouvez également utiliser `ironcrypt` comme bibliothèque dans vos projets Rust. Ajoutez-le à votre `Cargo.toml` :
 ```toml
 [dependencies]
-ironcrypt = "0.1.1" # Remplacez par la version souhaitée de crates.io
+ironcrypt = "0.1.2" # Remplacez par la version souhaitée de crates.io
 ```
 
 Des copies exécutables sont dans [`examples/`](examples/) (`cargo run --example password`, `cargo run --example stream_aes`).
@@ -1022,7 +1022,7 @@ Cet exemple montre comment créer un service web simple avec `actix-web` qui peu
 **Dépendances :**
 ```toml
 [dependencies]
-ironcrypt = "0.1.1"
+ironcrypt = "0.1.2"
 actix-web = "4"
 sqlx = { version = "0.7", features = ["runtime-async-std-native-tls", "postgres"] }
 serde = { version = "1.0", features = ["derive"] }
@@ -1122,7 +1122,7 @@ Cet exemple montre comment obtenir la même fonctionnalité en utilisant le fram
 **Dépendances :**
 ```toml
 [dependencies]
-ironcrypt = "0.1.1"
+ironcrypt = "0.1.2"
 rocket = { version = "0.5.0", features = ["json"] }
 sqlx = { version = "0.7", features = ["runtime-tokio-native-tls", "postgres"] }
 serde = { version = "1.0", features = ["derive"] }
