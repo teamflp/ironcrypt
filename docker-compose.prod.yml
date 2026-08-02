@@ -1,0 +1,122 @@
+# Production-oriented stack.
+# - No Vault -dev / root token
+# - ironcryptd binds loopback inside the compose network; TLS expected at nginx (or daemon --tls-*)
+# - Supply real secrets via env / mounted files (never commit them)
+#
+#   docker compose --profile prod -f docker-compose.yml -f docker-compose.prod.yml up --build
+
+services:
+  ironcryptd:
+    profiles: ["prod"]
+    build: .
+    deploy:
+      replicas: 2
+    command: >
+      ironcryptd
+      --host 0.0.0.0
+      --port 3000
+      --key-directory /keys
+      --key-version ${IRONCRYPT_KEY_VERSION:-v1}
+      --api-keys-file /etc/ironcrypt/keys.json
+      --config /etc/ironcrypt/ironcrypt.toml
+      --rate-limit-per-sec ${IRONCRYPT_RATE_LIMIT_PER_SEC:-20}
+      --rate-limit-burst ${IRONCRYPT_RATE_LIMIT_BURST:-40}
+    volumes:
+      - ${IRONCRYPT_KEYS_DIR:-./keys}:/keys:ro
+      - ${IRONCRYPT_API_KEYS_FILE:-./keys.json}:/etc/ironcrypt/keys.json:ro
+      - ${IRONCRYPT_CONFIG_FILE:-./ironcrypt.toml}:/etc/ironcrypt/ironcrypt.toml:ro
+    logging:
+      driver: loki
+      options:
+        loki-url: "https://${GRAFANA_CLOUD_LOKI_USER}:${GRAFANA_CLOUD_LOKI_API_KEY}@logs-prod-eu-west-0.grafana.net/loki/api/v1/push"
+    labels:
+      env: prod
+      app: ironcryptd
+    networks:
+      - monitoring_net
+
+  nginx:
+    profiles: ["prod"]
+    image: nginx:latest
+    ports:
+      - "8080:80"
+      # Prefer terminating TLS here (or set IRONCRYPT_TLS_* on the daemon).
+      - "8443:443"
+    volumes:
+      - ./nginx/nginx.conf.template:/etc/nginx/nginx.conf
+    networks:
+      - monitoring_net
+    depends_on:
+      - ironcryptd
+
+  # Optional HashiCorp Vault — production mode (no VAULT_DEV_ROOT_TOKEN_ID).
+  # Requires you to initialize/unseal and inject VAULT_TOKEN via secrets.
+  vault:
+    profiles: ["prod-vault"]
+    image: hashicorp/vault:latest
+    container_name: vault-prod
+    ports:
+      - "8200:8200"
+    environment:
+      - VAULT_ADDR=https://0.0.0.0:8200
+      - VAULT_API_ADDR=${VAULT_API_ADDR:-https://vault:8200}
+      - VAULT_LOCAL_CONFIG={"storage":{"file":{"path":"/vault/file"}},"listener":{"tcp":{"address":"0.0.0.0:8200","tls_disable":1}},"ui":true}
+    cap_add:
+      - IPC_LOCK
+    volumes:
+      - vault_data:/vault/file
+    labels:
+      env: prod
+      app: vault
+    networks:
+      - monitoring_net
+
+  prometheus:
+    profiles: ["prod"]
+    image: prom/prometheus
+    env_file: .env
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    labels:
+      env: prod
+      app: monitoring
+    networks:
+      - monitoring_net
+
+  loki:
+    profiles: ["prod"]
+    image: grafana/loki:2.9.4
+    env_file: .env
+    volumes:
+      - ./loki/loki-config.yml.template:/etc/loki/local-config.yml.template:ro
+      - ./loki/entrypoint.sh:/entrypoint.sh:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    entrypoint: /entrypoint.sh
+    ports:
+      - "${LOKI_PORT:-3100}:3100"
+    labels:
+      env: prod
+      app: monitoring
+    networks:
+      - monitoring_net
+
+  alertmanager:
+    profiles: ["prod"]
+    image: prom/alertmanager
+    env_file: .env
+    volumes:
+      - ./alertmanager/config.yml.template:/etc/alertmanager/config.yml.template:ro
+      - ./alertmanager/entrypoint.sh:/entrypoint.sh:ro
+    entrypoint: /entrypoint.sh
+    ports:
+      - "${ALERTMANAGER_PORT:-9093}:9093"
+    labels:
+      env: prod
+      app: monitoring
+    networks:
+      - monitoring_net
+
+volumes:
+  vault_data:

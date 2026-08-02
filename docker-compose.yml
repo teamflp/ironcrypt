@@ -1,0 +1,25 @@
+# IronCrypt — base Compose file
+# Usage:
+#   Lab:  docker compose --profile lab -f docker-compose.yml -f docker-compose.lab.yml up --build
+#   Prod: docker compose --profile prod -f docker-compose.yml -f docker-compose.prod.yml up --build
+# Or via Makefile: `make lab` / `make prod`
+#
+# Copy examples first:
+#   cp keys.json.example keys.json
+#   cp ironcrypt.toml.example ironcrypt.toml
+#   mkdir -p keys && cp private_key_v1.pem.example keys/private_key_v1.pem
+#   cp public_key_v1.pem.example keys/public_key_v1.pem
+
+networks:
+  monitoring_net:
+    driver: bridge
+
+services:
+  tests:
+    profiles: ["lab"]
+    build:
+      context: .
+      target: builder
+    volumes:
+      - .:/usr/src/app
+    working_dir: /usr/src/app

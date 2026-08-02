@@ -1,0 +1,35 @@
+use async_trait::async_trait;
+use std::error::Error;
+
+#[cfg(feature = "aws")]
+pub mod aws;
+#[cfg(feature = "azure")]
+pub mod azure;
+#[cfg(feature = "gcp")]
+pub mod google;
+#[cfg(feature = "hsm")]
+pub mod hsm;
+#[cfg(feature = "vault")]
+pub mod vault;
+
+/// A trait for a generic secret store.
+///
+/// This trait defines a common interface for interacting with different secret
+/// management systems, such as HashiCorp Vault, AWS Secrets Manager, etc.
+#[async_trait]
+pub trait SecretStore {
+    /// Retrieves a secret from the store.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The identifier for the secret to retrieve.
+    async fn get_secret(&self, key: &str) -> Result<String, Box<dyn Error + Send + Sync>>;
+
+    /// Stores a secret in the store.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The identifier for the secret to store.
+    /// * `value` - The secret value to store.
+    async fn set_secret(&self, key: &str, value: &str) -> Result<(), Box<dyn Error + Send + Sync>>;
+}
