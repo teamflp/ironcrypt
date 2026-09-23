@@ -1,0 +1,89 @@
+# Payment-oriented compose overlay — no PEM key mounts.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.payment.yml --profile payment up --build
+#
+# Expect:
+#   - image built with IRONCRYPT_FEATURES=payment-daemon
+#   - CryptoProvider via ironcrypt.toml + cloud/Vault identity env
+#   - API keys via IRONCRYPT_API_KEYS_JSON (or mounted keys.json only)
+#   - admin /health /ready on loopback; metrics on 127.0.0.1
+
+services:
+  ironcryptd:
+    profiles: ["payment"]
+    build:
+      context: .
+      args:
+        IRONCRYPT_FEATURES: payment-daemon
+    user: ironcrypt
+    read_only: true
+    cap_drop:
+      - ALL
+    cap_add:
+      # Needed for best-effort DEK mlock under Payment (`memsec`).
+      - IPC_LOCK
+    security_opt:
+      - no-new-privileges:true
+    ulimits:
+      memlock: -1
+    tmpfs:
+      - /tmp:size=64m,mode=1777,noexec,nosuid
+    environment:
+      IRONCRYPT_METRICS_ENABLED: "true"
+      IRONCRYPT_METRICS_BIND: "127.0.0.1"
+      IRONCRYPT_METRICS_PORT: "9000"
+      IRONCRYPT_API_KEYS_BACKEND: ${IRONCRYPT_API_KEYS_BACKEND:-env}
+      # IRONCRYPT_API_KEYS_JSON: set via secrets / env_file — never commit
+      # AWS: rely on task role / IRSA (no static keys)
+      # Azure: DefaultAzureCredential / Managed Identity
+      # GCP: Workload Identity / ADC
+      # Vault: VAULT_ROLE_ID + VAULT_SECRET_ID or VAULT_K8S_ROLE
+      VAULT_ADDR: ${VAULT_ADDR:-}
+      VAULT_ROLE_ID: ${VAULT_ROLE_ID:-}
+      VAULT_SECRET_ID: ${VAULT_SECRET_ID:-}
+      VAULT_K8S_ROLE: ${VAULT_K8S_ROLE:-}
+    command:
+      - ironcryptd
+      - --host
+      - 0.0.0.0
+      - --port
+      - "3000"
+      - --key-directory
+      - /var/empty
+      - --key-version
+      - ${IRONCRYPT_KEY_VERSION:-v1}
+      - --api-keys-backend
+      - env
+      - --config
+      - /etc/ironcrypt/ironcrypt.toml
+      - --tls-cert
+      - /etc/ironcrypt/tls/tls.crt
+      - --tls-key
+      - /etc/ironcrypt/tls/tls.key
+      - --tls-client-ca
+      - /etc/ironcrypt/tls/client-ca.crt
+      - --admin-host
+      - 127.0.0.1
+      - --admin-port
+      - "3001"
+      - --tls-reload-poll-secs
+      - "60"
+    volumes:
+      # Config only (non-secret). Secrets via env / tmpfs / CSI.
+      - ${IRONCRYPT_CONFIG_FILE:-./ironcrypt.toml}:/etc/ironcrypt/ironcrypt.toml:ro
+      - ${IRONCRYPT_TLS_DIR:-./tls}:/etc/ironcrypt/tls:ro
+      # Intentionally NO ./keys mount — Payment + KMS/HSM must not ship PEMs.
+    networks:
+      - monitoring_net
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "-qO-",
+          "http://127.0.0.1:3001/ready",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 15s

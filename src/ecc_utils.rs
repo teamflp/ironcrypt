@@ -1,4 +1,10 @@
 use crate::IronCryptError;
+use crate::payment::PaymentSecurityProfile;
+use aes_gcm::aead::{Aead, KeyInit};
+use aes_gcm::{Aes256Gcm, Key, Nonce};
+use hkdf::Hkdf;
+use p256::ecdh;
+use p256::ecdsa::{Signature, SigningKey, VerifyingKey};
 use p256::{
     pkcs8::{
         spki::DecodePublicKey, DecodePrivateKey, EncodePrivateKey, EncodePublicKey, LineEnding,
@@ -6,14 +12,10 @@ use p256::{
     PublicKey, SecretKey,
 };
 use rand::rngs::OsRng;
-use aes_gcm::{Aes256Gcm, Key, Nonce};
-use aes_gcm::aead::{Aead, KeyInit};
-use hkdf::Hkdf;
-use p256::ecdsa::{Signature, SigningKey, VerifyingKey};
 use sha2::Sha256;
-use p256::ecdh;
 use signature::{Signer, Verifier};
-
+use zeroize::Zeroizing;
+use crate::memsec::zeroizing_vec;
 
 /// Generates a new P-256 key pair.
 pub fn generate_ecc_keys() -> Result<(SecretKey, PublicKey), IronCryptError> {
@@ -30,13 +32,20 @@ pub fn save_keys_to_files(
     public_key_path: &str,
     passphrase: Option<&str>,
 ) -> Result<(), IronCryptError> {
-    public_key.write_public_key_pem_file(public_key_path, LineEnding::LF)?;
+    let pub_pem = public_key.to_public_key_pem(LineEnding::LF)?;
     let pkcs8_doc = if let Some(pass) = passphrase {
         secret_key.to_pkcs8_encrypted_pem(&mut OsRng, pass.as_bytes(), Default::default())?
     } else {
         secret_key.to_pkcs8_pem(LineEnding::LF)?
     };
-    std::fs::write(private_key_path, pkcs8_doc.as_bytes())?;
+    crate::key_lifecycle::atomic_write(
+        std::path::Path::new(public_key_path),
+        pub_pem.as_bytes(),
+    )?;
+    crate::key_lifecycle::atomic_write(
+        std::path::Path::new(private_key_path),
+        pkcs8_doc.as_bytes(),
+    )?;
     Ok(())
 }
 
@@ -64,8 +73,32 @@ pub struct EciesKek {
 }
 
 const ECIES_NONCE_LEN: usize = 12;
-/// Legacy fixed nonce used by older IronCrypt builds (kept for decrypt compatibility).
+/// Legacy fixed nonce used by older IronCrypt builds.
+/// Kept only behind [`EciesDecapOptions::allow_legacy_nonce`] for migration tools —
+/// never enabled under the Payment profile.
 const ECIES_LEGACY_NONCE: &[u8; ECIES_NONCE_LEN] = b"ironcrypt-iv";
+
+/// Domain-separated HKDF info for ECIES KEK derivation (ECIES-v1).
+///
+/// See [`PROTOCOL.md`](../../PROTOCOL.md).
+pub const ECIES_HKDF_INFO_V1: &[u8] =
+    b"ironcrypt-ecies-v1|usage=kek|alg=aes-256-gcm|curve=p256";
+
+/// Options for ECIES decapsulation.
+#[derive(Debug, Clone, Copy)]
+pub struct EciesDecapOptions {
+    /// When `true`, accept historical payloads that used a fixed nonce / old HKDF info.
+    /// Payment builds default this to `false`.
+    pub allow_legacy_nonce: bool,
+}
+
+impl Default for EciesDecapOptions {
+    fn default() -> Self {
+        Self {
+            allow_legacy_nonce: PaymentSecurityProfile::allow_ecies_legacy_nonce(),
+        }
+    }
+}
 
 /// Encapsulates a symmetric key using ECIES (ECDH + HKDF + AES-GCM Key Wrap).
 ///
@@ -82,10 +115,12 @@ pub fn ecies_key_encap(
     let shared_secret = ephemeral_sk.diffie_hellman(recipient_pk);
 
     let hkdf = Hkdf::<Sha256>::new(None, shared_secret.raw_secret_bytes().as_ref());
-    let mut kek = [0u8; 32];
-    hkdf.expand(b"ironcrypt-ecies-kek", &mut kek)?;
+    let mut kek = Zeroizing::new([0u8; 32]);
+    hkdf.expand(ECIES_HKDF_INFO_V1, kek.as_mut())?;
 
-    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&kek));
+    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(kek.as_ref()));
+    // `kek` wiped on drop even if encrypt fails below.
+
     let mut nonce_bytes = [0u8; ECIES_NONCE_LEN];
     OsRng.fill_bytes(&mut nonce_bytes);
     let ciphertext = cipher
@@ -102,33 +137,70 @@ pub fn ecies_key_encap(
     })
 }
 
-/// Decapsulates a symmetric key using ECIES.
+/// Decapsulates a symmetric key using ECIES with default options
+/// (legacy nonce disabled under the Payment profile).
 pub fn ecies_key_decap(
     recipient_sk: &SecretKey,
     ephemeral_pk: &PublicKey,
     encapsulated_key: &[u8],
-) -> Result<Vec<u8>, IronCryptError> {
+) -> Result<Zeroizing<Vec<u8>>, IronCryptError> {
+    ecies_key_decap_with_options(
+        recipient_sk,
+        ephemeral_pk,
+        encapsulated_key,
+        EciesDecapOptions::default(),
+    )
+}
+
+/// Decapsulates a symmetric key using ECIES.
+pub fn ecies_key_decap_with_options(
+    recipient_sk: &SecretKey,
+    ephemeral_pk: &PublicKey,
+    encapsulated_key: &[u8],
+    options: EciesDecapOptions,
+) -> Result<Zeroizing<Vec<u8>>, IronCryptError> {
     let shared_secret =
         ecdh::diffie_hellman(recipient_sk.to_nonzero_scalar(), ephemeral_pk.as_affine());
 
     let hkdf = Hkdf::<Sha256>::new(None, shared_secret.raw_secret_bytes().as_ref());
-    let mut kek = [0u8; 32];
-    hkdf.expand(b"ironcrypt-ecies-kek", &mut kek)?;
+    let mut kek = Zeroizing::new([0u8; 32]);
 
-    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&kek));
+    let infos: &[&[u8]] = if options.allow_legacy_nonce {
+        &[ECIES_HKDF_INFO_V1, b"ironcrypt-ecies-kek"]
+    } else {
+        &[ECIES_HKDF_INFO_V1]
+    };
 
-    // Preferred format: random nonce || ciphertext
-    if encapsulated_key.len() > ECIES_NONCE_LEN {
-        let (nonce, ciphertext) = encapsulated_key.split_at(ECIES_NONCE_LEN);
-        if let Ok(symmetric_key) = cipher.decrypt(Nonce::from_slice(nonce), ciphertext) {
-            return Ok(symmetric_key);
+    let mut last_err: Option<String> = None;
+    for info in infos {
+        if hkdf.expand(info, kek.as_mut()).is_err() {
+            continue;
+        }
+        let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(kek.as_ref()));
+
+        // Preferred format: random nonce || ciphertext
+        if encapsulated_key.len() > ECIES_NONCE_LEN {
+            let (nonce, ciphertext) = encapsulated_key.split_at(ECIES_NONCE_LEN);
+            if let Ok(symmetric_key) = cipher.decrypt(Nonce::from_slice(nonce), ciphertext) {
+                return Ok(zeroizing_vec(symmetric_key));
+            }
+        }
+
+        if options.allow_legacy_nonce {
+            match cipher.decrypt(Nonce::from_slice(ECIES_LEGACY_NONCE), encapsulated_key) {
+                Ok(symmetric_key) => {
+                    return Ok(zeroizing_vec(symmetric_key));
+                }
+                Err(e) => last_err = Some(e.to_string()),
+            }
+        } else {
+            last_err = Some("ECIES decapsulation failed".into());
         }
     }
 
-    // Legacy payloads used a fixed nonce over the whole blob.
-    cipher
-        .decrypt(Nonce::from_slice(ECIES_LEGACY_NONCE), encapsulated_key)
-        .map_err(|e| IronCryptError::DecryptionError(e.to_string()))
+    Err(IronCryptError::DecryptionError(
+        last_err.unwrap_or_else(|| "ECIES decapsulation failed".into()),
+    ))
 }
 
 /// Signs a hash using ECDSA with a P-256 key.
@@ -155,6 +227,7 @@ pub fn verify_signature_ecc(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use zeroize::Zeroize;
 
     #[test]
     fn ecies_uses_random_nonce_roundtrip() {
@@ -165,11 +238,48 @@ mod tests {
             kek.encapsulated_key.len() > 12,
             "encapsulated key must include nonce prefix"
         );
-        // Two encapsulations must not share the same nonce prefix.
         let kek2 = ecies_key_encap(&pk, msg).unwrap();
         assert_ne!(&kek.encapsulated_key[..12], &kek2.encapsulated_key[..12]);
 
         let recovered = ecies_key_decap(&sk, &kek.ephemeral_pk, &kek.encapsulated_key).unwrap();
-        assert_eq!(recovered, msg);
+        assert_eq!(recovered.as_slice(), msg);
+    }
+
+    #[test]
+    fn ecies_rejects_legacy_when_disallowed() {
+        let (sk, pk) = generate_ecc_keys().unwrap();
+        let ephemeral_sk = p256::ecdh::EphemeralSecret::random(&mut OsRng);
+        let ephemeral_pk = ephemeral_sk.public_key();
+        let shared = ephemeral_sk.diffie_hellman(&pk);
+        let hkdf = Hkdf::<Sha256>::new(None, shared.raw_secret_bytes().as_ref());
+        let mut kek = [0u8; 32];
+        hkdf.expand(b"ironcrypt-ecies-kek", &mut kek).unwrap();
+        let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&kek));
+        kek.zeroize();
+        let msg = b"0123456789abcdef0123456789abcdef";
+        let legacy_ct = cipher
+            .encrypt(Nonce::from_slice(ECIES_LEGACY_NONCE), msg.as_slice())
+            .unwrap();
+
+        assert!(ecies_key_decap_with_options(
+            &sk,
+            &ephemeral_pk,
+            &legacy_ct,
+            EciesDecapOptions {
+                allow_legacy_nonce: false,
+            },
+        )
+        .is_err());
+
+        let ok = ecies_key_decap_with_options(
+            &sk,
+            &ephemeral_pk,
+            &legacy_ct,
+            EciesDecapOptions {
+                allow_legacy_nonce: true,
+            },
+        )
+        .unwrap();
+        assert_eq!(ok.as_slice(), msg);
     }
 }

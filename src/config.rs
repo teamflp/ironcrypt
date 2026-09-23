@@ -63,15 +63,104 @@ pub struct SecretsConfig {
     pub hsm: Option<HsmConfig>,
 }
 
+/// How audit log segments are attested / signed.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum AuditSigningMode {
+    /// No signing.
+    #[default]
+    None,
+    /// Local PEM private key via `signing_key_path` (lab / non-Payment only).
+    Pem,
+    /// HMAC-SHA256 key from environment (`signing_hmac_env`, default `IRONCRYPT_AUDIT_HMAC_KEY`).
+    /// Preferred for Payment when CryptoProvider signing is not wired.
+    HmacEnv,
+    /// Seal the file digest with the configured [`CryptoProvider`] (`signing_key_id`).
+    /// Private key material never lands on disk as PEM.
+    Provider,
+}
+
 /// Configuration for auditing.
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct AuditConfig {
-    /// Path to the audit log file.
+    /// Directory where rolling audit log files are written by `ironcryptd`
+    /// (via `tracing_appender::rolling::daily`).
+    ///
+    /// Prefer this field for daemon deployments. If empty, [`Self::log_path`]
+    /// is treated as the directory for backward compatibility.
+    #[serde(default)]
+    pub audit_directory: String,
+    /// Path used by library helpers such as `IronCrypt::sign_audit_log`.
+    ///
+    /// - When signing a single file, set this to the concrete log file path.
+    /// - When only rolling logs are used, point at a consolidated export or use
+    ///   [`crate::audit::sign_audit_rolling_directory`].
+    #[serde(default)]
     pub log_path: String,
-    /// Path to the private key used for signing the audit log.
-    /// If not provided, the log will not be signed.
+    /// Path to a PEM private key used when [`Self::signing_mode`] is [`AuditSigningMode::Pem`].
+    ///
+    /// **Payment forbids this** — use `hmac-env` or `provider` instead.
     #[serde(default)]
     pub signing_key_path: Option<String>,
+    /// Attestation backend for audit segments (default: none).
+    #[serde(default)]
+    pub signing_mode: AuditSigningMode,
+    /// Env var holding the HMAC key when `signing_mode = "hmac-env"`.
+    /// Defaults to `IRONCRYPT_AUDIT_HMAC_KEY` when unset.
+    #[serde(default)]
+    pub signing_hmac_env: Option<String>,
+    /// CryptoProvider key id when `signing_mode = "provider"`.
+    #[serde(default)]
+    pub signing_key_id: Option<String>,
+    /// Retain rolling `audit.log*` segments for this many days (0 = no auto-purge).
+    #[serde(default)]
+    pub retention_days: u32,
+}
+
+impl AuditConfig {
+    /// Directory used for rolling audit appenders.
+    pub fn rolling_directory(&self) -> &str {
+        if !self.audit_directory.is_empty() {
+            &self.audit_directory
+        } else {
+            &self.log_path
+        }
+    }
+
+    /// Env var name for the HMAC audit key.
+    pub fn hmac_env_name(&self) -> &str {
+        self.signing_hmac_env
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .unwrap_or("IRONCRYPT_AUDIT_HMAC_KEY")
+    }
+
+    /// Effective signing mode (infers `pem` if only `signing_key_path` is set).
+    pub fn effective_signing_mode(&self) -> AuditSigningMode {
+        if self.signing_mode != AuditSigningMode::None {
+            return self.signing_mode;
+        }
+        if self.signing_key_path.is_some() {
+            AuditSigningMode::Pem
+        } else {
+            AuditSigningMode::None
+        }
+    }
+
+    /// Reject Payment-unsafe audit signing (PEM on disk).
+    pub fn ensure_payment_safe(&self) -> Result<(), crate::IronCryptError> {
+        match self.effective_signing_mode() {
+            AuditSigningMode::Pem => Err(crate::IronCryptError::ConfigurationError(
+                "Payment profile forbids PEM audit signing keys on disk; \
+                 set audit.signing_mode = \"hmac-env\" (IRONCRYPT_AUDIT_HMAC_KEY) \
+                 or \"provider\" with signing_key_id (KMS/HSM CryptoProvider)"
+                    .into(),
+            )),
+            AuditSigningMode::HmacEnv | AuditSigningMode::Provider | AuditSigningMode::None => {
+                Ok(())
+            }
+        }
+    }
 }
 
 /// Configuration for Google Cloud Secret Manager.
@@ -95,7 +184,97 @@ pub struct AwsConfig {
     pub region: String,
 }
 
+/// Configuration for AWS KMS as a [`crate::CryptoProvider`].
+///
+/// Credentials must come from the environment / IAM role / instance profile —
+/// never embed static access keys in this TOML.
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub struct AwsKmsConfig {
+    /// AWS region (e.g. `eu-west-1`).
+    pub region: String,
+    /// Default KMS key id or ARN used when callers pass an empty `key_id`.
+    pub default_key_id: String,
+}
+
+/// Configuration for HashiCorp Vault Transit as a [`crate::CryptoProvider`].
+///
+/// Prefer AppRole / Kubernetes / workload identity over long-lived tokens in
+/// production (see PAYMENT_SECURITY.md).
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub struct VaultTransitConfig {
+    /// Vault server address (e.g. `https://vault.internal:8200`).
+    pub address: String,
+    /// Auth token (short-lived). Prefer env / AppRole / K8s auth over embedding here.
+    #[serde(default)]
+    pub token: String,
+    /// Transit secrets engine mount path.
+    #[serde(default = "default_transit_mount")]
+    pub mount: String,
+    /// AppRole auth mount (default `approle`). Used when `VAULT_ROLE_ID`+`VAULT_SECRET_ID` are set.
+    #[serde(default = "default_approle_mount")]
+    pub approle_mount: String,
+    /// Kubernetes auth mount (default `kubernetes`). Used when `VAULT_K8S_ROLE` is set.
+    #[serde(default = "default_k8s_mount")]
+    pub kubernetes_mount: String,
+}
+
+fn default_transit_mount() -> String {
+    "transit".to_string()
+}
+
+fn default_approle_mount() -> String {
+    "approle".to_string()
+}
+
+fn default_k8s_mount() -> String {
+    "kubernetes".to_string()
+}
+
+/// Configuration for Azure Key Vault Keys as a [`crate::CryptoProvider`].
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub struct AzureKmsConfig {
+    /// Vault URI (e.g. `https://myvault.vault.azure.net/`).
+    pub vault_uri: String,
+    /// Default key name used when callers pass an empty `key_id`.
+    pub default_key_name: String,
+}
+
+/// Configuration for Google Cloud KMS as a [`crate::CryptoProvider`].
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub struct GcpKmsConfig {
+    /// Full CryptoKey resource name
+    /// (`projects/.../locations/.../keyRings/.../cryptoKeys/...`).
+    pub default_key_name: String,
+}
+
+/// Selects which [`crate::CryptoProvider`] backend to construct.
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub struct CryptoProviderConfig {
+    /// Backend name: `aws-kms`, `azure-kms`, `gcp-kms`, `vault-transit`, `hsm`, or `local`.
+    pub provider: String,
+    #[serde(default)]
+    pub aws_kms: Option<AwsKmsConfig>,
+    #[serde(default)]
+    pub azure_kms: Option<AzureKmsConfig>,
+    #[serde(default)]
+    pub gcp_kms: Option<GcpKmsConfig>,
+    #[cfg(feature = "vault")]
+    #[serde(default)]
+    pub vault_transit: Option<VaultTransitConfig>,
+    #[cfg(feature = "hsm")]
+    #[serde(default)]
+    pub hsm: Option<HsmCryptoConfig>,
+    /// Ordered standby backends ([`crate::crypto_provider::HaCryptoProvider`]).
+    /// Standbys must unwrap ciphertexts produced by the primary (multi-region /
+    /// replicated key material). Nested `failover` lists are rejected.
+    #[serde(default)]
+    pub failover: Vec<CryptoProviderConfig>,
+}
+
 /// Configuration for a PKCS#11 Hardware Security Module.
+///
+/// Used by the legacy secrets map and by [`HsmCryptoConfig`]. Prefer configuring
+/// `[crypto_provider.hsm]` for in-device wrap/unwrap.
 #[cfg(feature = "hsm")]
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct HsmConfig {
@@ -103,8 +282,27 @@ pub struct HsmConfig {
     pub module_path: String,
     /// Label of the token/slot to use.
     pub token_label: String,
-    /// PIN used to log in to the token.
-    pub pin: String,
+    /// Optional PIN (prefer `IRONCRYPT_HSM_PIN` env in production).
+    #[serde(default)]
+    pub pin: Option<String>,
+}
+
+/// PKCS#11 settings for [`crate::crypto_provider::HsmProvider`].
+#[cfg(feature = "hsm")]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub struct HsmCryptoConfig {
+    /// Path to the PKCS#11 module (`.so`/`.dll`) to load.
+    pub module_path: String,
+    /// Label of the token/slot to use.
+    pub token_label: String,
+    /// Default AES secret-key label used when `key_id` is empty.
+    pub default_key_label: String,
+    /// Optional PIN (prefer `IRONCRYPT_HSM_PIN` env — never commit production PINs).
+    #[serde(default)]
+    pub pin: Option<String>,
+    /// Max concurrent logged-in PKCS#11 sessions (default 4, cap 32). `0` → default.
+    #[serde(default)]
+    pub max_sessions: u32,
 }
 
 /// Configuration for HashiCorp Vault.
@@ -151,6 +349,7 @@ fn default_mount() -> String {
 ///         ..Default::default()
 ///     },
 ///     secrets: None,
+///     crypto_provider: None,
 ///     data_type_config: None,
 ///     audit: None,
 /// };
@@ -191,6 +390,11 @@ pub struct IronCryptConfig {
     /// Configuration for the secret management backend.
     #[serde(default)]
     pub secrets: Option<SecretsConfig>,
+    /// Configuration for the cryptographic key provider (KMS / Transit / local).
+    /// Distinct from [`SecretsConfig`]: this performs crypto ops, it does not
+    /// store opaque application secrets.
+    #[serde(default)]
+    pub crypto_provider: Option<CryptoProviderConfig>,
     /// Configuration for data type specific key management.
     #[serde(default)]
     pub data_type_config: Option<DataTypeConfig>,
@@ -222,6 +426,7 @@ impl Default for IronCryptConfig {
             argon2_parallelism: 1,
             password_criteria: PasswordCriteria::default(),
             secrets: None,
+            crypto_provider: None,
             data_type_config: None,
             audit: None,
         }

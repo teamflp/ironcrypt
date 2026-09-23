@@ -5,6 +5,7 @@ use argon2::password_hash::Error as ArgonError;
 use base64::DecodeError as Base64DecodeError;
 use cipher::InvalidLength as CipherInvalidLength;
 use p256::pkcs8;
+#[cfg(feature = "rsa-algo")]
 use rsa::errors::Error as RsaError;
 use serde_json::Error as SerdeJsonError;
 use std::error::Error;
@@ -76,6 +77,9 @@ pub enum IronCryptError {
 
     #[error("Unsupported operation: {0}")]
     UnsupportedOperation(String),
+
+    #[error("Crypto provider error: {0}")]
+    ProviderError(String),
 }
 
 impl From<Box<dyn Error + Send + Sync>> for IronCryptError {
@@ -108,6 +112,7 @@ impl From<Base64DecodeError> for IronCryptError {
     }
 }
 
+#[cfg(feature = "rsa-algo")]
 impl From<RsaError> for IronCryptError {
     fn from(err: RsaError) -> Self {
         IronCryptError::DecryptionError(format!("RSA error: {err}"))

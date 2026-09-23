@@ -51,6 +51,7 @@ async fn test_file_encryption_decryption() {
     // Encrypt
     let encrypted_json = crypt
         .encrypt_binary_data(&fs::read(input_file).unwrap(), STRONG_PASSWORD)
+        .await
         .unwrap();
     fs::write(output_enc_file, encrypted_json).unwrap();
 
@@ -60,6 +61,7 @@ async fn test_file_encryption_decryption() {
             &fs::read_to_string(output_enc_file).unwrap(),
             STRONG_PASSWORD,
         )
+        .await
         .unwrap();
     fs::write(output_dec_file, &decrypted_data).unwrap();
 
@@ -116,12 +118,18 @@ async fn test_directory_encryption_decryption() {
     };
 
     // Encrypt directory
-    let encrypted_json = crypt.encrypt_binary_data(&archive_data, STRONG_PASSWORD).unwrap();
+    let encrypted_json = crypt
+        .encrypt_binary_data(&archive_data, STRONG_PASSWORD)
+        .await
+        .unwrap();
     fs::write(encrypted_file, encrypted_json).unwrap();
 
     // Decrypt directory
     let encrypted_content = fs::read_to_string(encrypted_file).unwrap();
-    let decrypted_data = crypt.decrypt_binary_data(&encrypted_content, STRONG_PASSWORD).unwrap();
+    let decrypted_data = crypt
+        .decrypt_binary_data(&encrypted_content, STRONG_PASSWORD)
+        .await
+        .unwrap();
 
     let dec = flate2::read::GzDecoder::new(decrypted_data.as_slice());
     let mut archive = tar::Archive::new(dec);

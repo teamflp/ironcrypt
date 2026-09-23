@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 /// Defines the supported symmetric encryption algorithms.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub enum SymmetricAlgorithm {
     /// AES-256-GCM, a widely used and secure symmetric cipher.
     #[default]
@@ -18,7 +18,7 @@ impl fmt::Display for SymmetricAlgorithm {
 }
 
 /// Defines the supported asymmetric encryption algorithms.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub enum AsymmetricAlgorithm {
     /// RSA, a widely used public-key cryptosystem.
     #[default]

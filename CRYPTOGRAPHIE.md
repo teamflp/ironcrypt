@@ -200,10 +200,10 @@ Cette section décrit les fonctionnalités avancées pour la conformité et la s
 
 ### Standard de Sécurité ANSSI
 
-*   **Domaine** : Conformité et interopérabilité.
-*   **Définition** : Ajout d'un nouveau standard de sécurité nommé `Anssi`, basé sur les recommandations de l'Agence Nationale de la Sécurité des Systèmes d'Information. L'utilisation de ce standard garantit que les paramètres cryptographiques sont conformes aux recommandations de sécurité françaises et européennes.
+*   **Domaine** : Profils de paramètres (interopérabilité).
+*   **Définition** : Preset `AnssiCompatibleProfile` / `Anssi` aligné sur des *recommandations* de paramètres ANSSI (AES-256-GCM, RSA ≥ 3072 ou ECC selon le profil). **Ce n’est pas une certification ANSSI du produit IronCrypt** — uniquement un choix de paramètres documenté.
 *   **Configuration du standard `Anssi`** :
     *   Algorithme Symétrique : `AES-256-GCM`
-    *   Algorithme Asymétrique : `RSA`
-    *   Taille de clé RSA : `3072` bits
-*   **Utilisation** : Ce standard peut être utilisé lors de l'initialisation de la bibliothèque `ironcrypt` pour s'assurer que les configurations par défaut respectent un haut niveau de sécurité reconnu.
+    *   Algorithme Asymétrique : `RSA` (hors profil Payment) ou `ECC` (Payment)
+    *   Taille de clé RSA : `3072` bits (lorsque RSA est activé)
+*   **Utilisation** : Sélectionner ce standard pour démarrer avec des paramètres conservateurs ; une évaluation / certification réglementaire reste hors périmètre de la bibliothèque.

@@ -86,6 +86,9 @@ sdks/php/vendor/
 *.old
 .cache/
 
+# Notes de travail internes (non suivies par Git)
+/features.md
+
 # Données runtime monitoring (ne jamais committer)
 /loki/loki-data/
 /grafana/

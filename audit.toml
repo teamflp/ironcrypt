@@ -3,11 +3,13 @@
 
 [advisories]
 ignore = [
-  # Marvin Attack; no patched rsa 0.9.x. Track rsa 0.10.
+  # Marvin Attack on rsa 0.9.x — ignored only for default graphs with `rsa-algo`.
+  # Payment CI uses deny.payment.toml which bans `rsa` and does not ignore this.
   # https://rustsec.org/advisories/RUSTSEC-2023-0071
   "RUSTSEC-2023-0071",
 
-  # rustc-serialize via optional pkcs11 (hsm). Unmaintained; avoid `hsm` in prod.
+  # rustc-serialize historically via unmaintained pkcs11 0.2; HSM now uses cryptoki.
+  # Keep ignore only if a transitive dep still pulls it; remove when clean.
   # https://rustsec.org/advisories/RUSTSEC-2022-0004
   "RUSTSEC-2022-0004",
 
