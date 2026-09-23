@@ -126,29 +126,56 @@
 //! check out the `examples/` directory of the project.
 
 // --- Modules ---
+// Payment builds must not link the `rsa` crate (RUSTSEC-2023-0071).
+#[cfg(all(feature = "payment", feature = "rsa-algo"))]
+compile_error!(
+    "features `payment` and `rsa-algo` are mutually exclusive. \
+     Build Payment with: cargo build --no-default-features --features payment-daemon \
+     (or payment-aws / payment-vault / payment-hsm)."
+);
+
 pub mod ffi;
 pub mod password;
 pub mod algorithms;
+pub mod api_roles;
 pub mod audit;
+#[cfg(feature = "cli")]
+pub mod archive_safe;
 pub mod auth;
+pub mod api_key_store;
 pub mod config;
+pub mod context;
 pub mod criteria;
+pub mod crypto_allowlist;
+pub mod crypto_provider;
+pub mod dual_control;
 pub mod ecc_utils;
 pub mod encrypt;
+pub mod envelope;
+pub mod fingerprint;
 pub mod handle_error;
 pub mod hashing;
 pub mod ironcrypt;
+pub mod key_lifecycle;
+pub mod limits;
+pub mod memsec;
 pub mod metrics;
 pub mod keys;
+pub mod payment;
+pub mod rate_limit;
+pub mod resilience;
+pub mod secret_input;
+#[cfg(feature = "rsa-algo")]
 pub mod rsa_utils;
 pub mod secrets;
 pub mod signing;
 pub mod standards;
+pub mod webhook;
 
 // --- Public Re-exports ---
 
 // Main configuration
-pub use config::{DataType, IronCryptConfig};
+pub use config::{AuditConfig, AuditSigningMode, DataType, IronCryptConfig};
 
 // Key types
 pub use keys::{PrivateKey, PublicKey};
@@ -159,9 +186,79 @@ pub use criteria::PasswordCriteria;
 // Cryptographic standards
 pub use standards::CryptoStandard;
 
+// Payment security profile
+pub use payment::PaymentSecurityProfile;
+pub use crypto_allowlist::{ensure_suite_allowed, is_suite_listed, ALLOWED_SUITES, CryptoSuite};
+pub use envelope::{
+    CURRENT_JSON_FORMAT_VERSION, CURRENT_STREAM_VERSION, EnvelopeStatus,
+    ensure_json_format_allowed, ensure_stream_header_allowed, stream_header_status,
+};
+
+// Encryption context (AAD)
+pub use context::EncryptionContext;
+
+// Key lifecycle
+pub use key_lifecycle::{
+    KeyState, KeyVersionMeta, KeyringManifest, RotationPolicy, RotationReport,
+};
+
+// Crypto providers (distinct from SecretStore)
+pub use crypto_provider::{CryptoProvider, HaCryptoProvider, LocalKeyProvider, WrappedKey};
+#[cfg(feature = "aws-kms")]
+pub use crypto_provider::AwsKmsProvider;
+#[cfg(feature = "hsm")]
+pub use crypto_provider::HsmProvider;
+#[cfg(feature = "vault")]
+pub use crypto_provider::VaultTransitProvider;
+
+// Hard limits
+pub use limits::{
+    DEFAULT_CIRCUIT_COOLDOWN_SECS, DEFAULT_CIRCUIT_FAILURE_THRESHOLD, DEFAULT_CRYPTO_CONCURRENCY,
+    DEFAULT_HTTP_BODY_LIMIT, DEFAULT_PROVIDER_TIMEOUT_SECS, DEFAULT_REQUEST_TIMEOUT_SECS,
+    MAX_ARCHIVE_ENTRIES, MAX_ARCHIVE_ENTRY_BYTES, MAX_ARCHIVE_UNPACKED_BYTES, MAX_RECIPIENTS,
+    MAX_STREAM_HEADER_SIZE,
+};
+
+pub use metrics::{init_metrics, metrics_finish, metrics_start, provider_op_finish, SAFE_METRIC_LABEL_KEYS};
+
+pub use memsec::{
+    dek32_from, mlock_enabled, new_dek32, try_mlock, try_munlock, wipe_string, zeroizing_vec,
+    MlockGuard, ZeroizeOnDrop, Dek32,
+};
+pub use secret_input::{
+    passphrase_as_str, resolve_passphrase, resolve_passphrase_or_prompt, PASSPHRASE_ENV,
+    PASSPHRASE_FD_ENV, PASSPHRASE_FILE_ENV, PASSPHRASE_STDIN_ENV,
+};
+pub use auth::{
+    expand_full_permissions, rotate_api_key_file, rotate_api_keys, ApiKeyConfig, ApiKeyRotation,
+    AuthenticatedPrincipal, Permission,
+};
+pub use api_key_store::{
+    build_api_key_store, parse_api_keys_json, ApiKeyBackend, ApiKeyStore, EnvApiKeyStore,
+    FileApiKeyStore,
+};
+pub use resilience::{CircuitBreaker, RetryPolicy, with_retry, with_timeout};
+pub use rate_limit::{bucket_key as rate_limit_bucket_key, build_rate_limiter, MemoryRateLimiter, RateLimiter};
+pub use fingerprint::{Fingerprint, FingerprintSigner, FINGERPRINT_VERSION};
+pub use dual_control::{verify_quorum, AdminAction, Approval, DualControlPolicy};
+pub use api_roles::tokenization::{
+    reject_cardholder_auth_data, RefusingTokenizationProvider, Token, TokenizationProvider,
+    POLICY as TOKENIZATION_POLICY,
+};
+pub use ecc_utils::ECIES_HKDF_INFO_V1;
+pub use webhook::{WebhookSigner, DEFAULT_MAX_SKEW_SECS, WEBHOOK_SIG_VERSION};
+pub use audit::{
+    append_audit_jsonl, attest_audit_file_with_provider, audit_event_to_siem, audit_sign_targets,
+    error_category, export_audit_jsonl_for_siem, purge_expired_audit_segments,
+    sanitize_error_message, sanitize_secret_name, sign_audit_configured, sign_audit_file,
+    sign_audit_file_hmac, sign_audit_from_config, sign_audit_rolling_directory,
+    verify_audit_file_hmac, verify_audit_file_signature, verify_audit_jsonl, AUDIT_CHAIN_GENESIS,
+    SIEM_ALLOWLIST_KEYS,
+};
 // Streaming encryption and decryption functions
-pub use encrypt::{decrypt_stream, encrypt_stream};
+pub use encrypt::{decrypt_stream, decrypt_stream_with_options, encrypt_stream, encrypt_stream_with_context};
 pub use encrypt::{
+    decrypt_stream_with_dek, encrypt_stream_with_dek, find_recipient, read_stream_header,
     EncryptedStreamHeaderV1, EncryptedStreamHeaderV2, RecipientInfo, StreamHeader,
 };
 /// Contains the parameters for the Argon2 hashing algorithm.
@@ -172,13 +269,14 @@ pub use encrypt::EncryptedData;
 // Error handling
 pub use handle_error::IronCryptError;
 
-// Password hashing function
-pub use hashing::hash_password;
+// Password hashing / login verify (non-recoverable)
+pub use hashing::{hash_password, hash_password_with_config, password_needs_rehash, verify_password};
 
 // Main library struct
 pub use ironcrypt::IronCrypt;
 
-// RSA key utilities
+// RSA key utilities (optional — disabled under Payment graphs)
+#[cfg(feature = "rsa-algo")]
 pub use rsa_utils::{generate_rsa_keys, load_private_key, load_public_key, save_keys_to_files};
 
 // Secret management
@@ -193,14 +291,27 @@ pub use secrets::azure;
 pub use secrets::google;
 
 /// Tries to load a public key from a file, attempting to parse it as RSA and then ECC.
+///
+/// Under the `payment` feature, only ECC keys are accepted (RSA is rejected even if
+/// the PEM parses successfully). Without `rsa-algo`, only ECC is attempted.
 pub fn load_any_public_key(path: &str) -> Result<PublicKey, IronCryptError> {
-    // Try loading as RSA first
-    if let Ok(key) = rsa_utils::load_public_key(path) {
-        return Ok(PublicKey::Rsa(key));
+    #[cfg(feature = "rsa-algo")]
+    if PaymentSecurityProfile::allow_rsa() {
+        if let Ok(key) = rsa_utils::load_public_key(path) {
+            return Ok(PublicKey::Rsa(key));
+        }
     }
-    // If that fails, try loading as ECC
     if let Ok(key) = ecc_utils::load_public_key(path) {
         return Ok(PublicKey::Ecc(key));
+    }
+    #[cfg(feature = "rsa-algo")]
+    if !PaymentSecurityProfile::allow_rsa() {
+        // Surface a clear Payment error when the file is RSA-only.
+        if rsa_utils::load_public_key(path).is_ok() {
+            return Err(IronCryptError::ConfigurationError(
+                "Payment profile forbids RSA public keys; use ECC (P-256).".into(),
+            ));
+        }
     }
     Err(IronCryptError::KeyLoadingError(format!(
         "Failed to load public key from {}: unsupported format",
@@ -209,17 +320,29 @@ pub fn load_any_public_key(path: &str) -> Result<PublicKey, IronCryptError> {
 }
 
 /// Tries to load a private key from a file, attempting to parse it as RSA and then ECC.
+///
+/// Under the `payment` feature, only ECC keys are accepted.
 pub fn load_any_private_key(
     path: &str,
     passphrase: Option<&str>,
 ) -> Result<PrivateKey, IronCryptError> {
-    // Try loading as RSA first
-    if let Ok(key) = rsa_utils::load_private_key(path, passphrase) {
-        return Ok(PrivateKey::Rsa(key));
+    #[cfg(feature = "rsa-algo")]
+    if PaymentSecurityProfile::allow_rsa() {
+        if let Ok(key) = rsa_utils::load_private_key(path, passphrase) {
+            return Ok(PrivateKey::Rsa(key));
+        }
     }
-    // If that fails, try loading as ECC
     if let Ok(key) = ecc_utils::load_secret_key(path, passphrase) {
         return Ok(PrivateKey::Ecc(key));
+    }
+    #[cfg(feature = "rsa-algo")]
+    if !PaymentSecurityProfile::allow_rsa() {
+        if rsa_utils::load_private_key(path, passphrase).is_ok() {
+            return Err(IronCryptError::ConfigurationError(
+                "Payment profile forbids RSA private keys; use ECC (P-256) or a CryptoProvider."
+                    .into(),
+            ));
+        }
     }
     Err(IronCryptError::KeyLoadingError(format!(
         "Failed to load private key from {}: unsupported format or wrong passphrase",

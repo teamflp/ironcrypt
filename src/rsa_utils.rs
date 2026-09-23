@@ -3,8 +3,6 @@ use argon2::password_hash::rand_core::OsRng;
 use rsa::pkcs1::{DecodeRsaPrivateKey, DecodeRsaPublicKey, EncodeRsaPublicKey};
 use rsa::pkcs8::{DecodePrivateKey, DecodePublicKey, EncodePrivateKey, LineEnding};
 use rsa::{RsaPrivateKey, RsaPublicKey};
-use std::fs::File;
-use std::io::Write;
 
 pub fn generate_rsa_keys(bits: u32) -> Result<(RsaPrivateKey, RsaPublicKey), IronCryptError> {
     if bits < 2048 {
@@ -41,11 +39,8 @@ pub fn save_keys_to_files(
         .to_pkcs1_pem(LineEnding::LF)
         .map_err(|e| IronCryptError::KeySavingError(e.to_string()))?;
 
-    let mut fpriv = File::create(priv_path)?;
-    fpriv.write_all(priv_pem.as_bytes())?;
-
-    let mut fpub = File::create(pub_path)?;
-    fpub.write_all(pub_pem.as_bytes())?;
+    crate::key_lifecycle::atomic_write(std::path::Path::new(priv_path), priv_pem.as_bytes())?;
+    crate::key_lifecycle::atomic_write(std::path::Path::new(pub_path), pub_pem.as_bytes())?;
 
     Ok(())
 }

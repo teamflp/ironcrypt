@@ -1,21 +1,33 @@
 # Security Policy
 
-## Supported Versions
+## Supported versions
 
-Use this section to tell people about which versions of your project are
-currently being supported with security updates.
+| Version | Supported |
+|---------|-----------|
+| 0.1.x   | Yes       |
+| < 0.1   | No        |
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 5.1.x   | :white_check_mark: |
-| 5.0.x   | :x:                |
-| 4.0.x   | :white_check_mark: |
-| < 4.0   | :x:                |
+Payment / financial deployments should build with `--features payment` (and a
+CryptoProvider backend such as `aws-kms`, `vault`, or `hsm`) and follow
+[`PAYMENT_SECURITY.md`](./PAYMENT_SECURITY.md).
 
-## Reporting a Vulnerability
+## Reporting a vulnerability
 
-Use this section to tell people how to report a vulnerability.
+Please report security issues **privately** — do not open a public GitHub issue
+for exploitable flaws.
 
-Tell them where to go, how often they can expect to get an update on a
-reported vulnerability, what to expect if the vulnerability is accepted or
-declined, etc.
+- Preferred: open a private security advisory on the GitHub repository, or
+  email the maintainers listed in `Cargo.toml` / repository ownership.
+- Include: affected version, reproduction steps, impact assessment, and any
+  suggested fix.
+- We aim to acknowledge reports within **72 hours** and to publish a fix or
+  mitigation for critical cryptographic defects within **14 days** when feasible.
+
+## Scope
+
+In scope: cryptographic correctness, key handling, daemon authz, FFI memory
+safety, and supply-chain issues in published crates/images.
+
+Out of scope: denial-of-service from unbounded caller-controlled work that is
+already documented as requiring gateway rate limits; social engineering;
+issues only present in unsupported versions.

@@ -3,8 +3,11 @@
 # Stage 1: Build static binaries
 FROM rust:1.97.1-alpine AS builder
 
-# Define build arguments
-ARG IRONCRYPT_FEATURES="full"
+# Define build arguments — Payment examples:
+#   --build-arg IRONCRYPT_FEATURES=payment-daemon
+# General (includes RSA):
+#   --build-arg IRONCRYPT_FEATURES=full
+ARG IRONCRYPT_FEATURES="payment-daemon"
 
 # Install build dependencies
 RUN apk add --no-cache \
@@ -20,7 +23,6 @@ RUN apk add --no-cache \
     linux-headers \
     binutils
 
-# Configure linker and OpenSSL paths
 ENV RUSTFLAGS=""
 ENV PKG_CONFIG_PATH="/usr/lib/pkgconfig:/usr/local/lib/pkgconfig"
 ENV OPENSSL_DIR="/usr"
@@ -29,41 +31,39 @@ ENV OPENSSL_INCLUDE_DIR="/usr/include"
 
 WORKDIR /usr/src/app
 
-# Copy manifests first to leverage layer caching
 COPY Cargo.toml Cargo.lock ./
-
-# Copy the real project sources
 COPY . .
 
 # musl cannot emit `cdylib`; keep `rlib` so the bins still link without a warning.
 RUN sed -i 's/crate-type = \["lib", "cdylib"\]/crate-type = ["rlib"]/' Cargo.toml
 
-# Build release binaries and strip them to reduce size
-# The strip command for ironcryptd is now conditional.
-RUN cargo build --locked --release --no-default-features --features "$IRONCRYPT_FEATURES" && \
-    strip target/release/ironcrypt && \
-    if [ -f target/release/ironcryptd ]; then strip target/release/ironcryptd; fi
+# Always pass --no-default-features so Payment builds do not pull rsa-algo.
+RUN cargo build --locked --release --no-default-features --features "$IRONCRYPT_FEATURES" \
+    && strip target/release/ironcrypt \
+    && (test ! -f target/release/ironcryptd || strip target/release/ironcryptd)
 
-# Stage 2: Minimal runtime image
+# Stage 2: Minimal hardened runtime
 FROM alpine:3.20
 
-# Certificates for HTTPS (AWS/Azure/GCP, etc.)
-RUN apk add --no-cache ca-certificates
+RUN apk add --no-cache ca-certificates \
+    && addgroup -S ironcrypt \
+    && adduser -S -G ironcrypt -H -D ironcrypt
 
-WORKDIR /usr/local/bin
+WORKDIR /app
 
-# Copy the release artifacts to a temporary location in the final image
 COPY --from=builder /usr/src/app/target/release/ /tmp/release/
+RUN mv /tmp/release/ironcrypt /usr/local/bin/ironcrypt \
+    && (test ! -f /tmp/release/ironcryptd || mv /tmp/release/ironcryptd /usr/local/bin/ironcryptd) \
+    && rm -rf /tmp/release \
+    && chown -R ironcrypt:ironcrypt /usr/local/bin
 
-# Move the main binary and conditionally move the daemon, then cleanup
-RUN mv /tmp/release/ironcrypt /usr/local/bin/ironcrypt && \
-    if [ -f /tmp/release/ironcryptd ]; then \
-        mv /tmp/release/ironcryptd /usr/local/bin/ironcryptd; \
-    fi && \
-    rm -rf /tmp/release
+# Drop privileges; read-only rootfs recommended at orchestrator layer.
+USER ironcrypt
 
-# Default port for the daemon
 EXPOSE 3000
 
-# Default command runs the CLI; to run daemon use: `docker run ... ironcryptd -v v1 -d keys -p 3000`
+# Orchestrator should set:
+#   --read-only --cap-drop ALL --security-opt no-new-privileges
+#   --tmpfs /tmp:rw,noexec,nosuid,size=64m
+#   memory/cpu limits as appropriate for the Payment workload.
 ENTRYPOINT ["/usr/local/bin/ironcrypt"]

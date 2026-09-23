@@ -32,8 +32,19 @@ disallowed_patterns = []
 
 # Optionnel — journal d'audit
 # [audit]
-# log_path = "/var/log/ironcrypt/audit.log"
-# signing_key_path = "/path/to/audit_signing_key.pem"
+# audit_directory = "/var/log/ironcrypt"   # rolling daily segments (daemon)
+# log_path = "/var/log/ironcrypt/audit.log" # fichier unique (sign / JSONL / SIEM export)
+# retention_days = 90                      # purge auto des segments trop vieux (daemon startup)
+#
+# Signature / attestation des segments (Payment : PAS de PEM sur disque)
+# signing_mode = "hmac-env"                # none | pem | hmac-env | provider
+# # signing_hmac_env = "IRONCRYPT_AUDIT_HMAC_KEY"
+# # signing_mode = "provider"
+# # signing_key_id = "alias/ironcrypt-audit"
+# # signing_key_path = "/path/to/audit_signing_key.pem"  # lab only (interdit sous payment)
+#
+# Passphrase clé privée : IRONCRYPT_PASSPHRASE ou IRONCRYPT_PASSPHRASE_FILE
+# (éviter --passphrase sur la ligne de commande).
 
 # Optionnel — backends secrets (selon features aws/azure/vault/gcp)
 # [secrets]
@@ -52,3 +63,70 @@ disallowed_patterns = []
 #
 # [secrets.google]
 # project_id = "my-gcp-project"
+
+# Optionnel — CryptoProvider (wrap/unwrap DEK). Distinct de [secrets].
+# Décommenter EXACTEMENT un provider (aws-kms | vault-transit | hsm).
+# Credentials AWS = IAM role / instance profile / env (jamais de clés statiques ici).
+# Token Vault = préférer VAULT_TOKEN / AppRole. PIN HSM = IRONCRYPT_HSM_PIN.
+# Avec --features payment, provider = "local" est rejeté.
+
+# --- AWS KMS ---
+# [crypto_provider]
+# provider = "aws-kms"
+#
+# [crypto_provider.aws_kms]
+# region = "eu-west-1"
+# default_key_id = "arn:aws:kms:eu-west-1:123456789012:key/…"
+
+# --- Azure Key Vault Keys ---
+# [crypto_provider]
+# provider = "azure-kms"
+#
+# [crypto_provider.azure_kms]
+# vault_uri = "https://myvault.vault.azure.net/"
+# default_key_name = "ironcrypt-dek-wrap"
+
+# --- Google Cloud KMS ---
+# [crypto_provider]
+# provider = "gcp-kms"
+#
+# [crypto_provider.gcp_kms]
+# default_key_name = "projects/PROJECT/locations/REGION/keyRings/RING/cryptoKeys/KEY"
+# # Auth: IRONCRYPT_GCP_ACCESS_TOKEN, GCE metadata, or GOOGLE_APPLICATION_CREDENTIALS (+ rsa-algo)
+
+# --- Vault Transit ---
+# [crypto_provider]
+# provider = "vault-transit"
+#
+# [crypto_provider.vault_transit]
+# address = "https://vault.internal:8200"
+# # token = ""   # laisse vide → VAULT_TOKEN, sinon AppRole / K8s
+# mount = "transit"
+# # approle_mount = "approle"       # VAULT_ROLE_ID + VAULT_SECRET_ID
+# # kubernetes_mount = "kubernetes" # VAULT_K8S_ROLE (+ SA JWT)
+
+# Auth runtime (ne pas committer) :
+#   export VAULT_ROLE_ID=...
+#   export VAULT_SECRET_ID=...
+# ou
+#   export VAULT_K8S_ROLE=ironcrypt
+#   # JWT = /var/run/secrets/kubernetes.io/serviceaccount/token
+
+# --- PKCS#11 HSM (SoftHSM / cloud HSM) ---
+# [crypto_provider]
+# provider = "hsm"
+#
+# [crypto_provider.hsm]
+# module_path = "/usr/lib/softhsm/libsofthsm2.so"
+# token_label = "ironcrypt"
+# default_key_label = "payment-aes"
+# max_sessions = 4          # pooled logged-in PKCS#11 sessions (default 4)
+# # pin = "1234"   # déconseillé : préférer IRONCRYPT_HSM_PIN
+
+# --- HA failover (optional) ---
+# Standby must unwrap primary ciphertext (multi-region KMS / replicated HSM key).
+# [[crypto_provider.failover]]
+# provider = "vault-transit"
+# [crypto_provider.failover.vault_transit]
+# address = "https://vault-dr.internal:8200"
+# mount = "transit"

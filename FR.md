@@ -289,7 +289,7 @@ Exemples complets (ctypes, JNA, P/Invoke, PHP `FFI`, compilation, dépannage) : 
 ### Chiffrement/Déchiffrement de mot de passe
 ![workflow-password.png](images/workflow-password.png)
 
-Ce processus garantit une sécurité maximale en combinant un hachage robuste avec **Argon2** et un chiffrement hybride (appelé "chiffrement d'enveloppe") avec **AES** et **RSA**.
+Ce processus combine un hachage **Argon2** et un chiffrement d'enveloppe (AES + asymétrique) pour protéger le secret au repos.
 
 ---
 
@@ -1266,6 +1266,42 @@ Ensuite, fournissez la configuration spécifique à votre fournisseur choisi.
 address = "http://127.0.0.1:8200" # Adresse de votre serveur Vault
 token = "VOTRE_JETON_VAULT"        # Jeton Vault avec accès au moteur de secrets
 mount = "secret"                  # Chemin de montage du moteur de secrets KVv2 (optionnel, par défaut "secret")
+```
+
+### Configuration CryptoProvider (wrap / unwrap DEK)
+
+Distinct de `[secrets]` : un `CryptoProvider` enveloppe les clés de données sans exporter
+le matériel privé. Activez `aws-kms`, `vault` ou `hsm`, puis configurez **un seul**
+provider dans le TOML (`ironcrypt.toml.example`, `PAYMENT_SECURITY.md`).
+
+```toml
+[crypto_provider]
+provider = "aws-kms"   # ou "vault-transit" | "hsm"
+
+[crypto_provider.aws_kms]
+region = "eu-west-1"
+default_key_id = "arn:aws:kms:eu-west-1:123456789012:key/…"
+```
+
+```toml
+[crypto_provider]
+provider = "vault-transit"
+
+[crypto_provider.vault_transit]
+address = "https://vault.internal:8200"
+# token via VAULT_TOKEN de préférence
+mount = "transit"
+```
+
+```toml
+[crypto_provider]
+provider = "hsm"
+
+[crypto_provider.hsm]
+module_path = "/usr/lib/softhsm/libsofthsm2.so"
+token_label = "ironcrypt"
+default_key_label = "payment-aes"
+# pin via IRONCRYPT_HSM_PIN
 ```
 
 ---

@@ -1263,6 +1263,42 @@ token = "YOUR_VAULT_TOKEN"        # Vault token with access to the secret engine
 mount = "secret"                  # Mount path of the KVv2 secrets engine (optional, defaults to "secret")
 ```
 
+### CryptoProvider Configuration (DEK wrap / unwrap)
+
+Distinct from `[secrets]`: a `CryptoProvider` wraps data-encryption keys without exporting
+private material. Enable `aws-kms`, `vault`, or `hsm`, then set **one** provider in TOML
+(see `ironcrypt.toml.example` and `PAYMENT_SECURITY.md`).
+
+```toml
+[crypto_provider]
+provider = "aws-kms"   # or "vault-transit" | "hsm"
+
+[crypto_provider.aws_kms]
+region = "eu-west-1"
+default_key_id = "arn:aws:kms:eu-west-1:123456789012:key/…"
+```
+
+```toml
+[crypto_provider]
+provider = "vault-transit"
+
+[crypto_provider.vault_transit]
+address = "https://vault.internal:8200"
+# token via VAULT_TOKEN preferred
+mount = "transit"
+```
+
+```toml
+[crypto_provider]
+provider = "hsm"
+
+[crypto_provider.hsm]
+module_path = "/usr/lib/softhsm/libsofthsm2.so"
+token_label = "ironcrypt"
+default_key_label = "payment-aes"
+# pin via IRONCRYPT_HSM_PIN
+```
+
 ---
 
 ## Security and Best Practices

@@ -1,0 +1,52 @@
+//! Fuzzing targets for IronCrypt (run with `cargo fuzz`).
+//!
+//! ```text
+//! cargo install cargo-fuzz
+//! cargo fuzz run decrypt_stream
+//! cargo fuzz run stream_header
+//! cargo fuzz run pem_pkcs
+//! cargo fuzz run ffi
+//! ```
+
+[package]
+name = "ironcrypt-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+ironcrypt = { path = ".." }
+libfuzzer-sys = "0.4"
+arbitrary = { version = "1", features = ["derive"] }
+tempfile = "3"
+
+[[bin]]
+name = "decrypt_stream"
+path = "fuzz_targets/decrypt_stream.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "stream_header"
+path = "fuzz_targets/stream_header.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "pem_pkcs"
+path = "fuzz_targets/pem_pkcs.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ffi"
+path = "fuzz_targets/ffi.rs"
+test = false
+doc = false
+bench = false
