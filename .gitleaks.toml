@@ -1,0 +1,16 @@
+# Extends the default rule set; only documents intentional non-secrets.
+title = "IronCrypt"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Examples, fuzz harnesses, and unit-test fixtures (not live credentials)"
+paths = [
+  '''^fuzz/''',
+  '''\.example$''',
+]
+regexes = [
+  # audit.rs redaction tests: fixed hex fixture, not a credential
+  '''0123456789abcdef0123456789abcdef''',
+]

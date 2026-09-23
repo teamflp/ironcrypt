@@ -16,10 +16,4 @@ ignore = [
   # rustls-pemfile unmaintained; daemon uses rustls-pki-types; leftover via GCP auth.
   # https://rustsec.org/advisories/RUSTSEC-2025-0134
   "RUSTSEC-2025-0134",
-
-  # Remaining rustls-webpki 0.101.7 via AWS Smithy legacy-rustls 0.21 stack.
-  # Primary TLS path uses rustls 0.23 + webpki 0.103.13 (patched).
-  "RUSTSEC-2026-0098",
-  "RUSTSEC-2026-0099",
-  "RUSTSEC-2026-0104",
 ]
