@@ -13,9 +13,6 @@ yanked = "warn"
 # Accepted risks / no upstream fix yet — keep reasons short; revisit regularly.
 ignore = [
   { id = "RUSTSEC-2023-0071", reason = "rsa Marvin Attack: ignored only when feature rsa-algo is enabled; Payment graphs use deny.payment.toml which bans rsa" },
-  { id = "RUSTSEC-2026-0098", reason = "legacy rustls 0.21/webpki 0.101 via AWS Smithy; daemon TLS on 0.23/0.103.13" },
-  { id = "RUSTSEC-2026-0099", reason = "legacy rustls 0.21/webpki 0.101 via AWS Smithy; daemon TLS on 0.23/0.103.13" },
-  { id = "RUSTSEC-2026-0104", reason = "legacy rustls 0.21/webpki 0.101 via AWS Smithy; daemon TLS on 0.23/0.103.13" },
 ]
 
 [licenses]

@@ -105,8 +105,10 @@ tower = { version = "0.5", features = ["timeout"], optional = true }
 tower-http = { version = "0.5.2", features = ["cors", "trace"], optional = true }
 
 # --- Optional: SecretStore backends (opaque secrets) ------------------------
-aws-config = { version = "1.10", optional = true }
-aws-sdk-secretsmanager = { version = "1.111", optional = true }
+# AWS SDK `rustls` feature = legacy rustls 0.21 / webpki 0.101 (unpatchable CRL DoS).
+# Prefer `default-https-client` (rustls 0.23 + aws-lc) only.
+aws-config = { version = "1.10", optional = true, default-features = false, features = ["rt-tokio", "credentials-process", "sso", "default-https-client"] }
+aws-sdk-secretsmanager = { version = "1.111", optional = true, default-features = false, features = ["rt-tokio", "default-https-client"] }
 azure_identity = { version = "0.27.0", optional = true }
 azure_core = { version = "0.27.0", optional = true }
 azure_security_keyvault_secrets = { version = "0.6.0", optional = true }
@@ -115,7 +117,7 @@ vaultrs = { version = "0.7.4", optional = true }
 redis = { version = "0.27", optional = true }
 
 # --- Optional: CryptoProvider backends (keys never leave the provider) ------
-aws-sdk-kms = { version = "1.111", optional = true }
+aws-sdk-kms = { version = "1.111", optional = true, default-features = false, features = ["rt-tokio", "default-https-client"] }
 cryptoki = { version = "0.10", optional = true }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"], optional = true }
 
