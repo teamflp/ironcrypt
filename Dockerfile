@@ -38,9 +38,12 @@ COPY . .
 RUN sed -i 's/crate-type = \["lib", "cdylib"\]/crate-type = ["rlib"]/' Cargo.toml
 
 # Always pass --no-default-features so Payment builds do not pull rsa-algo.
+# payment-daemon emits ironcryptd only; full also emits the ironcrypt CLI.
 RUN cargo build --locked --release --no-default-features --features "$IRONCRYPT_FEATURES" \
-    && strip target/release/ironcrypt \
-    && (test ! -f target/release/ironcryptd || strip target/release/ironcryptd)
+    && for bin in ironcrypt ironcryptd; do \
+         if [ -f "target/release/${bin}" ]; then strip "target/release/${bin}"; fi; \
+       done \
+    && { [ -f target/release/ironcrypt ] || [ -f target/release/ironcryptd ]; }
 
 # Stage 2: Minimal hardened runtime
 FROM alpine:3.20
@@ -52,9 +55,28 @@ RUN apk add --no-cache ca-certificates \
 WORKDIR /app
 
 COPY --from=builder /usr/src/app/target/release/ /tmp/release/
-RUN mv /tmp/release/ironcrypt /usr/local/bin/ironcrypt \
-    && (test ! -f /tmp/release/ironcryptd || mv /tmp/release/ironcryptd /usr/local/bin/ironcryptd) \
+# Install whichever binaries this feature set produced. The entrypoint
+# dispatches `ironcrypt` / `ironcryptd` by name so Compose `command:` still
+# selects the daemon when the CLI was not built.
+RUN set -eu \
+    && if [ -f /tmp/release/ironcrypt ]; then mv /tmp/release/ironcrypt /usr/local/bin/ironcrypt; fi \
+    && if [ -f /tmp/release/ironcryptd ]; then mv /tmp/release/ironcryptd /usr/local/bin/ironcryptd; fi \
     && rm -rf /tmp/release \
+    && { [ -x /usr/local/bin/ironcrypt ] || [ -x /usr/local/bin/ironcryptd ]; } \
+    && printf '%s\n' \
+        '#!/bin/sh' \
+        'set -eu' \
+        'if [ "$#" -gt 0 ] && [ -x "/usr/local/bin/$1" ]; then' \
+        '  bin=$1' \
+        '  shift' \
+        '  exec "/usr/local/bin/$bin" "$@"' \
+        'fi' \
+        'if [ -x /usr/local/bin/ironcrypt ]; then' \
+        '  exec /usr/local/bin/ironcrypt "$@"' \
+        'fi' \
+        'exec /usr/local/bin/ironcryptd "$@"' \
+        > /usr/local/bin/ironcrypt-entrypoint \
+    && chmod 755 /usr/local/bin/ironcrypt-entrypoint \
     && chown -R ironcrypt:ironcrypt /usr/local/bin
 
 # Drop privileges; read-only rootfs recommended at orchestrator layer.
@@ -66,4 +88,4 @@ EXPOSE 3000
 #   --read-only --cap-drop ALL --security-opt no-new-privileges
 #   --tmpfs /tmp:rw,noexec,nosuid,size=64m
 #   memory/cpu limits as appropriate for the Payment workload.
-ENTRYPOINT ["/usr/local/bin/ironcrypt"]
+ENTRYPOINT ["/usr/local/bin/ironcrypt-entrypoint"]
