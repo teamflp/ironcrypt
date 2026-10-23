@@ -347,9 +347,10 @@ impl CryptoProvider for GcpKmsProvider {
         &self,
         key_id: &str,
         plaintext_key: &[u8],
+        aad: Option<&[u8]>,
     ) -> Result<WrappedKey, IronCryptError> {
         let kid = self.resolve_key(key_id);
-        let ciphertext = self.encrypt_raw(kid, plaintext_key, None).await?;
+        let ciphertext = self.encrypt_raw(kid, plaintext_key, aad).await?;
         Ok(WrappedKey {
             key_id: kid.to_string(),
             ciphertext,
@@ -360,9 +361,10 @@ impl CryptoProvider for GcpKmsProvider {
         &self,
         key_id: &str,
         wrapped: &[u8],
+        aad: Option<&[u8]>,
     ) -> Result<Vec<u8>, IronCryptError> {
         let kid = self.resolve_key(key_id);
-        self.decrypt_raw(kid, wrapped, None).await
+        self.decrypt_raw(kid, wrapped, aad).await
     }
 
     async fn encrypt(

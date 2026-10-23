@@ -1,7 +1,7 @@
 # Memory hygiene: zeroize & mlock
 
 Companion to [`PAYMENT_SECURITY.md`](./PAYMENT_SECURITY.md) and
-[`src/memsec.rs`](./src/memsec.rs).
+[`src/memsec.rs`](../src/memsec.rs).
 
 ## Zeroization (always on)
 
@@ -52,7 +52,7 @@ only in HSM/KMS (`CryptoProvider`), not in process RAM.
 
 ## Passphrase resolution (no argv)
 
-Preference order in [`secret_input`](./src/secret_input.rs):
+Preference order in [`secret_input`](../src/secret_input.rs):
 
 1. `IRONCRYPT_PASSPHRASE`
 2. `IRONCRYPT_PASSPHRASE_FILE`

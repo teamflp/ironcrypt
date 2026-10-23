@@ -201,9 +201,10 @@ impl CryptoProvider for VaultTransitProvider {
         &self,
         key_id: &str,
         plaintext_key: &[u8],
+        aad: Option<&[u8]>,
     ) -> Result<WrappedKey, IronCryptError> {
         let name = Self::require_key_id(key_id)?;
-        let ct = self.encrypt_b64(name, plaintext_key, None).await?;
+        let ct = self.encrypt_b64(name, plaintext_key, aad).await?;
         Ok(WrappedKey {
             key_id: name.to_string(),
             ciphertext: ct.into_bytes(),
@@ -214,12 +215,13 @@ impl CryptoProvider for VaultTransitProvider {
         &self,
         key_id: &str,
         wrapped: &[u8],
+        aad: Option<&[u8]>,
     ) -> Result<Vec<u8>, IronCryptError> {
         let name = Self::require_key_id(key_id)?;
         let ciphertext = std::str::from_utf8(wrapped).map_err(|e| {
             IronCryptError::DecryptionError(format!("vault-transit wrapped key utf8: {e}"))
         })?;
-        self.decrypt_b64(name, ciphertext, None).await
+        self.decrypt_b64(name, ciphertext, aad).await
     }
 
     async fn encrypt(

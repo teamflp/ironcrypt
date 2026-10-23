@@ -10,8 +10,10 @@ use tempfile::tempdir;
 const STRONG_PASSWORD: &str = "Str0ngP@ssw0rd42!";
 
 async fn crypt_with_keys(dir: &str) -> IronCrypt {
-    let mut config = IronCryptConfig::default();
-    config.asymmetric_algorithm = AsymmetricAlgorithm::Ecc;
+    let mut config = IronCryptConfig {
+        asymmetric_algorithm: AsymmetricAlgorithm::Ecc,
+        ..Default::default()
+    };
     let mut dt = DataTypeConfig::new();
     dt.insert(
         DataType::Generic,
@@ -123,8 +125,10 @@ async fn provider_rewrap_preserves_plaintext() {
         LocalKeyProvider::new("v1", PublicKey::Ecc(pk), PrivateKey::Ecc(sk)).unwrap(),
     ) as Arc<dyn CryptoProvider>;
 
-    let mut config = IronCryptConfig::default();
-    config.asymmetric_algorithm = AsymmetricAlgorithm::Ecc;
+    let config = IronCryptConfig {
+        asymmetric_algorithm: AsymmetricAlgorithm::Ecc,
+        ..Default::default()
+    };
     let crypt = IronCrypt::with_crypto_provider(
         config,
         DataType::Generic,

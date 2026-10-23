@@ -107,7 +107,7 @@ When `features = ["payment"]` is enabled (or you call `PaymentSecurityProfile::e
 - `ironcryptd` requires TLS **and** mTLS (`--tls-client-ca`).
 - Plaintext secret HTTP export (`GET /service/.../secret/...`) is not mounted.
 - HTTP body size is capped (`DEFAULT_HTTP_BODY_LIMIT`, overridable).
-- Encryption requires [`EncryptionContext`](./src/context.rs) (tenant / purpose / record).
+- Encryption requires [`EncryptionContext`](../src/context.rs) (tenant / purpose / record).
 - DEK buffers attempt best-effort `mlock` on Unix (`MEMORY.md`); passphrases resolve via
   env / file / fd / stdin / TTY — avoid `--passphrase` on argv.
 
@@ -125,7 +125,7 @@ When `features = ["payment"]` is enabled (or you call `PaymentSecurityProfile::e
 | `AzureKeyVaultKeysProvider` | `azure-kms` | DefaultAzureCredential; wrapkey/unwrapkey REST |
 | `GcpKmsProvider` | `gcp-kms` | Cloud KMS encrypt/decrypt; `IRONCRYPT_GCP_ACCESS_TOKEN` / ADC |
 | `VaultTransitProvider` | `vault` | Transit mount; prefer `VAULT_TOKEN` / AppRole |
-| `HsmProvider` | `hsm` | cryptoki PKCS#11; AES-CBC-PAD in-device; PIN via `IRONCRYPT_HSM_PIN` |
+| `HsmProvider` | `hsm` | cryptoki PKCS#11; AES-GCM in-device (`ICG1`); PIN via `IRONCRYPT_HSM_PIN` |
 
 `IronCrypt::new` and `ironcryptd` call `build_from_config` when `[crypto_provider]` is set.
 DEKs are wrapped via the provider (`RecipientInfo::Provider`); local PEM keys are not required

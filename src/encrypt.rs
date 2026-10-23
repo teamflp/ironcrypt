@@ -24,6 +24,7 @@ use argon2::{Algorithm, Argon2, Params, Version};
 use base64::engine::general_purpose::STANDARD as base64_standard;
 use base64::Engine;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+use subtle::ConstantTimeEq;
 use chacha20poly1305::{XChaCha20Poly1305, XNonce};
 use hex;
 use p256::pkcs8::spki::{DecodePublicKey};
@@ -133,6 +134,10 @@ pub enum RecipientInfo {
         key_id: String,
         /// Base64-encoded wrapped DEK ciphertext from the provider.
         encrypted_symmetric_key: String,
+        /// Base64 canonical EncryptionContext bound into the provider wrap.
+        /// Absent on legacy unbound wraps, which Payment refuses to open.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        wrap_aad: Option<String>,
     },
 }
 
@@ -240,6 +245,7 @@ fn validate_recipient_info(r: &RecipientInfo) -> Result<(), IronCryptError> {
             provider,
             key_id,
             encrypted_symmetric_key,
+            wrap_aad,
         } => {
             validate_key_version(key_version)?;
             if provider.is_empty() || provider.len() > MAX_KEY_VERSION_LEN {
@@ -257,9 +263,69 @@ fn validate_recipient_info(r: &RecipientInfo) -> Result<(), IronCryptError> {
                 encrypted_symmetric_key,
                 MAX_ENCAPSULATED_KEY_B64_LEN,
             )?;
+            if let Some(aad) = wrap_aad {
+                validate_b64_field("wrap_aad", aad, MAX_ENCAPSULATED_KEY_B64_LEN)?;
+            }
         }
     }
     Ok(())
+}
+
+/// Encode the context bytes stored on a provider recipient.
+pub fn encode_wrap_aad(aad: Option<&[u8]>) -> Option<String> {
+    match aad {
+        Some(aad) if !aad.is_empty() => Some(base64_standard.encode(aad)),
+        _ => None,
+    }
+}
+
+/// Decode [`RecipientInfo::Provider::wrap_aad`]. `None` means a legacy unbound wrap.
+pub fn decode_wrap_aad(encoded: &Option<String>) -> Result<Option<Vec<u8>>, IronCryptError> {
+    use crate::limits::MAX_WRAP_AAD_LEN;
+    let Some(encoded) = encoded else {
+        return Ok(None);
+    };
+    validate_b64_field("wrap_aad", encoded, MAX_ENCAPSULATED_KEY_B64_LEN)?;
+    let bytes = base64_standard
+        .decode(encoded)
+        .map_err(|e| IronCryptError::DecryptionError(format!("wrap_aad base64: {e}")))?;
+    if bytes.is_empty() || bytes.len() > MAX_WRAP_AAD_LEN {
+        return Err(IronCryptError::DecryptionError(
+            "wrap_aad is empty or exceeds MAX_WRAP_AAD_LEN".into(),
+        ));
+    }
+    Ok(Some(bytes))
+}
+
+/// Payment refuses unbound wraps. When both sides are present they must match.
+pub fn enforce_dek_wrap_binding(
+    bound: Option<&[u8]>,
+    context: Option<&EncryptionContext>,
+) -> Result<(), IronCryptError> {
+    let unbound = bound.map(|b| b.is_empty()).unwrap_or(true);
+    if PaymentSecurityProfile::require_encryption_context() && unbound {
+        return Err(IronCryptError::DecryptionError(
+            "Payment profile rejects a DEK wrap that is not bound to EncryptionContext".into(),
+        ));
+    }
+    if let (Some(bound), Some(ctx)) = (bound, context) {
+        let expected = ctx.to_aad_bytes();
+        let matches = expected.len() == bound.len() && bool::from(expected.as_slice().ct_eq(bound));
+        if !matches {
+            return Err(IronCryptError::DecryptionError(
+                "DEK wrap AAD does not match EncryptionContext".into(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Context carried by a stream header, when the version has one.
+pub fn stream_header_context(header: &StreamHeader) -> Option<&EncryptionContext> {
+    match header {
+        StreamHeader::V4(h) => h.context.as_ref(),
+        _ => None,
+    }
 }
 
 fn validate_stream_header_bounds(header: &StreamHeader) -> Result<(), IronCryptError> {
@@ -320,8 +386,6 @@ fn validate_stream_header_bounds(header: &StreamHeader) -> Result<(), IronCryptE
     Ok(())
 }
 
-/// Encrypts a data stream using a configurable combination of algorithms.
-#[allow(clippy::too_many_arguments)]
 /// Encrypts a data stream (no application context / AAD).
 #[allow(clippy::too_many_arguments)]
 pub fn encrypt_stream<'a, R: Read, W: Write>(
@@ -515,7 +579,7 @@ pub fn encrypt_stream_with_context<'a, R: Read, W: Write>(
         });
 
         let header_json = serde_json::to_string(&header)?;
-        if header_json.len() > MAX_STREAM_HEADER_SIZE as usize {
+        if header_json.len() > MAX_STREAM_HEADER_SIZE {
             return Err(IronCryptError::EncryptionError(format!(
                 "stream header length {} exceeds MAX_STREAM_HEADER_SIZE ({MAX_STREAM_HEADER_SIZE})",
                 header_json.len()
@@ -710,7 +774,7 @@ pub fn encrypt_stream_with_dek<'a, R: Read, W: Write>(
         });
 
         let header_json = serde_json::to_string(&header)?;
-        if header_json.len() > MAX_STREAM_HEADER_SIZE as usize {
+        if header_json.len() > MAX_STREAM_HEADER_SIZE {
             return Err(IronCryptError::EncryptionError(format!(
                 "stream header length {} exceeds MAX_STREAM_HEADER_SIZE ({MAX_STREAM_HEADER_SIZE})",
                 header_json.len()

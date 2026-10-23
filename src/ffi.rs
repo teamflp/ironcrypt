@@ -1,6 +1,6 @@
 //! C ABI for IronCrypt (`cdylib`).
 //!
-//! See [`FFI.md`](../../FFI.md) for ownership, threading, and versioning rules.
+//! See [`FFI.md`](../docs/FFI.md) for ownership, threading, and versioning rules.
 //!
 //! Error codes are stable negative integers ([`codes`]). Success is `0` unless a
 //! function documents a positive boolean result (`1` / `0`).
@@ -214,6 +214,11 @@ pub unsafe extern "C" fn ironcrypt_generate_ecc_keys(
 /// Generates a new RSA key pair of the specified bit size.
 ///
 /// Unavailable / returns [`ERROR_UNSUPPORTED`] under the Payment profile.
+///
+/// Caller frees both PEMs with [`ironcrypt_free_string`].
+///
+/// # Safety
+/// Output pointers must be non-null writable slots.
 #[cfg(feature = "rsa-algo")]
 #[no_mangle]
 pub unsafe extern "C" fn ironcrypt_generate_rsa_keys(
@@ -258,6 +263,12 @@ pub unsafe extern "C" fn ironcrypt_generate_rsa_keys(
 }
 
 /// Encrypts a password using an RSA public key (legacy). Prefer login hash under Payment.
+///
+/// Caller must free `encrypted_output` with [`ironcrypt_free_string`].
+///
+/// # Safety
+/// All input pointers must be valid NUL-terminated C strings; `encrypted_output`
+/// must be a non-null writable slot.
 #[cfg(feature = "rsa-algo")]
 #[no_mangle]
 pub unsafe extern "C" fn ironcrypt_password_encrypt(
@@ -317,6 +328,10 @@ pub unsafe extern "C" fn ironcrypt_password_encrypt(
 }
 
 /// Verifies a password against an RSA-encrypted payload (legacy).
+///
+/// # Safety
+/// All string pointers must be valid NUL-terminated C strings (`passphrase_ptr`
+/// may be null for an unencrypted private key).
 #[cfg(feature = "rsa-algo")]
 #[no_mangle]
 pub unsafe extern "C" fn ironcrypt_password_verify(

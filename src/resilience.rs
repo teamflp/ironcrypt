@@ -69,6 +69,115 @@ impl CircuitBreaker {
     }
 }
 
+/// How many distinct quarantined principals open the process-wide circuit.
+/// One API key must not be able to take the provider down for everyone else.
+const GLOBAL_QUARANTINE_PRINCIPALS: usize = 2;
+
+const MAX_TRACKED_PRINCIPALS: usize = 4_096;
+
+#[derive(Debug)]
+struct PrincipalState {
+    consecutive_failures: u32,
+    open_until: Option<Instant>,
+}
+
+/// Per-principal provider quarantine, with a global circuit that opens only
+/// when several distinct principals are already quarantined.
+#[derive(Debug)]
+pub struct PrincipalQuarantine {
+    failure_threshold: u32,
+    cool_down: Duration,
+    inner: Mutex<std::collections::HashMap<String, PrincipalState>>,
+}
+
+impl PrincipalQuarantine {
+    pub fn new(failure_threshold: u32, cool_down: Duration) -> Self {
+        Self {
+            failure_threshold: failure_threshold.max(1),
+            cool_down,
+            inner: Mutex::new(std::collections::HashMap::new()),
+        }
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, std::collections::HashMap<String, PrincipalState>> {
+        self.inner.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn expire(map: &mut std::collections::HashMap<String, PrincipalState>) {
+        let now = Instant::now();
+        map.retain(|_, st| match st.open_until {
+            Some(until) if now >= until && st.consecutive_failures == 0 => false,
+            Some(until) if now >= until => {
+                st.open_until = None;
+                st.consecutive_failures = 0;
+                true
+            }
+            _ => true,
+        });
+    }
+
+    fn quarantined_count(map: &std::collections::HashMap<String, PrincipalState>) -> usize {
+        let now = Instant::now();
+        map.values()
+            .filter(|st| st.open_until.is_some_and(|until| now < until))
+            .count()
+    }
+
+    /// Error when this principal is quarantined, or when enough distinct
+    /// principals are quarantined that the shared provider is treated as down.
+    pub fn guard(&self, principal: &str) -> Result<(), IronCryptError> {
+        let mut map = self.lock();
+        Self::expire(&mut map);
+        if Self::quarantined_count(&map) >= GLOBAL_QUARANTINE_PRINCIPALS {
+            return Err(IronCryptError::ProviderError(
+                "crypto provider circuit open (cooling down after failures)".into(),
+            ));
+        }
+        if let Some(st) = map.get(principal) {
+            if st.open_until.is_some_and(|until| Instant::now() < until) {
+                return Err(IronCryptError::ProviderError(
+                    "crypto provider quarantined this principal (cooling down)".into(),
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// Global circuit only. A single quarantined principal does not flip this.
+    pub fn is_open(&self) -> bool {
+        let mut map = self.lock();
+        Self::expire(&mut map);
+        Self::quarantined_count(&map) >= GLOBAL_QUARANTINE_PRINCIPALS
+    }
+
+    pub fn record_success(&self, principal: &str) {
+        let mut map = self.lock();
+        if let Some(st) = map.get_mut(principal) {
+            st.consecutive_failures = 0;
+            st.open_until = None;
+        }
+    }
+
+    /// Count a provider-side failure against one principal.
+    pub fn record_failure(&self, principal: &str) {
+        let mut map = self.lock();
+        if map.len() >= MAX_TRACKED_PRINCIPALS && !map.contains_key(principal) {
+            Self::expire(&mut map);
+            if map.len() >= MAX_TRACKED_PRINCIPALS {
+                map.clear();
+            }
+        }
+        let st = map.entry(principal.to_string()).or_insert(PrincipalState {
+            consecutive_failures: 0,
+            open_until: None,
+        });
+        st.consecutive_failures = st.consecutive_failures.saturating_add(1);
+        if st.consecutive_failures >= self.failure_threshold {
+            st.open_until = Some(Instant::now() + self.cool_down);
+        }
+    }
+}
+
 /// Bounded retry policy for transient provider failures (not auth / config errors).
 #[derive(Debug, Clone)]
 pub struct RetryPolicy {
@@ -215,5 +324,23 @@ mod tests {
         .unwrap_err();
         assert!(matches!(err, IronCryptError::ProviderError(_)));
         assert_eq!(n.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn one_principal_cannot_open_the_global_circuit() {
+        let q = PrincipalQuarantine::new(2, Duration::from_secs(60));
+        assert!(q.guard("key-a").is_ok());
+        q.record_failure("key-a");
+        q.record_failure("key-a");
+        assert!(q.guard("key-a").is_err());
+        assert!(q.guard("key-b").is_ok());
+        assert!(!q.is_open());
+        q.record_failure("key-b");
+        q.record_failure("key-b");
+        assert!(q.is_open());
+        assert!(q.guard("key-c").is_err());
+        q.record_success("key-a");
+        assert!(!q.is_open());
+        assert!(q.guard("key-c").is_ok());
     }
 }

@@ -15,6 +15,9 @@ pub const MAX_KEY_VERSION_LEN: usize = 128;
 /// Maximum length of a base64-encoded encapsulated key field.
 pub const MAX_ENCAPSULATED_KEY_B64_LEN: usize = 16_384;
 
+/// Maximum canonical EncryptionContext bytes stored on a provider DEK wrap.
+pub const MAX_WRAP_AAD_LEN: usize = 4_096;
+
 /// Maximum length of encrypted metadata (base64) in V4 headers.
 pub const MAX_ENCRYPTED_METADATA_B64_LEN: usize = 65_536;
 

@@ -1,7 +1,7 @@
 //! Locked security profile for payment / financial workloads.
 //!
 //! Enabling the `payment` Cargo feature wires stricter defaults. Call
-//! [`PaymentSecurityProfile::validate`] (or [`enforce`]) before constructing
+//! [`PaymentSecurityProfile::validate`] (or [`PaymentSecurityProfile::enforce`]) before constructing
 //! runtime components that handle payment data.
 
 use crate::{
@@ -194,16 +194,20 @@ mod tests {
 
     #[test]
     fn rejects_custom_and_rsa() {
-        let mut config = IronCryptConfig::default();
-        config.standard = CryptoStandard::Custom;
-        config.asymmetric_algorithm = AsymmetricAlgorithm::Rsa;
+        let config = IronCryptConfig {
+            standard: CryptoStandard::Custom,
+            asymmetric_algorithm: AsymmetricAlgorithm::Rsa,
+            ..Default::default()
+        };
         assert!(PaymentSecurityProfile::validate(&config).is_err());
     }
 
     #[test]
     fn enforce_locks_ecc_aes() {
-        let mut config = IronCryptConfig::default();
-        config.standard = CryptoStandard::Custom;
+        let mut config = IronCryptConfig {
+            standard: CryptoStandard::Custom,
+            ..Default::default()
+        };
         PaymentSecurityProfile::enforce(&mut config).unwrap();
         assert_eq!(config.asymmetric_algorithm, AsymmetricAlgorithm::Ecc);
         assert_eq!(config.symmetric_algorithm, SymmetricAlgorithm::Aes256Gcm);

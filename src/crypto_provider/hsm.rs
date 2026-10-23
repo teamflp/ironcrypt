@@ -1,7 +1,8 @@
 //! In-device PKCS#11 [`CryptoProvider`] backed by the maintained `cryptoki` crate.
 //!
 //! Private/secret key material never leaves the HSM. Operations use
-//! `CKM_AES_CBC_PAD` on a token AES secret key identified by label.
+//! `CKM_AES_GCM` (96-bit nonce, 128-bit tag) on a token AES secret key
+//! identified by label. AES-CBC-PAD is decrypt-only and rejected under Payment.
 //!
 //! PIN resolution order: `HsmCryptoConfig.pin` → env `IRONCRYPT_HSM_PIN`.
 //! Prefer injecting the PIN via the environment (never commit it to TOML).
@@ -11,10 +12,11 @@
 
 use async_trait::async_trait;
 use cryptoki::context::{CInitializeArgs, Pkcs11};
+use cryptoki::mechanism::aead::GcmParams;
 use cryptoki::mechanism::Mechanism;
 use cryptoki::object::{Attribute, KeyType, ObjectClass, ObjectHandle};
 use cryptoki::session::{Session, UserType};
-use cryptoki::types::AuthPin;
+use cryptoki::types::{AuthPin, Ulong};
 use rand::{rngs::OsRng, RngCore};
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -28,6 +30,8 @@ use crate::{
 };
 
 const AES_IV_LEN: usize = 16;
+const GCM_NONCE_LEN: usize = 12;
+const HSM_GCM_MAGIC: &[u8] = b"ICG1";
 const DEFAULT_MAX_SESSIONS: usize = 4;
 const MAX_SESSIONS_CAP: usize = 32;
 
@@ -168,7 +172,7 @@ impl HsmProvider {
         Ok(Self {
             pkcs11,
             slot,
-            pin: AuthPin::new(pin_str.into()),
+            pin: AuthPin::new(pin_str),
             default_key_label: config.default_key_label.clone(),
             pool: SessionPool::new(max_sessions),
         })
@@ -221,13 +225,18 @@ impl HsmProvider {
         session: &Session,
         key: ObjectHandle,
         plaintext: &[u8],
+        aad: &[u8],
     ) -> Result<Vec<u8>, IronCryptError> {
-        let mut iv = [0u8; AES_IV_LEN];
-        OsRng.fill_bytes(&mut iv);
-        let mechanism = Mechanism::AesCbcPad(iv);
+        let mut nonce = [0u8; GCM_NONCE_LEN];
+        OsRng.fill_bytes(&mut nonce);
+        let mut iv = nonce;
+        let tag_bits = Ulong::try_from(128usize).map_err(map_ck)?;
+        let params = GcmParams::new(&mut iv, aad, tag_bits).map_err(map_ck)?;
+        let mechanism = Mechanism::AesGcm(params);
         let ciphertext = session.encrypt(&mechanism, key, plaintext).map_err(map_ck)?;
-        let mut out = Vec::with_capacity(AES_IV_LEN + ciphertext.len());
-        out.extend_from_slice(&iv);
+        let mut out = Vec::with_capacity(HSM_GCM_MAGIC.len() + GCM_NONCE_LEN + ciphertext.len());
+        out.extend_from_slice(HSM_GCM_MAGIC);
+        out.extend_from_slice(&nonce);
         out.extend_from_slice(&ciphertext);
         Ok(out)
     }
@@ -236,7 +245,32 @@ impl HsmProvider {
         session: &Session,
         key: ObjectHandle,
         blob: &[u8],
+        aad: &[u8],
     ) -> Result<Vec<u8>, IronCryptError> {
+        if blob.starts_with(HSM_GCM_MAGIC) {
+            if blob.len() < HSM_GCM_MAGIC.len() + GCM_NONCE_LEN + 16 {
+                return Err(IronCryptError::DecryptionError(
+                    "hsm AES-GCM ciphertext too short".into(),
+                ));
+            }
+            let mut iv = [0u8; GCM_NONCE_LEN];
+            iv.copy_from_slice(&blob[HSM_GCM_MAGIC.len()..HSM_GCM_MAGIC.len() + GCM_NONCE_LEN]);
+            let ct = &blob[HSM_GCM_MAGIC.len() + GCM_NONCE_LEN..];
+            let tag_bits = Ulong::try_from(128usize).map_err(map_ck)?;
+            let params = GcmParams::new(&mut iv, aad, tag_bits).map_err(map_ck)?;
+            let mechanism = Mechanism::AesGcm(params);
+            return session.decrypt(&mechanism, key, ct).map_err(map_ck);
+        }
+        if crate::payment::PaymentSecurityProfile::is_enabled() {
+            return Err(IronCryptError::DecryptionError(
+                "hsm AES-CBC-PAD blobs are rejected under Payment; AES-GCM is required".into(),
+            ));
+        }
+        if !aad.is_empty() {
+            return Err(IronCryptError::DecryptionError(
+                "legacy hsm AES-CBC blob cannot authenticate a context".into(),
+            ));
+        }
         if blob.len() <= AES_IV_LEN {
             return Err(IronCryptError::DecryptionError(
                 "hsm ciphertext too short (missing IV)".into(),
@@ -286,11 +320,13 @@ impl CryptoProvider for HsmProvider {
         &self,
         key_id: &str,
         plaintext_key: &[u8],
+        aad: Option<&[u8]>,
     ) -> Result<WrappedKey, IronCryptError> {
         let label = self.resolve_label(key_id).to_string();
+        let aad = aad.unwrap_or(&[]);
         let ciphertext = self.with_session(|session| {
             let key = Self::find_aes_key(session, &label)?;
-            Self::encrypt_aes(session, key, plaintext_key)
+            Self::encrypt_aes(session, key, plaintext_key, aad)
         })?;
         Ok(WrappedKey {
             key_id: label,
@@ -302,11 +338,13 @@ impl CryptoProvider for HsmProvider {
         &self,
         key_id: &str,
         wrapped: &[u8],
+        aad: Option<&[u8]>,
     ) -> Result<Vec<u8>, IronCryptError> {
         let label = self.resolve_label(key_id).to_string();
+        let aad = aad.unwrap_or(&[]);
         self.with_session(|session| {
             let key = Self::find_aes_key(session, &label)?;
-            Self::decrypt_aes(session, key, wrapped)
+            Self::decrypt_aes(session, key, wrapped, aad)
         })
     }
 
@@ -316,17 +354,11 @@ impl CryptoProvider for HsmProvider {
         plaintext: &[u8],
         aad: Option<&[u8]>,
     ) -> Result<Vec<u8>, IronCryptError> {
-        if aad.map(|a| !a.is_empty()).unwrap_or(false) {
-            return Err(IronCryptError::UnsupportedOperation(
-                "hsm provider: AAD is not supported with AES-CBC-PAD; use aws-kms/vault-transit \
-                 for AAD binding, or omit aad"
-                    .into(),
-            ));
-        }
         let label = self.resolve_label(key_id).to_string();
+        let aad = aad.unwrap_or(&[]);
         self.with_session(|session| {
             let key = Self::find_aes_key(session, &label)?;
-            Self::encrypt_aes(session, key, plaintext)
+            Self::encrypt_aes(session, key, plaintext, aad)
         })
     }
 
@@ -336,15 +368,11 @@ impl CryptoProvider for HsmProvider {
         ciphertext: &[u8],
         aad: Option<&[u8]>,
     ) -> Result<Vec<u8>, IronCryptError> {
-        if aad.map(|a| !a.is_empty()).unwrap_or(false) {
-            return Err(IronCryptError::UnsupportedOperation(
-                "hsm provider: AAD is not supported with AES-CBC-PAD".into(),
-            ));
-        }
         let label = self.resolve_label(key_id).to_string();
+        let aad = aad.unwrap_or(&[]);
         self.with_session(|session| {
             let key = Self::find_aes_key(session, &label)?;
-            Self::decrypt_aes(session, key, ciphertext)
+            Self::decrypt_aes(session, key, ciphertext, aad)
         })
     }
 }

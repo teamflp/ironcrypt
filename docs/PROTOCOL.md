@@ -7,7 +7,7 @@ This document is the “audit formel du protocole actuel” backlog item. It doe
 replace an external cryptographic review.
 
 Companion: [`PAYMENT_SECURITY.md`](./PAYMENT_SECURITY.md), [`THREAT_MODEL.md`](./THREAT_MODEL.md),
-[`src/ecc_utils.rs`](./src/ecc_utils.rs), [`src/envelope.rs`](./src/envelope.rs).
+[`src/ecc_utils.rs`](../src/ecc_utils.rs), [`src/envelope.rs`](../src/envelope.rs).
 
 ---
 

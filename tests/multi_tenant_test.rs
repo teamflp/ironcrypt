@@ -12,8 +12,10 @@ const STRONG_PASSWORD: &str = "Str0ngP@ssw0rd42!";
 #[tokio::test]
 async fn tenant_a_ciphertext_not_decryptable_as_tenant_b() {
     let dir = tempdir().unwrap();
-    let mut config = IronCryptConfig::default();
-    config.asymmetric_algorithm = AsymmetricAlgorithm::Ecc;
+    let mut config = IronCryptConfig {
+        asymmetric_algorithm: AsymmetricAlgorithm::Ecc,
+        ..Default::default()
+    };
     let mut dt = DataTypeConfig::new();
     dt.insert(
         DataType::Generic,

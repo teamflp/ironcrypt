@@ -413,7 +413,7 @@ pub fn audit_sign_targets(
     Ok(paths)
 }
 
-/// Attest a file digest with [`CryptoProvider::encrypt`] → `{path}.attestation` (base64).
+/// Attest a file digest with [`crate::CryptoProvider::encrypt`] → `{path}.attestation` (base64).
 pub async fn attest_audit_file_with_provider(
     log_path: &Path,
     provider: &dyn crate::CryptoProvider,
@@ -876,6 +876,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "tempfile needs mkdir; disabled under Miri isolation")]
     fn hmac_audit_sign_verify() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("audit.log");
@@ -887,6 +888,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "tempfile needs mkdir; disabled under Miri isolation")]
     fn purge_respects_retention_zero() {
         let dir = tempfile::tempdir().unwrap();
         fs::write(dir.path().join("audit.log.2020-01-01"), b"x").unwrap();
@@ -895,6 +897,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "tempfile needs mkdir; disabled under Miri isolation")]
     fn jsonl_hash_chain_roundtrip() {
         reset_audit_chain_for_tests();
         let dir = tempfile::tempdir().unwrap();

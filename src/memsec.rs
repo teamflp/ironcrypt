@@ -8,7 +8,7 @@
 //! On Unix, [`try_mlock`] / [`try_munlock`] wrap `libc::mlock` / `munlock`.
 //! Enable via Cargo feature `mlock` (pulled in by `payment`) or env
 //! `IRONCRYPT_MLOCK=1`. Failure is non-fatal (no CAP_IPC_LOCK, RLIMIT_MEMLOCK,
-//! or platform limits). See [`MEMORY.md`](../../MEMORY.md).
+//! or platform limits). See [`MEMORY.md`](../docs/MEMORY.md).
 
 use rand::rngs::OsRng;
 use rand::RngCore;
@@ -68,12 +68,10 @@ pub fn wipe_string(s: &mut String) {
 pub fn mlock_enabled() -> bool {
     if cfg!(feature = "mlock") {
         // Feature on → default enabled unless explicitly disabled.
-        match env::var("IRONCRYPT_MLOCK") {
-            Ok(v) if v == "0" || v.eq_ignore_ascii_case("false") || v.eq_ignore_ascii_case("off") => {
-                false
-            }
-            _ => true,
-        }
+        !matches!(
+            env::var("IRONCRYPT_MLOCK"),
+            Ok(v) if v == "0" || v.eq_ignore_ascii_case("false") || v.eq_ignore_ascii_case("off")
+        )
     } else {
         matches!(
             env::var("IRONCRYPT_MLOCK").as_deref(),

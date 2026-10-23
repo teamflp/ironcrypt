@@ -6,7 +6,7 @@
 //!
 //! Canonical string: `{key_id}.{version}.{hex(payload)}` is **not** used —
 //! the MAC is over raw `payload` with domain separation in the key schedule
-//! info (see [`FingerprintSigner::mac`]).
+//! info (see [`FingerprintSigner::fingerprint`]).
 
 use crate::IronCryptError;
 use hmac::{Hmac, Mac};

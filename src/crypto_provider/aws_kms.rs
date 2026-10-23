@@ -123,10 +123,11 @@ impl CryptoProvider for AwsKmsProvider {
         &self,
         key_id: &str,
         plaintext_key: &[u8],
+        aad: Option<&[u8]>,
     ) -> Result<WrappedKey, IronCryptError> {
         let kid = self.resolve_key_id(key_id)?;
         let ciphertext = self
-            .encrypt_raw(kid, plaintext_key, kms_encryption_context(None))
+            .encrypt_raw(kid, plaintext_key, kms_encryption_context(aad))
             .await?;
         Ok(WrappedKey {
             key_id: kid.to_string(),
@@ -138,9 +139,10 @@ impl CryptoProvider for AwsKmsProvider {
         &self,
         key_id: &str,
         wrapped: &[u8],
+        aad: Option<&[u8]>,
     ) -> Result<Vec<u8>, IronCryptError> {
         let kid = self.resolve_key_id(key_id)?;
-        self.decrypt_raw(kid, wrapped, kms_encryption_context(None))
+        self.decrypt_raw(kid, wrapped, kms_encryption_context(aad))
             .await
     }
 

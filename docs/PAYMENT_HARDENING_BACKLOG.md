@@ -348,3 +348,4 @@ Quand un item est terminé : cocher `[x]` ici et, si besoin, une ligne dans le j
 | 2026-09-23 | P2 maturité (`dual_control` M-of-N, TokenizationProvider refuse, crypto_bench, timing smoke, UNSAFE_INVENTORY, AUDIT_ENGAGEMENT) |
 | 2026-09-23 | Restant in-repo (Redis rate-limit, HaCryptoProvider failover, HSM session pool, cargo-vet exemptions + CI enforce) |
 | 2026-09-23 | Internal adversarial review (`INTERNAL_ADVERSARIAL_REVIEW.md`) + Critical/High fixes (stream AAD, allowedServices, …) — external audits still open |
+| 2026-10-23 | R1–R5: DEK wrap AAD, HSM AES-GCM, HMAC permission + domain, per-principal quarantine, admin `/tls` bearer |

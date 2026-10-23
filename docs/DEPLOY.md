@@ -15,7 +15,7 @@ docker build --build-arg IRONCRYPT_FEATURES=payment-daemon -t ironcrypt:payment 
 #   USER is already non-root (`ironcrypt`) in the image
 ```
 
-Use [`docker-compose.payment.yml`](./docker-compose.payment.yml) for a Payment-shaped
+Use [`docker-compose.payment.yml`](../docker-compose.payment.yml) for a Payment-shaped
 stack: **no PEM key volume**, CryptoProvider via env, admin health on loopback.
 
 ## Config vs secrets
@@ -26,7 +26,7 @@ stack: **no PEM key volume**, CryptoProvider via env, admin health on loopback.
 | Env / K8s Secret / Vault | Tokens, PINs, API key JSON, TLS key paths, `IRONCRYPT_PASSPHRASE_FILE` |
 
 Never put `VAULT_TOKEN`, HSM PIN, or API key hashes in the committed TOML.
-Example split: keep [`ironcrypt.toml.example`](./ironcrypt.toml.example) clean; inject
+Example split: keep [`ironcrypt.toml.example`](../ironcrypt.toml.example) clean; inject
 `IRONCRYPT_API_KEYS_JSON`, `VAULT_ROLE_ID` / `VAULT_SECRET_ID`, `IRONCRYPT_HSM_PIN`.
 
 ## Identity (no static cloud keys)
@@ -45,9 +45,11 @@ Example split: keep [`ironcrypt.toml.example`](./ironcrypt.toml.example) clean; 
 |----------|----------|---------|
 | `GET /health` | `--admin-port` | Liveness — process accepts connections |
 | `GET /ready` | `--admin-port` | Readiness — circuit closed + crypto backend present (no error detail leak) |
-| `GET /tls` | `--admin-port` | TLS reload status (ops) |
+| `GET /tls` | `--admin-port` | TLS reload status. Requires `Authorization: Bearer $IRONCRYPT_ADMIN_TOKEN` |
 
-Bind admin to loopback under Payment (`--admin-host 127.0.0.1`).
+Bind admin to loopback under Payment (`--admin-host 127.0.0.1`). Payment refuses to start the admin listener unless `IRONCRYPT_ADMIN_TOKEN` is set. `/health` and `/ready` stay unauthenticated for probes.
+
+Use-secret HMAC (`POST /service/.../secret/.../hmac`) requires the API-key permission `hmac`. `read` does not grant it. `full` expands to include `hmac`.
 
 ## Metrics
 

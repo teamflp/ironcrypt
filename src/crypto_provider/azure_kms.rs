@@ -132,9 +132,19 @@ impl CryptoProvider for AzureKeyVaultKeysProvider {
         &self,
         key_id: &str,
         plaintext_key: &[u8],
+        aad: Option<&[u8]>,
     ) -> Result<WrappedKey, IronCryptError> {
         let kid = self.resolve_key(key_id);
-        let value = URL_SAFE_NO_PAD.encode(plaintext_key);
+        // Key Vault wrap has no encryption-context parameter. Bind the context
+        // inside the OAEP/KW plaintext so a different context cannot unwrap it.
+        let framed = match aad {
+            Some(aad) if !aad.is_empty() => {
+                Some(crate::crypto_provider::context::frame_dek_for_aad(plaintext_key, aad)?)
+            }
+            _ => None,
+        };
+        let payload: &[u8] = framed.as_deref().unwrap_or(plaintext_key);
+        let value = URL_SAFE_NO_PAD.encode(payload);
         let wrapped = self.wrap_unwrap(kid, "wrapkey", &value).await?;
         Ok(WrappedKey {
             key_id: kid.to_string(),
@@ -149,14 +159,26 @@ impl CryptoProvider for AzureKeyVaultKeysProvider {
         &self,
         key_id: &str,
         wrapped: &[u8],
+        aad: Option<&[u8]>,
     ) -> Result<Vec<u8>, IronCryptError> {
         let kid = self.resolve_key(key_id);
         let value = URL_SAFE_NO_PAD.encode(wrapped);
         let plain_b64 = self.wrap_unwrap(kid, "unwrapkey", &value).await?;
-        URL_SAFE_NO_PAD
+        let plain = URL_SAFE_NO_PAD
             .decode(plain_b64.as_bytes())
             .or_else(|_| B64.decode(plain_b64.as_bytes()))
-            .map_err(|e| IronCryptError::ProviderError(format!("azure-kms unwrap decode: {e}")))
+            .map_err(|e| IronCryptError::ProviderError(format!("azure-kms unwrap decode: {e}")))?;
+        match aad {
+            Some(aad) if !aad.is_empty() => {
+                crate::crypto_provider::context::unframe_dek_for_aad(&plain, aad)
+            }
+            _ if crate::crypto_provider::context::is_framed_dek(&plain) => {
+                Err(IronCryptError::DecryptionError(
+                    "azure-kms DEK wrap is context-bound; EncryptionContext is required".into(),
+                ))
+            }
+            _ => Ok(plain),
+        }
     }
 
     async fn encrypt(

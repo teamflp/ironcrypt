@@ -125,6 +125,10 @@
 //! For more advanced examples, including custom configurations,
 //! check out the `examples/` directory of the project.
 
+// `async_trait` emits `#[must_use]` on functions whose return type (`Future`)
+// is already `#[must_use]`. Clippy 1.99 treats that as `double_must_use`.
+#![allow(clippy::double_must_use)]
+
 // --- Modules ---
 // Payment builds must not link the `rsa` crate (RUSTSEC-2023-0071).
 #[cfg(all(feature = "payment", feature = "rsa-algo"))]
@@ -141,6 +145,7 @@ pub mod api_roles;
 pub mod audit;
 #[cfg(feature = "cli")]
 pub mod archive_safe;
+pub mod admin_auth;
 pub mod auth;
 pub mod api_key_store;
 pub mod config;
@@ -165,6 +170,7 @@ pub mod payment;
 pub mod rate_limit;
 pub mod resilience;
 pub mod secret_input;
+pub mod use_secret;
 #[cfg(feature = "rsa-algo")]
 pub mod rsa_utils;
 pub mod secrets;
@@ -237,7 +243,9 @@ pub use api_key_store::{
     build_api_key_store, parse_api_keys_json, ApiKeyBackend, ApiKeyStore, EnvApiKeyStore,
     FileApiKeyStore,
 };
-pub use resilience::{CircuitBreaker, RetryPolicy, with_retry, with_timeout};
+pub use resilience::{
+    CircuitBreaker, PrincipalQuarantine, RetryPolicy, with_retry, with_timeout,
+};
 pub use rate_limit::{bucket_key as rate_limit_bucket_key, build_rate_limiter, MemoryRateLimiter, RateLimiter};
 pub use fingerprint::{Fingerprint, FingerprintSigner, FINGERPRINT_VERSION};
 pub use dual_control::{verify_quorum, AdminAction, Approval, DualControlPolicy};
@@ -336,13 +344,13 @@ pub fn load_any_private_key(
         return Ok(PrivateKey::Ecc(key));
     }
     #[cfg(feature = "rsa-algo")]
-    if !PaymentSecurityProfile::allow_rsa() {
-        if rsa_utils::load_private_key(path, passphrase).is_ok() {
-            return Err(IronCryptError::ConfigurationError(
-                "Payment profile forbids RSA private keys; use ECC (P-256) or a CryptoProvider."
-                    .into(),
-            ));
-        }
+    if !PaymentSecurityProfile::allow_rsa()
+        && rsa_utils::load_private_key(path, passphrase).is_ok()
+    {
+        return Err(IronCryptError::ConfigurationError(
+            "Payment profile forbids RSA private keys; use ECC (P-256) or a CryptoProvider."
+                .into(),
+        ));
     }
     Err(IronCryptError::KeyLoadingError(format!(
         "Failed to load private key from {}: unsupported format or wrong passphrase",
@@ -350,7 +358,7 @@ pub fn load_any_private_key(
     )))
 }
 
-// Ensure every ```rust``` block in README.md compiles (and runs) under
+// Ensure every ```rust``` block in docs/README.md compiles (and runs) under
 // `cargo test --doc`. Sketch / framework samples use ```rust,ignore```.
 #[cfg(doctest)]
-doc_comment::doctest!("../README.md");
+doc_comment::doctest!("../docs/README.md");

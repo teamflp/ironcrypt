@@ -121,8 +121,10 @@ async fn test_anssi_compatible_profile_applies_correct_params() {
 
 #[test]
 fn payment_profile_rejects_custom() {
-    let mut config = IronCryptConfig::default();
-    config.standard = CryptoStandard::Custom;
+    let config = IronCryptConfig {
+        standard: CryptoStandard::Custom,
+        ..Default::default()
+    };
     assert!(PaymentSecurityProfile::validate(&config).is_err());
 }
 

@@ -94,7 +94,7 @@ Exemple d’entrée `keys.json` :
   {
     "description": "Backend PHP",
     "keyHash": "HASH_HEX_SHA512",
-    "permissions": ["write", "read"]
+    "permissions": ["write", "read", "hmac"]
   }
 ]
 ```
@@ -183,7 +183,7 @@ if ($code !== 200) {
 | --- | --- |
 | **SDK + `ironcryptd`** (ce README) | Recommandé pour les apps PHP web |
 | **CLI** (`exec` / `proc_open` sur `ironcrypt`) | Scripts ponctuels ; éviter en requête HTTP |
-| **FFI** (`libironcrypt` + `ironcrypt.h`) | Processus sans démon ; voir `FFI_EXAMPLES.md` |
+| **FFI** (`libironcrypt` + `ironcrypt.h`) | Processus sans démon ; voir [`FFI_EXAMPLES.md`](../../docs/FFI_EXAMPLES.md) |
 
 ## Dépannage
 

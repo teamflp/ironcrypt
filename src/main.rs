@@ -1290,7 +1290,7 @@ async fn main() {
                     println!("      \"description\": \"Nouvelle clé pour mon application\",");
                     println!("      \"keyId\": \"{}\",", prefix);
                     println!("      \"keyHash\": \"{}\",", hash_hex);
-                    println!("      \"permissions\": [\"write\", \"read\"],");
+                    println!("      \"permissions\": [\"write\", \"read\", \"hmac\"],");
                     println!("      \"createdAt\": \"{}\",", created.to_rfc3339());
                     println!("      \"notBefore\": \"{}\",", created.to_rfc3339());
                     println!("      \"expiresAt\": \"{}\"", expires.to_rfc3339());
