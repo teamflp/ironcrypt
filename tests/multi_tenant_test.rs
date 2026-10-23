@@ -30,7 +30,7 @@ async fn tenant_a_ciphertext_not_decryptable_as_tenant_b() {
 
     let ctx_a = EncryptionContext::new("merchant-a", "card-pan", "txn-1");
     let enc = crypt
-        .encrypt_with_context(b"4111111111111111", STRONG_PASSWORD, Some(&ctx_a))
+        .encrypt_with_context(b"opaque-record-payload", STRONG_PASSWORD, Some(&ctx_a))
         .await
         .unwrap();
 
@@ -45,5 +45,5 @@ async fn tenant_a_ciphertext_not_decryptable_as_tenant_b() {
         .decrypt_with_context(&enc, STRONG_PASSWORD, Some(&ctx_a))
         .await
         .unwrap();
-    assert_eq!(plain, b"4111111111111111");
+    assert_eq!(plain, b"opaque-record-payload");
 }

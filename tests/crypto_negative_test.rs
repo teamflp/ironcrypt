@@ -2,15 +2,15 @@
 
 use ironcrypt::{
     algorithms::SymmetricAlgorithm,
-    encrypt_stream,
+    ecc_utils, encrypt_stream_with_context,
     keys::{PrivateKey, PublicKey},
-    rsa_utils, Argon2Config, IronCryptError, PasswordCriteria,
+    Argon2Config, EncryptionContext, IronCryptError, PasswordCriteria,
 };
 use std::io::Cursor;
 
 fn rsa_pair() -> (PrivateKey, PublicKey) {
-    let (sk, pk) = rsa_utils::generate_rsa_keys(2048).unwrap();
-    (PrivateKey::Rsa(sk), PublicKey::Rsa(pk))
+    let (sk, pk) = ecc_utils::generate_ecc_keys().unwrap();
+    (PrivateKey::Ecc(sk), PublicKey::Ecc(pk))
 }
 
 #[test]
@@ -21,7 +21,8 @@ fn decrypt_rejects_wrong_password_before_plaintext() {
     let mut encrypted = Cursor::new(Vec::new());
     let mut password = "CorrectP@ssw0rd1!".to_string();
 
-    encrypt_stream(
+    let ctx = EncryptionContext::new("tenant", "payload", "negative");
+    encrypt_stream_with_context(
         &mut source,
         &mut encrypted,
         &mut password,
@@ -31,6 +32,7 @@ fn decrypt_rejects_wrong_password_before_plaintext() {
         Argon2Config::default(),
         true,
         SymmetricAlgorithm::Aes256Gcm,
+        Some(&ctx),
     )
     .unwrap();
 
@@ -60,7 +62,8 @@ fn encrypt_rejects_empty_recipients() {
     let mut password = String::new();
     let empty: Vec<(&PublicKey, &str)> = vec![];
 
-    let err = encrypt_stream(
+    let ctx = EncryptionContext::new("tenant", "payload", "empty");
+    let err = encrypt_stream_with_context(
         &mut source,
         &mut dest,
         &mut password,
@@ -70,6 +73,7 @@ fn encrypt_rejects_empty_recipients() {
         Argon2Config::default(),
         false,
         SymmetricAlgorithm::Aes256Gcm,
+        Some(&ctx),
     )
     .unwrap_err();
 
@@ -83,7 +87,8 @@ fn decrypt_rejects_tampered_ciphertext() {
     let mut encrypted = Cursor::new(Vec::new());
     let mut password = String::new();
 
-    encrypt_stream(
+    let ctx = EncryptionContext::new("tenant", "payload", "negative");
+    encrypt_stream_with_context(
         &mut source,
         &mut encrypted,
         &mut password,
@@ -93,6 +98,7 @@ fn decrypt_rejects_tampered_ciphertext() {
         Argon2Config::default(),
         false,
         SymmetricAlgorithm::Aes256Gcm,
+        Some(&ctx),
     )
     .unwrap();
 
@@ -137,7 +143,8 @@ fn decrypt_rejects_unknown_key_version() {
     let mut encrypted = Cursor::new(Vec::new());
     let mut password = String::new();
 
-    encrypt_stream(
+    let ctx = EncryptionContext::new("tenant", "payload", "negative");
+    encrypt_stream_with_context(
         &mut source,
         &mut encrypted,
         &mut password,
@@ -147,6 +154,7 @@ fn decrypt_rejects_unknown_key_version() {
         Argon2Config::default(),
         false,
         SymmetricAlgorithm::Aes256Gcm,
+        Some(&ctx),
     )
     .unwrap();
 

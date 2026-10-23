@@ -1,12 +1,12 @@
 //! Regression tests for stream header size limits (DoS hardening).
 
-use ironcrypt::{decrypt_stream, generate_rsa_keys, keys::PrivateKey, MAX_STREAM_HEADER_SIZE};
+use ironcrypt::{decrypt_stream, ecc_utils, keys::PrivateKey, MAX_STREAM_HEADER_SIZE};
 use byteorder::{BigEndian, WriteBytesExt};
 use std::io::Cursor;
 
 #[test]
 fn decrypt_stream_rejects_oversized_header_len() {
-    let (private_key, _) = generate_rsa_keys(2048).unwrap();
+    let (private_key, _) = ecc_utils::generate_ecc_keys().unwrap();
     let mut malicious = Vec::new();
     // Claim a huge header without sending that many bytes — must fail before OOM.
     let claim = (MAX_STREAM_HEADER_SIZE as u64) + 1;
@@ -16,7 +16,7 @@ fn decrypt_stream_rejects_oversized_header_len() {
     let err = decrypt_stream(
         &mut Cursor::new(malicious),
         &mut out,
-        &PrivateKey::Rsa(private_key),
+        &PrivateKey::Ecc(private_key),
         "v1",
         "",
         None,

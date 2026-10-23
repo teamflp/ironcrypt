@@ -1,10 +1,12 @@
 use ironcrypt::{
     algorithms::SymmetricAlgorithm,
     ecc_utils,
-    encrypt_stream,
+    encrypt_stream_with_context,
     keys::{PrivateKey, PublicKey},
-    rsa_utils, Argon2Config, PasswordCriteria,
+    Argon2Config, EncryptionContext, PasswordCriteria,
 };
+#[cfg(feature = "rsa-algo")]
+use ironcrypt::rsa_utils;
 use p256::pkcs8::spki::EncodePublicKey;
 use std::io::Cursor;
 use tempfile::tempdir;
@@ -25,9 +27,10 @@ fn test_e2e_encryption(
     let mut password = "test_password".to_string();
 
     let recipients = vec![(&public_key, key_version)];
+    let ctx = EncryptionContext::new("tenant", "payload", "record");
 
     // Encrypt
-    encrypt_stream(
+    encrypt_stream_with_context(
         &mut source,
         &mut encrypted_dest,
         &mut password,
@@ -37,6 +40,7 @@ fn test_e2e_encryption(
         Argon2Config::default(),
         false,
         sym_algo,
+        Some(&ctx),
     )
     .unwrap();
 
@@ -56,6 +60,7 @@ fn test_e2e_encryption(
     assert_eq!(original_data, &decrypted_dest.into_inner()[..]);
 }
 
+#[cfg(feature = "rsa-algo")]
 #[test]
 fn test_e2e_rsa_aes() {
     let (private_key, public_key) = rsa_utils::generate_rsa_keys(2048).unwrap();
@@ -68,6 +73,7 @@ fn test_e2e_rsa_aes() {
     );
 }
 
+#[cfg(feature = "rsa-algo")]
 #[test]
 fn test_e2e_rsa_chacha() {
     let (private_key, public_key) = rsa_utils::generate_rsa_keys(2048).unwrap();
@@ -104,6 +110,7 @@ fn test_e2e_ecc_chacha() {
     );
 }
 
+#[cfg(feature = "rsa-algo")]
 #[test]
 fn test_e2e_encryption_with_signature() {
     let (enc_priv_key, enc_pub_key) = rsa_utils::generate_rsa_keys(2048).unwrap();
@@ -125,11 +132,11 @@ fn test_e2e_encryption_with_signature() {
 
 #[test]
 fn test_e2e_encryption_with_ecdsa_signature() {
-    let (enc_priv_key, enc_pub_key) = rsa_utils::generate_rsa_keys(2048).unwrap();
+    let (enc_priv_key, enc_pub_key) = ecc_utils::generate_ecc_keys().unwrap();
     let (sign_priv_key, sign_pub_key) = ecc_utils::generate_ecc_keys().unwrap();
 
-    let enc_private_key = PrivateKey::Rsa(enc_priv_key);
-    let enc_public_key = PublicKey::Rsa(enc_pub_key);
+    let enc_private_key = PrivateKey::Ecc(enc_priv_key);
+    let enc_public_key = PublicKey::Ecc(enc_pub_key);
     let sign_private_key = PrivateKey::Ecc(sign_priv_key);
     let sign_public_key = PublicKey::Ecc(sign_pub_key);
 
@@ -144,12 +151,12 @@ fn test_e2e_encryption_with_ecdsa_signature() {
 
 #[test]
 fn test_e2e_encryption_with_tampered_data() {
-    let (private_key, public_key) = rsa_utils::generate_rsa_keys(2048).unwrap();
-    let (sign_priv_key, sign_pub_key) = rsa_utils::generate_rsa_keys(2048).unwrap();
-    let enc_private_key = PrivateKey::Rsa(private_key);
-    let enc_public_key = PublicKey::Rsa(public_key);
-    let sign_private_key = PrivateKey::Rsa(sign_priv_key);
-    let sign_public_key = PublicKey::Rsa(sign_pub_key);
+    let (private_key, public_key) = ecc_utils::generate_ecc_keys().unwrap();
+    let (sign_priv_key, sign_pub_key) = ecc_utils::generate_ecc_keys().unwrap();
+    let enc_private_key = PrivateKey::Ecc(private_key);
+    let enc_public_key = PublicKey::Ecc(public_key);
+    let sign_private_key = PrivateKey::Ecc(sign_priv_key);
+    let sign_public_key = PublicKey::Ecc(sign_pub_key);
 
     let original_data = b"This is a top secret message.";
     let mut source = Cursor::new(original_data);
@@ -160,9 +167,10 @@ fn test_e2e_encryption_with_tampered_data() {
     let mut password = "test_password".to_string();
 
     let recipients = vec![(&enc_public_key, key_version)];
+    let ctx = EncryptionContext::new("tenant", "payload", "tamper");
 
     // Encrypt
-    encrypt_stream(
+    encrypt_stream_with_context(
         &mut source,
         &mut encrypted_dest,
         &mut password,
@@ -172,6 +180,7 @@ fn test_e2e_encryption_with_tampered_data() {
         Argon2Config::default(),
         false,
         SymmetricAlgorithm::Aes256Gcm,
+        Some(&ctx),
     )
     .unwrap();
 

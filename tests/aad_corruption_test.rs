@@ -35,7 +35,7 @@ async fn decrypt_rejects_substituted_encryption_context() {
     let crypt = crypt_with_keys(dir.path().to_str().unwrap()).await;
     let ctx = EncryptionContext::new("tenant-a", "card-pan", "rec-1");
     let enc = crypt
-        .encrypt_with_context(b"4111111111111111", STRONG_PASSWORD, Some(&ctx))
+        .encrypt_with_context(b"opaque-record-payload", STRONG_PASSWORD, Some(&ctx))
         .await
         .unwrap();
 

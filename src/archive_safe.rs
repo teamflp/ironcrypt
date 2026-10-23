@@ -62,13 +62,17 @@ pub fn path_is_within(base: &Path, child: &Path) -> bool {
     let Ok(base) = fs::canonicalize(base) else {
         return false;
     };
-    if let Ok(child_c) = fs::canonicalize(child) {
-        return child_c.starts_with(&base);
-    }
+    // Only absolute names may be resolved on disk. A relative tar entry such
+    // as "." or "./" canonicalizes against the process cwd, which is not the
+    // output directory, and would be rejected as a zip-slip even though the
+    // destination is `output_dir.join(name)`.
     if child.is_absolute() {
         // Non-existent absolute paths cannot be safely compared across
         // symlink roots (e.g. macOS `/var` → `/private/var`).
-        return false;
+        let Ok(child_c) = fs::canonicalize(child) else {
+            return false;
+        };
+        return child_c.starts_with(&base);
     }
     if child
         .components()
@@ -202,6 +206,33 @@ mod tests {
         let existing = dir.path().join("a");
         fs::create_dir_all(&existing).unwrap();
         assert!(path_is_within(dir.path(), &existing));
+    }
+
+    #[test]
+    fn dot_and_dot_slash_are_within() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(path_is_within(dir.path(), Path::new(".")));
+        assert!(path_is_within(dir.path(), Path::new("./")));
+        assert!(path_is_within(dir.path(), Path::new("./a.txt")));
+    }
+
+    #[test]
+    fn dot_dir_entry_stays_inside() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("src");
+        fs::create_dir(&src).unwrap();
+        fs::write(src.join("a.txt"), b"ok").unwrap();
+        let mut buf = Vec::new();
+        {
+            let mut builder = Builder::new(&mut buf);
+            builder.append_dir_all(".", &src).unwrap();
+            builder.finish().unwrap();
+        }
+        let out = dir.path().join("out");
+        fs::create_dir(&out).unwrap();
+        let mut archive = tar::Archive::new(Cursor::new(buf));
+        safe_unpack_tar(&mut archive, &out).unwrap();
+        assert_eq!(fs::read(out.join("a.txt")).unwrap(), b"ok");
     }
 
     #[test]
