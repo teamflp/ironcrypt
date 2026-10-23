@@ -818,7 +818,7 @@ version = "0.3.76"
 criteria = "safe-to-deploy"
 
 [[exemptions.libc]]
-version = "0.2.175"
+version = "0.2.191"
 criteria = "safe-to-deploy"
 
 [[exemptions.libloading]]
@@ -878,7 +878,7 @@ version = "0.8.9"
 criteria = "safe-to-deploy"
 
 [[exemptions.mio]]
-version = "1.0.4"
+version = "1.2.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.native-tls]]
@@ -1354,7 +1354,7 @@ version = "0.5.10"
 criteria = "safe-to-deploy"
 
 [[exemptions.socket2]]
-version = "0.6.0"
+version = "0.6.5"
 criteria = "safe-to-deploy"
 
 [[exemptions.spin]]
@@ -1375,6 +1375,10 @@ criteria = "safe-to-deploy"
 
 [[exemptions.syn]]
 version = "2.0.119"
+criteria = "safe-to-deploy"
+
+[[exemptions.syn]]
+version = "3.0.9"
 criteria = "safe-to-deploy"
 
 [[exemptions.sync_wrapper]]
@@ -1418,11 +1422,11 @@ version = "1.10.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.tokio]]
-version = "1.50.0"
+version = "1.54.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.tokio-macros]]
-version = "2.6.1"
+version = "2.7.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.tokio-native-tls]]
