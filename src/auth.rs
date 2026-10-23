@@ -22,6 +22,8 @@ pub enum Permission {
     Read,
     Delete,
     Update,
+    /// Use-secret HMAC. Not implied by [`Permission::Read`].
+    Hmac,
     Full,
 }
 
@@ -86,6 +88,7 @@ impl ApiKeyConfig {
             self.permissions.push(Permission::Write);
             self.permissions.push(Permission::Delete);
             self.permissions.push(Permission::Update);
+            self.permissions.push(Permission::Hmac);
             self.permissions.sort();
             self.permissions.dedup();
         }
@@ -338,5 +341,13 @@ mod tests {
         assert!(!k.permissions.contains(&Permission::Full));
         assert!(k.permissions.contains(&Permission::Read));
         assert!(k.permissions.contains(&Permission::Write));
+        assert!(k.permissions.contains(&Permission::Hmac));
+    }
+
+    #[test]
+    fn read_does_not_grant_hmac() {
+        let k = sample("ick_live_dddd", "dd");
+        assert!(k.permissions.contains(&Permission::Read));
+        assert!(!k.permissions.contains(&Permission::Hmac));
     }
 }

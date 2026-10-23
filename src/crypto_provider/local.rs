@@ -87,17 +87,28 @@ impl CryptoProvider for LocalKeyProvider {
         &self,
         key_id: &str,
         plaintext_key: &[u8],
+        aad: Option<&[u8]>,
     ) -> Result<WrappedKey, IronCryptError> {
         self.ensure_key_id(key_id)?;
         let ciphertext = match &self.public_key {
             #[cfg(feature = "rsa-algo")]
             PublicKey::Rsa(pk) => {
+                if aad.map(|a| !a.is_empty()).unwrap_or(false) {
+                    return Err(IronCryptError::UnsupportedOperation(
+                        "RSA-OAEP DEK wrap cannot bind EncryptionContext; use an ECC key".into(),
+                    ));
+                }
                 let padding = Oaep::new::<Sha256>();
                 pk.encrypt(&mut OsRng, padding, plaintext_key)
                     .map_err(|e| IronCryptError::EncryptionError(e.to_string()))?
             }
             PublicKey::Ecc(pk) => {
-                let encap = ecc_utils::ecies_key_encap(pk, plaintext_key)?;
+                let encap = match aad {
+                    Some(aad) if !aad.is_empty() => {
+                        ecc_utils::ecies_key_encap_with_aad(pk, plaintext_key, aad)?
+                    }
+                    _ => ecc_utils::ecies_key_encap(pk, plaintext_key)?,
+                };
                 // Encode: ephemeral_pk_der_len(u16 BE) || ephemeral_pk_der || encapsulated
                 let eph_der = {
                     use p256::pkcs8::EncodePublicKey;
@@ -130,11 +141,17 @@ impl CryptoProvider for LocalKeyProvider {
         &self,
         key_id: &str,
         wrapped: &[u8],
+        aad: Option<&[u8]>,
     ) -> Result<Vec<u8>, IronCryptError> {
         self.ensure_key_id(key_id)?;
         match &self.private_key {
             #[cfg(feature = "rsa-algo")]
             PrivateKey::Rsa(sk) => {
+                if aad.map(|a| !a.is_empty()).unwrap_or(false) {
+                    return Err(IronCryptError::UnsupportedOperation(
+                        "RSA-OAEP DEK wrap cannot bind EncryptionContext".into(),
+                    ));
+                }
                 let padding = Oaep::new::<Sha256>();
                 sk.decrypt(padding, wrapped)
                     .map_err(|e| IronCryptError::DecryptionError(e.to_string()))
@@ -158,8 +175,13 @@ impl CryptoProvider for LocalKeyProvider {
                     p256::PublicKey::from_public_key_der(eph_der)
                         .map_err(|e| IronCryptError::DecryptionError(e.to_string()))?
                 };
-                ecc_utils::ecies_key_decap(sk, &ephemeral_pk, encapsulated)
-                    .map(|z| z.to_vec())
+                match aad {
+                    Some(aad) if !aad.is_empty() => {
+                        ecc_utils::ecies_key_decap_with_aad(sk, &ephemeral_pk, encapsulated, aad)
+                    }
+                    _ => ecc_utils::ecies_key_decap(sk, &ephemeral_pk, encapsulated),
+                }
+                .map(|z| z.to_vec())
             }
         }
     }
@@ -173,7 +195,7 @@ impl CryptoProvider for LocalKeyProvider {
         // Direct encrypt: wrap a random AES key, then AES-GCM the payload.
         let mut dek = [0u8; 32];
         OsRng.fill_bytes(&mut dek);
-        let wrapped = self.wrap_key(key_id, &dek).await?;
+        let wrapped = self.wrap_key(key_id, &dek, None).await?;
 
         let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&dek));
         let mut nonce = [0u8; 12];
@@ -228,7 +250,7 @@ impl CryptoProvider for LocalKeyProvider {
         let nonce = &ciphertext[4 + wrap_len..4 + wrap_len + 12];
         let body = &ciphertext[4 + wrap_len + 12..];
 
-        let mut dek = self.unwrap_key(key_id, wrapped).await?;
+        let mut dek = self.unwrap_key(key_id, wrapped, None).await?;
         if dek.len() != 32 {
             dek.zeroize();
             return Err(IronCryptError::DecryptionError(
@@ -272,9 +294,41 @@ mod tests {
         )
         .unwrap();
         let dek = b"0123456789abcdef0123456789abcdef";
-        let wrapped = provider.wrap_key("v1", dek).await.unwrap();
-        let recovered = provider.unwrap_key("v1", &wrapped.ciphertext).await.unwrap();
+        let wrapped = provider.wrap_key("v1", dek, None).await.unwrap();
+        let recovered = provider
+            .unwrap_key("v1", &wrapped.ciphertext, None)
+            .await
+            .unwrap();
         assert_eq!(recovered, dek);
+    }
+
+    #[tokio::test]
+    async fn local_ecc_wrap_binds_aad() {
+        let (sk, pk) = generate_ecc_keys().unwrap();
+        let provider = LocalKeyProvider::new(
+            "v1",
+            PublicKey::Ecc(pk),
+            PrivateKey::Ecc(sk),
+        )
+        .unwrap();
+        let dek = b"0123456789abcdef0123456789abcdef";
+        let wrapped = provider
+            .wrap_key("v1", dek, Some(b"tenant-a"))
+            .await
+            .unwrap();
+        let recovered = provider
+            .unwrap_key("v1", &wrapped.ciphertext, Some(b"tenant-a"))
+            .await
+            .unwrap();
+        assert_eq!(recovered, dek);
+        assert!(provider
+            .unwrap_key("v1", &wrapped.ciphertext, Some(b"tenant-b"))
+            .await
+            .is_err());
+        assert!(provider
+            .unwrap_key("v1", &wrapped.ciphertext, None)
+            .await
+            .is_err());
     }
 
     #[tokio::test]

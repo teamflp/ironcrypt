@@ -186,7 +186,7 @@ fn read_passphrase_tty_optional() -> Result<Option<Zeroizing<String>>, IronCrypt
         if s.is_empty() {
             return Ok(None);
         }
-        return Ok(Some(Zeroizing::new(s)));
+        Ok(Some(Zeroizing::new(s)))
     }
     #[cfg(not(feature = "cli"))]
     {

@@ -1,12 +1,12 @@
 # IronCrypt — FFI (API C)
 
-Ce document explique comment appeler IronCrypt **en process** depuis un autre langage, via la bibliothèque dynamique et l’en-tête C [`ironcrypt.h`](ironcrypt.h).
+Ce document explique comment appeler IronCrypt **en process** depuis un autre langage, via la bibliothèque dynamique et l’en-tête C [`ironcrypt.h`](../ironcrypt.h).
 
-Contrairement au [SDK PHP HTTP](sdks/php/README.md) (qui parle à `ironcryptd`), le FFI **charge `libironcrypt` dans le même processus** : pas de démon, pas de Bearer — vous passez les PEM vous‑même.
+Contrairement au [SDK PHP HTTP](../sdks/php/README.md) (qui parle à `ironcryptd`), le FFI **charge `libironcrypt` dans le même processus** : pas de démon, pas de Bearer — vous passez les PEM vous‑même.
 
 ```text
 ┌──────────────────┐     appel natif (C ABI)     ┌─────────────────────┐
-│ Python / Java /  │ ──────────────────────────► │ libironcrypt(.so/    │
+│ Python / Java /  │ ──────────────────────────► │ libironcrypt(.so/   │
 │ C# / C / PHP FFI │   ironcrypt_*.c             │  .dylib / .dll)     │
 └──────────────────┘                             └─────────────────────┘
 ```
@@ -15,7 +15,7 @@ Contrairement au [SDK PHP HTTP](sdks/php/README.md) (qui parle à `ironcryptd`),
 
 | Approche | Intérêt |
 | --- | --- |
-| **HTTP + `ironcryptd`** ([`sdks/php`](sdks/php/), [`sdks/python`](sdks/python/)) | Apps web, microservices, clés centralisées, permissions API |
+| **HTTP + `ironcryptd`** ([`sdks/php`](../sdks/php/), [`sdks/python`](../sdks/python/)) | Apps web, microservices, clés centralisées, permissions API |
 | **FFI / `cdylib`** (ce guide) | CLI natives, services sans HTTP, intégration JVM/.NET/C, latence minimale |
 | **Crate Rust** | Applications Rust (`encrypt_stream`, etc.) |
 
@@ -51,8 +51,8 @@ Artefacts typiques :
 | macOS | `target/release/libironcrypt.dylib` |
 | Windows | `target/release/ironcrypt.dll` |
 
-En-tête de référence : [`ironcrypt.h`](ironcrypt.h).  
-Exemple C natif : [`examples/c_api_usage.c`](examples/c_api_usage.c).
+En-tête de référence : [`ironcrypt.h`](../ironcrypt.h).  
+Exemple C natif : [`examples/c_api_usage.c`](../examples/c_api_usage.c).
 
 ### Compiler / lancer l’exemple C
 
@@ -341,7 +341,7 @@ Placez `libironcrypt` à côté de l’exécutable ou dans le chemin de recherch
 
 ## PHP (extension FFI)
 
-Pour du chiffrement de **fichiers / flux** en PHP, préférez le [SDK HTTP](sdks/php/README.md).  
+Pour du chiffrement de **fichiers / flux** en PHP, préférez le [SDK HTTP](../sdks/php/README.md).  
 L’API C actuelle cible surtout les **mots de passe** ; avec l’extension [`ffi`](https://www.php.net/manual/en/book.ffi.php) :
 
 ```php
@@ -382,4 +382,4 @@ Activez `ffi.enable=true` (ou `preload`) dans `php.ini`. Gérez les fuites : tou
 | Crash / double free | `free()` C au lieu de `ironcrypt_free_string`, ou double free |
 | Verify retourne `-1` | JSON invalide, mauvaise clé, ou passphrase incorrecte |
 | Verify retourne `0` | Mot de passe incorrect (comportement attendu) |
-| Besoin de chiffrer un fichier depuis PHP | Utiliser [`sdks/php`](sdks/php/) + démon, pas cette API C |
+| Besoin de chiffrer un fichier depuis PHP | Utiliser [`sdks/php`](../sdks/php/) + démon, pas cette API C |

@@ -14,15 +14,15 @@ Do **not** tick external-audit checkboxes based on this document.
 
 ## Executive summary
 
-Payment engineering posture is strong. The review found a **Critical** production
-gap (CryptoProvider stream path skipped `EncryptionContext`) plus several **High**
-authz / deploy issues. Highest-severity items that were fixable in-repo were
-patched in the same session; residual risks remain for true external validation.
+Payment engineering posture is strong. The in-repo High findings R1–R5 are
+closed (DEK-wrap context, HSM AES-GCM, HMAC permission, per-principal
+quarantine, authenticated `/tls`). Residual items are medium, or need a lab
+outside this repository.
 
 | Severity | Open (post-fix) | Fixed this session |
 |----------|--------------------|--------------------|
 | Critical | 0 code paths known | EncryptionContext on provider stream; dual-control honesty |
-| High | KMS wrap AAD, HSM CBC-PAD, HMAC oracle, circuit DoS, … | allowedServices fail-closed, Azure AAD reject, FFI Argon2 caps, archive PAX/symlink, metrics Payment bind, compose mlock |
+| High | 0 of R1–R5 | DEK wrap AAD, HSM AES-GCM, HMAC permission, per-principal quarantine, admin `/tls` bearer |
 | Medium+ | See backlog below | Audit chain race, Docker default `payment-daemon` |
 
 ---
@@ -48,12 +48,12 @@ patched in the same session; residual risks remain for true external validation.
 
 | ID | Severity | Topic | Why still open |
 |----|----------|--------|----------------|
-| R1 | High | `wrap_key` has no AAD / KMS EncryptionContext on DEK wrap | Trait + all providers need API change + migration |
-| R2 | High | HSM AES-CBC-PAD (no integrity) allowed under Payment | Needs AES-GCM/KW mechanism + SoftHSM matrix |
-| R3 | High | HMAC use-secret is a signing oracle (`Read` only) | Needs new permission + domain-separated input |
-| R4 | High | Global provider circuit DoS by one API key | Needs per-principal quarantine |
-| R5 | High | Admin `/tls` unauthenticated (path + errors) | Needs token or Unix socket |
-| R6 | Medium | ECIES wrap AAD empty; content stream no AAD | Protocol change / HPKE |
+| R1 | Fixed | `wrap_key` binds `EncryptionContext` (KMS context, Vault/GCP AAD, Azure frame, local ECIES) | Legacy unbound wraps still open outside Payment |
+| R2 | Fixed | HSM writes AES-GCM (`ICG1`). Payment rejects AES-CBC-PAD | Live SoftHSM matrix still an external check |
+| R3 | Fixed | `POST .../hmac` requires permission `hmac`; input is domain-separated | — |
+| R4 | Fixed | One API key quarantines only itself. Global circuit needs two principals | — |
+| R5 | Fixed | `GET /tls` requires `Authorization: Bearer` from `IRONCRYPT_ADMIN_TOKEN` | — |
+| R6 | Medium | Content-stream ECIES AAD still empty on the local PEM path | Protocol change / HPKE |
 | R7 | Medium | Dual-control approvals unsigned + unused by daemon | Product wiring + signatures |
 | R8 | Medium | Streaming HTTP 200 before crypto finishes | Protocol / trailers |
 | R9 | Info | HPKE migration deferred | External crypto review first |
@@ -64,10 +64,9 @@ patched in the same session; residual risks remain for true external validation.
 
 Use [`AUDIT_ENGAGEMENT.md`](./AUDIT_ENGAGEMENT.md). Priority asks:
 
-1. Formal ECIES-v1 vs HPKE (findings R1, R6, R9).
-2. Live SoftHSM / cloud HSM CBC malleability (R2).
-3. Staging pentest: authz (`allowedServices`), HMAC oracle (R3), circuit DoS (R4), admin/metrics exposure (R5).
-4. Purple-team: gateway compromise + shared KMS key without EncryptionContext on wrap.
+1. Formal ECIES-v1 vs HPKE (findings R6, R9). DEK wrap now binds context (R1).
+2. Live SoftHSM confirmation that the token accepts `CKM_AES_GCM` (R2 is AES-GCM in code; CBC is rejected under Payment).
+3. Staging pentest: confirm `hmac` is required, one API key cannot open the global circuit, and `/tls` rejects a missing bearer.
 
 ---
 

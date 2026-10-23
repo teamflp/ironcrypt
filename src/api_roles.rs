@@ -10,7 +10,7 @@
 //! | [`fingerprint`] | Secret-keyed integrity MAC | Confidentiality |
 //! | Tokenization | **Out of scope** — see [`tokenization`] | — |
 //!
-//! See also `PROTOCOL.md` and `PAYMENT_SECURITY.md` at the crate root.
+//! See also `docs/PROTOCOL.md` and `docs/PAYMENT_SECURITY.md`.
 
 use crate::IronCryptError;
 
@@ -43,11 +43,11 @@ pub mod fingerprint {
 /// Tokenization / PAN vault — **intentionally not implemented**.
 ///
 /// Use a dedicated tokenization service. IronCrypt must not receive CVV/PIN or
-/// be treated as a surrogate PAN store. [`reject_cardholder_auth_data`] helps
+/// be treated as a surrogate PAN store. [`tokenization::reject_cardholder_auth_data`] helps
 /// fail closed when callers accidentally pass digit-only card-shaped input.
 ///
-/// The [`TokenizationProvider`] trait exists so Payment apps can depend on a
-/// clear type boundary — the only in-tree impl is [`RefusingTokenizationProvider`].
+/// The [`tokenization::TokenizationProvider`] trait exists so Payment apps can depend on a
+/// clear type boundary — the only in-tree impl is [`tokenization::RefusingTokenizationProvider`].
 pub mod tokenization {
     use super::IronCryptError;
     use async_trait::async_trait;
@@ -100,13 +100,13 @@ never store CVV/PIN; never use IronCrypt as a PAN vault.";
     /// This is a safety rail, not a complete CHD detector.
     pub fn reject_cardholder_auth_data(value: &str) -> Result<(), IronCryptError> {
         let digits: String = value.chars().filter(|c| c.is_ascii_digit()).collect();
-        if digits.len() == 3 || digits.len() == 4 {
-            if value.chars().all(|c| c.is_ascii_digit() || c.is_whitespace()) {
-                return Err(IronCryptError::UnsupportedOperation(
-                    "refusing CVV/PIN-shaped input; IronCrypt must not store cardholder auth data"
-                        .into(),
-                ));
-            }
+        if (digits.len() == 3 || digits.len() == 4)
+            && value.chars().all(|c| c.is_ascii_digit() || c.is_whitespace())
+        {
+            return Err(IronCryptError::UnsupportedOperation(
+                "refusing CVV/PIN-shaped input; IronCrypt must not store cardholder auth data"
+                    .into(),
+            ));
         }
         if (13..=19).contains(&digits.len()) && luhn_ok(&digits) {
             return Err(IronCryptError::UnsupportedOperation(
@@ -131,7 +131,7 @@ never store CVV/PIN; never use IronCrypt as a PAN vault.";
             sum += n;
             alt = !alt;
         }
-        sum % 10 == 0
+        sum.is_multiple_of(10)
     }
 
     #[cfg(test)]

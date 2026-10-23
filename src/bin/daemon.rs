@@ -15,6 +15,7 @@ use elliptic_curve::subtle::ConstantTimeEq;
 use futures::TryStreamExt;
 use hmac::{Hmac, Mac};
 use ironcrypt::{
+    admin_auth::bearer_token_matches,
     audit::{sanitize_error_message, sanitize_secret_name, AuditEvent, Operation, Outcome},
     auth::{ApiKeyConfig, AuthenticatedPrincipal, Permission},
     config::IronCryptConfig,
@@ -22,7 +23,8 @@ use ironcrypt::{
     crypto_provider::{self, CryptoProvider},
     decrypt_stream, encrypt_stream_with_context,
     encrypt::{
-        decrypt_stream_with_dek, encrypt_stream_with_dek, find_recipient, RecipientInfo,
+        decode_wrap_aad, decrypt_stream_with_dek, encode_wrap_aad, encrypt_stream_with_dek,
+        enforce_dek_wrap_binding, find_recipient, stream_header_context, RecipientInfo,
         StreamHeader,
     },
     keys::{PrivateKey, PublicKey},
@@ -35,8 +37,9 @@ use ironcrypt::{
     payment::PaymentSecurityProfile,
     rate_limit::{self, RateLimiter},
     resilience::{
-        with_retry, with_timeout, CircuitBreaker, RetryPolicy, DEFAULT_PROVIDER_MAX_ATTEMPTS,
+        with_retry, with_timeout, PrincipalQuarantine, RetryPolicy, DEFAULT_PROVIDER_MAX_ATTEMPTS,
     },
+    use_secret::use_secret_message,
     secrets::SecretStore,
     Argon2Config, IronCryptError,
 };
@@ -150,8 +153,8 @@ struct AppState {
     rate_limiter: Arc<dyn RateLimiter>,
     /// Bounds concurrent `spawn_blocking` crypto work.
     crypto_sem: Arc<Semaphore>,
-    /// Opens after consecutive CryptoProvider failures.
-    provider_circuit: Arc<CircuitBreaker>,
+    /// Per-principal quarantine. The shared circuit opens only after two principals fail.
+    provider_circuit: Arc<PrincipalQuarantine>,
     /// Wall-clock budget for one KMS/HSM/Vault wrap/unwrap.
     provider_timeout: Duration,
     /// Controlled retry for transient provider faults.
@@ -161,6 +164,8 @@ struct AppState {
     max_body_bytes: usize,
     /// Present when serving HTTPS (shared with admin `/tls` status).
     tls: Option<TlsMaterial>,
+    /// Bearer token required by `GET /tls`. Never logged.
+    admin_token: Option<String>,
 }
 
 /// Command-line arguments for the daemon.
@@ -299,8 +304,8 @@ struct Args {
     #[arg(long, env = "IRONCRYPT_ALLOW_INSECURE_HTTP", default_value_t = false)]
     allow_insecure_http: bool,
 
-    /// Admin listener port (`0` = disabled). Serves `/health`, `/ready`, `/tls`
-    /// without API-key auth. Bind to loopback only in production.
+    /// Admin listener port (`0` = disabled). `/health` and `/ready` stay open
+    /// for probes. `GET /tls` requires `IRONCRYPT_ADMIN_TOKEN`. Bind to loopback.
     #[arg(long, env = "IRONCRYPT_ADMIN_PORT", default_value_t = 0)]
     admin_port: u16,
 
@@ -631,7 +636,7 @@ async fn main() {
         secret_stores: Arc::new(secret_stores),
         rate_limiter,
         crypto_sem: Arc::new(Semaphore::new(crypto_slots)),
-        provider_circuit: Arc::new(CircuitBreaker::new(
+        provider_circuit: Arc::new(PrincipalQuarantine::new(
             args.circuit_failure_threshold,
             Duration::from_secs(args.circuit_cooldown_secs.max(1)),
         )),
@@ -642,6 +647,10 @@ async fn main() {
         },
         max_body_bytes: args.max_body_bytes,
         tls: tls_material.clone(),
+        admin_token: std::env::var("IRONCRYPT_ADMIN_TOKEN")
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty()),
     };
 
     let cors_layer = build_cors_layer(&args.cors_origins);
@@ -748,6 +757,17 @@ async fn main() {
             );
             return;
         }
+        if state.admin_token.is_none() {
+            if PaymentSecurityProfile::is_enabled() {
+                tracing::error!(
+                    "Payment profile: IRONCRYPT_ADMIN_TOKEN is required when the admin listener is enabled"
+                );
+                return;
+            }
+            tracing::warn!(
+                "IRONCRYPT_ADMIN_TOKEN is unset; GET /tls will reject every request"
+            );
+        }
         let admin_ip: std::net::IpAddr = match args.admin_host.parse() {
             Ok(a) => a,
             Err(e) => {
@@ -758,7 +778,10 @@ async fn main() {
         let admin_addr = SocketAddr::new(admin_ip, args.admin_port);
         match TcpListener::bind(&admin_addr).await {
             Ok(admin_listener) => {
-                tracing::info!("admin listener on {} (HTTP, no auth)", admin_addr);
+                tracing::info!(
+                    "admin listener on {} (HTTP; /tls requires IRONCRYPT_ADMIN_TOKEN)",
+                    admin_addr
+                );
                 let admin_state = state.clone();
                 tokio::spawn(async move {
                     let admin_app = Router::new()
@@ -1049,6 +1072,7 @@ fn build_cors_layer(origins: &str) -> CorsLayer {
         .max_age(Duration::from_secs(600))
 }
 
+#[allow(clippy::result_large_err)] // axum middleware: Err is also a Response
 async fn rate_limit_middleware(
     State(state): State<AppState>,
     req: Request<Body>,
@@ -1201,7 +1225,7 @@ fn body_stream_reader(
 ) -> StreamReader<impl futures::Stream<Item = Result<bytes::Bytes, io::Error>> + Send, bytes::Bytes>
 {
     let stream = req.into_body().into_data_stream().map_err(|e| {
-        io::Error::new(io::ErrorKind::Other, e.to_string())
+        io::Error::other(e.to_string())
     });
     StreamReader::new(stream)
 }
@@ -1225,18 +1249,38 @@ async fn acquire_crypto_permit(
 }
 
 /// Wrap/unwrap via CryptoProvider with circuit breaker + timeout + controlled retry.
+fn quarantine_id(req: &Request<Body>) -> String {
+    req.extensions()
+        .get::<Arc<AuthenticatedPrincipal>>()
+        .and_then(|p| p.key_id.clone().filter(|s| !s.is_empty()))
+        .unwrap_or_else(|| "legacy-key".into())
+}
+
+fn note_provider_result(state: &AppState, principal: &str, err: Option<&ironcrypt::IronCryptError>) {
+    match err {
+        None => state.provider_circuit.record_success(principal),
+        Some(ironcrypt::IronCryptError::ProviderError(_)) => {
+            state.provider_circuit.record_failure(principal);
+        }
+        Some(_) => {}
+    }
+}
+
 async fn provider_wrap(
     state: &AppState,
     provider: &Arc<dyn CryptoProvider>,
     key_id: &str,
     dek: &[u8],
+    principal: &str,
+    aad: Option<&[u8]>,
 ) -> Result<ironcrypt::WrappedKey, StatusCode> {
-    state.provider_circuit.guard().map_err(|e| {
+    state.provider_circuit.guard(principal).map_err(|e| {
         tracing::warn!("provider circuit open: {}", sanitize_error_message(&e));
         StatusCode::SERVICE_UNAVAILABLE
     })?;
     let key_id = key_id.to_string();
     let dek = zeroize::Zeroizing::new(dek.to_vec());
+    let aad = aad.map(|b| b.to_vec());
     let provider = provider.clone();
     let timeout = state.provider_timeout;
     let started = Instant::now();
@@ -1245,17 +1289,20 @@ async fn provider_wrap(
         let provider = provider.clone();
         let key_id = key_id.clone();
         let dek = dek.clone();
-        async move { with_timeout(timeout, provider.wrap_key(&key_id, &dek)).await }
+        let aad = aad.clone();
+        async move {
+            with_timeout(timeout, provider.wrap_key(&key_id, &dek, aad.as_deref())).await
+        }
     })
     .await
     {
         Ok(wrapped) => {
-            state.provider_circuit.record_success();
+            note_provider_result(state, principal, None);
             ironcrypt::metrics::provider_op_finish(name, "wrap", started, true);
             Ok(wrapped)
         }
         Err(e) => {
-            state.provider_circuit.record_failure();
+            note_provider_result(state, principal, Some(&e));
             ironcrypt::metrics::provider_op_finish(name, "wrap", started, false);
             tracing::error!("DEK wrap failed: {}", sanitize_error_message(&e));
             Err(map_crypto_error(&e))
@@ -1268,13 +1315,16 @@ async fn provider_unwrap(
     provider: &Arc<dyn CryptoProvider>,
     key_id: &str,
     wrapped: &[u8],
+    principal: &str,
+    aad: Option<&[u8]>,
 ) -> Result<zeroize::Zeroizing<Vec<u8>>, StatusCode> {
-    state.provider_circuit.guard().map_err(|e| {
+    state.provider_circuit.guard(principal).map_err(|e| {
         tracing::warn!("provider circuit open: {}", sanitize_error_message(&e));
         StatusCode::SERVICE_UNAVAILABLE
     })?;
     let key_id = key_id.to_string();
     let wrapped = wrapped.to_vec();
+    let aad = aad.map(|b| b.to_vec());
     let provider = provider.clone();
     let timeout = state.provider_timeout;
     let started = Instant::now();
@@ -1283,17 +1333,24 @@ async fn provider_unwrap(
         let provider = provider.clone();
         let key_id = key_id.clone();
         let wrapped = wrapped.clone();
-        async move { with_timeout(timeout, provider.unwrap_key(&key_id, &wrapped)).await }
+        let aad = aad.clone();
+        async move {
+            with_timeout(
+                timeout,
+                provider.unwrap_key(&key_id, &wrapped, aad.as_deref()),
+            )
+            .await
+        }
     })
     .await
     {
         Ok(dek) => {
-            state.provider_circuit.record_success();
+            note_provider_result(state, principal, None);
             ironcrypt::metrics::provider_op_finish(name, "unwrap", started, true);
             Ok(zeroize::Zeroizing::new(dek))
         }
         Err(e) => {
-            state.provider_circuit.record_failure();
+            note_provider_result(state, principal, Some(&e));
             ironcrypt::metrics::provider_op_finish(name, "unwrap", started, false);
             tracing::error!("DEK unwrap failed: {}", sanitize_error_message(&e));
             Err(map_crypto_error(&e))
@@ -1376,14 +1433,14 @@ async fn set_secret_handler(
     }
 }
 
-/// Use-secret: HMAC-SHA256(body) with the store secret as key — never returns the secret.
+/// Use-secret: domain-separated HMAC-SHA256. Requires `hmac`, not `read`.
 async fn hmac_secret_handler(
     State(state): State<AppState>,
     Path((service_name, secret_key)): Path<(String, String)>,
     permissions: Extension<Arc<Vec<Permission>>>,
     body: Bytes,
 ) -> Result<Json<HmacResponse>, StatusCode> {
-    if !permissions.contains(&Permission::Read) {
+    if !permissions.contains(&Permission::Hmac) {
         return Err(StatusCode::FORBIDDEN);
     }
 
@@ -1409,7 +1466,7 @@ async fn hmac_secret_handler(
         tracing::error!("HMAC key rejected (empty or invalid length)");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
-    mac.update(&body);
+    mac.update(&use_secret_message(&service_name, &secret_key, &body));
     let tag = mac.finalize().into_bytes();
     secret.zeroize();
 
@@ -1469,8 +1526,24 @@ async fn admin_ready(State(state): State<AppState>) -> Result<Json<ReadyResponse
     }))
 }
 
-async fn admin_tls_status(State(state): State<AppState>) -> Json<TlsStatusResponse> {
-    match &state.tls {
+async fn admin_tls_status(
+    State(state): State<AppState>,
+    req: Request<Body>,
+) -> Result<Json<TlsStatusResponse>, StatusCode> {
+    let presented = req
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .unwrap_or("");
+    let authorized = state
+        .admin_token
+        .as_deref()
+        .is_some_and(|expected| bearer_token_matches(presented, expected));
+    if !authorized {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
+    let body = match &state.tls {
         None => Json(TlsStatusResponse {
             enabled: false,
             last_reload_unix: None,
@@ -1496,7 +1569,8 @@ async fn admin_tls_status(State(state): State<AppState>) -> Json<TlsStatusRespon
                 cert: Some(tls.cert.display().to_string()),
             })
         }
-    }
+    };
+    Ok(body)
 }
 
 /// Extract optional stream password; rejected under Payment.
@@ -1578,6 +1652,7 @@ async fn write_handler(
     let mut password = extract_password_header(&req)?;
     let hash_password = !password.is_empty();
     let enc_context = extract_encryption_context(&req)?;
+    let principal = quarantine_id(&req);
 
     let async_in = body_stream_reader(req);
     let (async_out_writer, async_out_reader) = duplex(64 * 1024);
@@ -1590,7 +1665,20 @@ async fn write_handler(
     if let Some(provider) = state.crypto_provider.clone() {
         let mut dek = [0u8; 32];
         OsRng.fill_bytes(&mut dek);
-        let wrapped = match provider_wrap(&state, &provider, &key_version, &dek).await {
+        let wrap_aad = enc_context
+            .as_ref()
+            .map(|c| c.to_aad_bytes())
+            .filter(|b| !b.is_empty());
+        let wrapped = match provider_wrap(
+            &state,
+            &provider,
+            &key_version,
+            &dek,
+            &principal,
+            wrap_aad.as_deref(),
+        )
+        .await
+        {
             Ok(w) => w,
             Err(e) => {
                 dek.zeroize();
@@ -1602,6 +1690,7 @@ async fn write_handler(
             provider: provider.name().to_string(),
             key_id: wrapped.key_id,
             encrypted_symmetric_key: B64.encode(&wrapped.ciphertext),
+            wrap_aad: encode_wrap_aad(wrap_aad.as_deref()),
         };
         tokio::task::spawn_blocking(move || {
             let _permit = permit;
@@ -1730,6 +1819,7 @@ async fn read_handler(
     let started = Instant::now();
 
     let password = extract_password_header(&req)?;
+    let principal = quarantine_id(&req);
 
     let mut async_in = body_stream_reader(req);
     let key_version = state.key_version.clone();
@@ -1751,28 +1841,51 @@ async fn read_handler(
             tracing::error!("No recipient for key_version {}", key_version);
             StatusCode::BAD_REQUEST
         })?;
-        let (key_id, wrapped_b64) = match recipient {
+        let (key_id, wrapped_b64, wrap_aad_field) = match recipient {
             RecipientInfo::Provider {
                 key_id,
                 encrypted_symmetric_key,
                 provider: prov,
+                wrap_aad,
                 ..
             } => {
                 if prov != provider.name() {
                     tracing::error!("Provider mismatch: {} vs {}", prov, provider.name());
                     return Err(StatusCode::BAD_REQUEST);
                 }
-                (key_id.clone(), encrypted_symmetric_key.clone())
+                (
+                    key_id.clone(),
+                    encrypted_symmetric_key.clone(),
+                    wrap_aad.clone(),
+                )
             }
             _ => {
                 tracing::error!("Expected Provider recipient for CryptoProvider mode");
                 return Err(StatusCode::BAD_REQUEST);
             }
         };
+        let bound = decode_wrap_aad(&wrap_aad_field).map_err(|e| {
+            tracing::error!("wrap AAD rejected: {}", sanitize_error_message(&e));
+            StatusCode::BAD_REQUEST
+        })?;
+        enforce_dek_wrap_binding(bound.as_deref(), stream_header_context(&header)).map_err(
+            |e| {
+                tracing::error!("DEK wrap binding rejected: {}", sanitize_error_message(&e));
+                StatusCode::BAD_REQUEST
+            },
+        )?;
         let wrapped = B64
             .decode(wrapped_b64.as_bytes())
             .map_err(|_| StatusCode::BAD_REQUEST)?;
-        let mut dek = provider_unwrap(&state, &provider, &key_id, &wrapped).await?;
+        let mut dek = provider_unwrap(
+            &state,
+            &provider,
+            &key_id,
+            &wrapped,
+            &principal,
+            bound.as_deref(),
+        )
+        .await?;
         tokio::task::spawn_blocking(move || {
             let _permit = permit;
             let mut audit_event = AuditEvent::new(Operation::Read);

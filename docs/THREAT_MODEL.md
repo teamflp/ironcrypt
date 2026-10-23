@@ -15,10 +15,10 @@ Companion docs: [`PAYMENT_SECURITY.md`](./PAYMENT_SECURITY.md),
 - Confidentiality and integrity of application secrets and payment data at rest
   (hybrid envelope encryption: AES-256-GCM / XChaCha20-Poly1305 + ECC or
   CryptoProvider-wrapped DEKs).
-- Binding of ciphertext to an application [`EncryptionContext`](./src/context.rs)
+- Binding of ciphertext to an application [`EncryptionContext`](../src/context.rs)
   (tenant / purpose / record) via AEAD AAD.
 - Authentication of daemon callers via API keys (and mTLS under Payment).
-- Isolation of private key material behind a [`CryptoProvider`](./src/crypto_provider/)
+- Isolation of private key material behind a [`CryptoProvider`](../src/crypto_provider/)
   (KMS / Vault Transit / HSM) when configured.
 - Operational hardening of `ironcryptd`: body limits, concurrency caps, request
   timeouts, provider timeouts, circuit breaker, TLS 1.2+.
@@ -82,7 +82,7 @@ Companion docs: [`PAYMENT_SECURITY.md`](./PAYMENT_SECURITY.md),
 
 - **Confidentiality**: plaintext unreadable without DEK unwrap capability.
 - **Integrity / authenticity**: AEAD tag failure on corrupt or substituted AAD.
-- **DEK rewrap**: [`IronCrypt::rewrap_data`](./src/ironcrypt.rs) changes only
+- **DEK rewrap**: [`IronCrypt::rewrap_data`](../src/ironcrypt.rs) changes only
   recipient wrapping; payload ciphertext and nonce stay unchanged.
 - **Forward secrecy of DEKs**: not claimed across process lifetime; rotate keys
   and rewrap when KEK versions change.

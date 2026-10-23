@@ -3,7 +3,7 @@
     "description": "DEMO ONLY — live key (replace with `ironcrypt generate-api-key`)",
     "keyId": "ick_live_REPLACE",
     "keyHash": "REPLACE_WITH_SHA512_HEX_OF_YOUR_API_KEY",
-    "permissions": ["write", "read"],
+    "permissions": ["write", "read", "hmac"],
     "createdAt": "2026-01-01T00:00:00Z",
     "notBefore": "2026-01-01T00:00:00Z",
     "expiresAt": "2026-12-31T23:59:59Z"
@@ -12,7 +12,7 @@
     "description": "DEMO ONLY — overlapping rotation sibling (both usable until old expiresAt)",
     "keyId": "ick_live_NEWER01",
     "keyHash": "REPLACE_WITH_SHA512_HEX_OF_ROTATED_KEY",
-    "permissions": ["write", "read"],
+    "permissions": ["write", "read", "hmac"],
     "createdAt": "2026-06-01T00:00:00Z",
     "notBefore": "2026-06-01T00:00:00Z",
     "expiresAt": "2027-06-01T00:00:00Z",
@@ -28,7 +28,7 @@
     "revokedAt": "2025-06-01T00:00:00Z"
   },
   {
-    "description": "DEMO ONLY — full access expands to read/write/delete/update",
+    "description": "DEMO ONLY — full access expands to read/write/delete/update/hmac",
     "keyHash": "REPLACE_WITH_SHA512_HEX_OF_YOUR_API_KEY",
     "permissions": ["full"],
     "allowedServices": ["aws", "azure", "vault"]

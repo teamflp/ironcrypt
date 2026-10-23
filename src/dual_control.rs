@@ -147,7 +147,13 @@ mod tests {
         let intent = b"revoke:ick_live_old";
         let a = Approval::new("alice", AdminAction::RevokeApiKey, intent);
         let b = Approval::new("bob", AdminAction::RevokeApiKey, intent);
-        assert!(verify_quorum(&policy, AdminAction::RevokeApiKey, intent, &[a.clone()]).is_err());
+        assert!(verify_quorum(
+            &policy,
+            AdminAction::RevokeApiKey,
+            intent,
+            std::slice::from_ref(&a)
+        )
+        .is_err());
         assert!(verify_quorum(&policy, AdminAction::RevokeApiKey, intent, &[a, b]).is_ok());
     }
 

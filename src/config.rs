@@ -75,7 +75,7 @@ pub enum AuditSigningMode {
     /// HMAC-SHA256 key from environment (`signing_hmac_env`, default `IRONCRYPT_AUDIT_HMAC_KEY`).
     /// Preferred for Payment when CryptoProvider signing is not wired.
     HmacEnv,
-    /// Seal the file digest with the configured [`CryptoProvider`] (`signing_key_id`).
+    /// Seal the file digest with the configured [`crate::CryptoProvider`] (`signing_key_id`).
     /// Private key material never lands on disk as PEM.
     Provider,
 }

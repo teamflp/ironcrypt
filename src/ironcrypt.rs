@@ -604,14 +604,22 @@ impl IronCrypt {
             };
 
             let recipient_info = if let Some(provider) = &self.crypto_provider {
+                let wrap_aad_bytes = context
+                    .map(|c| c.to_aad_bytes())
+                    .filter(|b| !b.is_empty());
                 let wrapped = provider
-                    .wrap_key(&self.key_version, symmetric_key.as_ref())
+                    .wrap_key(
+                        &self.key_version,
+                        symmetric_key.as_ref(),
+                        wrap_aad_bytes.as_deref(),
+                    )
                     .await?;
                 RecipientInfo::Provider {
                     key_version: self.key_version.clone(),
                     provider: provider.name().to_string(),
                     key_id: wrapped.key_id,
                     encrypted_symmetric_key: base64_standard.encode(wrapped.ciphertext),
+                    wrap_aad: crate::encrypt::encode_wrap_aad(wrap_aad_bytes.as_deref()),
                 }
             } else {
                 match self.public_key.as_ref().ok_or_else(|| {
@@ -719,6 +727,7 @@ impl IronCrypt {
                     provider: prov_name,
                     key_id,
                     encrypted_symmetric_key,
+                    wrap_aad,
                     ..
                 } => {
                     let provider = self.crypto_provider.as_ref().ok_or_else(|| {
@@ -732,17 +741,19 @@ impl IronCrypt {
                             provider.name()
                         )));
                     }
+                    let bound = crate::encrypt::decode_wrap_aad(wrap_aad)?;
+                    crate::encrypt::enforce_dek_wrap_binding(
+                        bound.as_deref(),
+                        ed.context.as_ref(),
+                    )?;
                     let wrapped = base64_standard.decode(encrypted_symmetric_key)?;
-                    zeroizing_vec(provider.unwrap_key(key_id, &wrapped).await?)
+                    zeroizing_vec(
+                        provider
+                            .unwrap_key(key_id, &wrapped, bound.as_deref())
+                            .await?,
+                    )
                 }
-                RecipientInfo::Rsa {
-                    encrypted_symmetric_key: _,
-                    ..
-                }
-                | RecipientInfo::Ecc {
-                    encrypted_symmetric_key: _,
-                    ..
-                } => {
+                RecipientInfo::Rsa { .. } | RecipientInfo::Ecc { .. } => {
                     let private_key_path =
                         format!("{}/private_key_{}.pem", self.key_directory, key_version);
                     let mut passphrase = self.get_passphrase()?;
@@ -882,6 +893,7 @@ impl IronCrypt {
                     provider: prov_name,
                     key_id,
                     encrypted_symmetric_key,
+                    wrap_aad,
                     ..
                 } => {
                     let provider = self.crypto_provider.as_ref().ok_or_else(|| {
@@ -895,8 +907,17 @@ impl IronCrypt {
                             provider.name()
                         )));
                     }
+                    let bound = crate::encrypt::decode_wrap_aad(wrap_aad)?;
+                    crate::encrypt::enforce_dek_wrap_binding(
+                        bound.as_deref(),
+                        ed.context.as_ref(),
+                    )?;
                     let wrapped = base64_standard.decode(encrypted_symmetric_key)?;
-                    zeroizing_vec(provider.unwrap_key(key_id, &wrapped).await?)
+                    zeroizing_vec(
+                        provider
+                            .unwrap_key(key_id, &wrapped, bound.as_deref())
+                            .await?,
+                    )
                 }
                 RecipientInfo::Rsa { key_version, .. }
                 | RecipientInfo::Ecc { key_version, .. } => {
@@ -978,12 +999,20 @@ impl IronCrypt {
                 }
             } else if let Some(provider) = &self.crypto_provider {
                 let wrap_id = new_provider_key_id.unwrap_or(new_key_version);
-                let wrapped = provider.wrap_key(wrap_id, &symmetric_key).await?;
+                let wrap_aad_bytes = ed
+                    .context
+                    .as_ref()
+                    .map(|c| c.to_aad_bytes())
+                    .filter(|b| !b.is_empty());
+                let wrapped = provider
+                    .wrap_key(wrap_id, &symmetric_key, wrap_aad_bytes.as_deref())
+                    .await?;
                 RecipientInfo::Provider {
                     key_version: new_key_version.to_string(),
                     provider: provider.name().to_string(),
                     key_id: wrapped.key_id,
                     encrypted_symmetric_key: base64_standard.encode(wrapped.ciphertext),
+                    wrap_aad: crate::encrypt::encode_wrap_aad(wrap_aad_bytes.as_deref()),
                 }
             } else {
                 return Err(IronCryptError::ConfigurationError(

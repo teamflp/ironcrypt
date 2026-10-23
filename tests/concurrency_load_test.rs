@@ -37,9 +37,9 @@ async fn parallel_local_provider_wrap_unwrap() {
             let mut dek = [0u8; 32];
             dek[0] = i as u8;
             dek[31] = 0xff;
-            let wrapped = provider.wrap_key("v1", &dek).await.expect("wrap");
+            let wrapped = provider.wrap_key("v1", &dek, None).await.expect("wrap");
             let plain = provider
-                .unwrap_key(&wrapped.key_id, &wrapped.ciphertext)
+                .unwrap_key(&wrapped.key_id, &wrapped.ciphertext, None)
                 .await
                 .expect("unwrap");
             assert_eq!(plain.as_slice(), &dek);
@@ -81,7 +81,7 @@ async fn parallel_encrypt_decrypt_streams() {
             .expect("encrypt");
             encrypted.set_position(0);
             let mut out = Cursor::new(Vec::new());
-            decrypt_stream(&mut encrypted, &mut out, &*sk, "v1", "", None).expect("decrypt");
+            decrypt_stream(&mut encrypted, &mut out, &sk, "v1", "", None).expect("decrypt");
             assert_eq!(out.into_inner(), payload);
         }));
     }

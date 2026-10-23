@@ -95,7 +95,8 @@ jobs:
       - name: Install cargo-audit and cargo-deny
         uses: taiki-e/install-action@7ea888af71a31437ad4e71c62d021b3bb2728ea9 # v2.49.3
         with:
-          tool: cargo-audit,cargo-deny
+          # 0.22+ required to parse CVSS:4.0 vectors in advisory-db
+          tool: cargo-audit@0.22.2,cargo-deny
       - name: cargo audit
         run: cargo audit
       - name: cargo deny (default graph)
@@ -144,7 +145,9 @@ jobs:
       - name: Generate CycloneDX SBOM
         run: |
           mkdir -p target/sbom
-          cargo cyclonedx -f json --output-cdx target/sbom/ironcrypt.cdx.json
+          # cargo-cyclonedx ≥0.5 dropped --output-cdx; default output is bom.json
+          cargo cyclonedx -f json
+          mv bom.json target/sbom/ironcrypt.cdx.json
       - uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5.0
         with:
           name: ironcrypt-sbom

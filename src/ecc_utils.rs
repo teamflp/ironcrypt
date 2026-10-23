@@ -1,6 +1,6 @@
 use crate::IronCryptError;
 use crate::payment::PaymentSecurityProfile;
-use aes_gcm::aead::{Aead, KeyInit};
+use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes256Gcm, Key, Nonce};
 use hkdf::Hkdf;
 use p256::ecdh;
@@ -80,7 +80,7 @@ const ECIES_LEGACY_NONCE: &[u8; ECIES_NONCE_LEN] = b"ironcrypt-iv";
 
 /// Domain-separated HKDF info for ECIES KEK derivation (ECIES-v1).
 ///
-/// See [`PROTOCOL.md`](../../PROTOCOL.md).
+/// See [`PROTOCOL.md`](../docs/PROTOCOL.md).
 pub const ECIES_HKDF_INFO_V1: &[u8] =
     b"ironcrypt-ecies-v1|usage=kek|alg=aes-256-gcm|curve=p256";
 
@@ -135,6 +135,86 @@ pub fn ecies_key_encap(
         ephemeral_pk,
         encapsulated_key,
     })
+}
+
+/// Same as [`ecies_key_encap`], but the DEK is bound to `aad` (AES-GCM).
+///
+/// A different `aad` on decapsulation fails. Used for provider DEK wraps.
+pub fn ecies_key_encap_with_aad(
+    recipient_pk: &PublicKey,
+    symmetric_key: &[u8],
+    aad: &[u8],
+) -> Result<EciesKek, IronCryptError> {
+    use rand::RngCore;
+
+    if aad.is_empty() {
+        return Err(IronCryptError::EncryptionError(
+            "ECIES wrap AAD must be non-empty; use ecies_key_encap for unbound wraps".into(),
+        ));
+    }
+
+    let ephemeral_sk = p256::ecdh::EphemeralSecret::random(&mut OsRng);
+    let ephemeral_pk = ephemeral_sk.public_key();
+    let shared_secret = ephemeral_sk.diffie_hellman(recipient_pk);
+
+    let hkdf = Hkdf::<Sha256>::new(None, shared_secret.raw_secret_bytes().as_ref());
+    let mut kek = Zeroizing::new([0u8; 32]);
+    hkdf.expand(ECIES_HKDF_INFO_V1, kek.as_mut())?;
+
+    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(kek.as_ref()));
+    let mut nonce_bytes = [0u8; ECIES_NONCE_LEN];
+    OsRng.fill_bytes(&mut nonce_bytes);
+    let ciphertext = cipher
+        .encrypt(
+            Nonce::from_slice(&nonce_bytes),
+            Payload {
+                msg: symmetric_key,
+                aad,
+            },
+        )
+        .map_err(|e| IronCryptError::EncryptionError(e.to_string()))?;
+
+    let mut encapsulated_key = Vec::with_capacity(ECIES_NONCE_LEN + ciphertext.len());
+    encapsulated_key.extend_from_slice(&nonce_bytes);
+    encapsulated_key.extend_from_slice(&ciphertext);
+
+    Ok(EciesKek {
+        ephemeral_pk,
+        encapsulated_key,
+    })
+}
+
+/// Decapsulates a DEK that was encapsulated with [`ecies_key_encap_with_aad`].
+pub fn ecies_key_decap_with_aad(
+    recipient_sk: &SecretKey,
+    ephemeral_pk: &PublicKey,
+    encapsulated_key: &[u8],
+    aad: &[u8],
+) -> Result<Zeroizing<Vec<u8>>, IronCryptError> {
+    if aad.is_empty() || encapsulated_key.len() <= ECIES_NONCE_LEN {
+        return Err(IronCryptError::DecryptionError(
+            "ECIES AAD decapsulation rejected".into(),
+        ));
+    }
+    let shared_secret =
+        ecdh::diffie_hellman(recipient_sk.to_nonzero_scalar(), ephemeral_pk.as_affine());
+    let hkdf = Hkdf::<Sha256>::new(None, shared_secret.raw_secret_bytes().as_ref());
+    let mut kek = Zeroizing::new([0u8; 32]);
+    hkdf.expand(ECIES_HKDF_INFO_V1, kek.as_mut())?;
+    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(kek.as_ref()));
+    let (nonce, ciphertext) = encapsulated_key.split_at(ECIES_NONCE_LEN);
+    cipher
+        .decrypt(
+            Nonce::from_slice(nonce),
+            Payload {
+                msg: ciphertext,
+                aad,
+            },
+        )
+        .map(zeroizing_vec)
+        .map_err(|_| {
+            IronCryptError::DecryptionError("ECIES AAD decapsulation failed".into())
+        })
 }
 
 /// Decapsulates a symmetric key using ECIES with default options

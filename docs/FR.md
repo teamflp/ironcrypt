@@ -87,7 +87,7 @@ Endpoints : **`POST /write`** (chiffrer) et **`POST /read`** (déchiffrer).
 # {
 #   "description": "lab write/read",
 #   "keyHash": "<HASH_HEX>",
-#   "permissions": ["write", "read"]
+#   "permissions": ["write", "read", "hmac"]
 # }
 
 # 3) Démarrer (loopback ; HTTP non-loopback exige TLS ou --allow-insecure-http)
@@ -178,7 +178,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## Utiliser IronCrypt depuis PHP
 
-Une appli PHP **ne lie pas** la crate Rust. Elle parle au démon HTTP **`ironcryptd`** via le client [`sdks/php`](sdks/php/) (`IronCryptClient`).
+Une appli PHP **ne lie pas** la crate Rust. Elle parle au démon HTTP **`ironcryptd`** via le client [`sdks/php`](../sdks/php/) (`IronCryptClient`).
 
 ```text
 App PHP  --POST /write|/read + Bearer-->  ironcryptd  (détient les clés PEM)
@@ -187,7 +187,7 @@ App PHP  --POST /write|/read + Bearer-->  ironcryptd  (détient les clés PEM)
 ### Pourquoi ce modèle ?
 
 - Un seul service crypto partagé (PHP, Python, curl…)
-- Clés API avec permissions (`write`, `read`, …)
+- Clés API avec permissions (`write`, `read`, `hmac`, …)
 - Pas besoin d’embarquer les clés privées dans chaque conteneur PHP
 
 ### Mise en place
@@ -205,7 +205,7 @@ cargo build --release --features full && make bootstrap-lab
 cd sdks/php && composer install
 ```
 
-`keys.json` en camelCase (`keyHash`), permissions du type `["write", "read"]`.  
+`keys.json` en camelCase (`keyHash`), permissions du type `["write", "read", "hmac"]`.  
 Envoyer la clé **secrète** telle quelle : `Authorization: Bearer …` (sans re-encoder).
 
 ### Exemple minimal PHP
@@ -228,14 +228,14 @@ $plaintext  = $client->decrypt($ciphertext, $apiKey);       // POST /read
 
 Stocker le ciphertext en BLOB SQL ou via `base64_encode($ciphertext)`.
 
-Guide complet (Composer path, cURL sans SDK, erreurs `401`/`403`/`429`, alternatives CLI/FFI) : **[`sdks/php/README.md`](sdks/php/README.md)**.  
-Client HTTP Python : [`sdks/python`](sdks/python/).
+Guide complet (Composer path, cURL sans SDK, erreurs `401`/`403`/`429`, alternatives CLI/FFI) : **[`sdks/php/README.md`](../sdks/php/README.md)**.  
+Client HTTP Python : [`sdks/python`](../sdks/python/).
 
 ---
 
 ## Utiliser IronCrypt via FFI (ABI C)
 
-Pour un usage **in-process** (sans démon HTTP), chargez la bibliothèque dynamique produite par Cargo (`cdylib`) et appelez l’API C de [`ironcrypt.h`](ironcrypt.h).
+Pour un usage **in-process** (sans démon HTTP), chargez la bibliothèque dynamique produite par Cargo (`cdylib`) et appelez l’API C de [`ironcrypt.h`](../ironcrypt.h).
 
 ```text
 Python / Java / C# / C / PHP-FFI  --appels natifs-->  libironcrypt (.so / .dylib / .dll)
@@ -279,7 +279,7 @@ lib.ironcrypt_generate_rsa_keys.restype = ctypes.c_int32
 # lib.ironcrypt_free_string(ptr)
 ```
 
-Exemple C : [`examples/c_api_usage.c`](examples/c_api_usage.c).  
+Exemple C : [`examples/c_api_usage.c`](../examples/c_api_usage.c).  
 Exemples complets (ctypes, JNA, P/Invoke, PHP `FFI`, compilation, dépannage) : **[`FFI_EXAMPLES.md`](FFI_EXAMPLES.md)**.
 
 ---
@@ -287,7 +287,7 @@ Exemples complets (ctypes, JNA, P/Invoke, PHP `FFI`, compilation, dépannage) : 
 ## Scénarios d'utilisation
 
 ### Chiffrement/Déchiffrement de mot de passe
-![workflow-password.png](images/workflow-password.png)
+![workflow-password.png](../images/workflow-password.png)
 
 Ce processus combine un hachage **Argon2** et un chiffrement d'enveloppe (AES + asymétrique) pour protéger le secret au repos.
 
@@ -342,7 +342,7 @@ Ce scénario garantit que même si votre base de données était compromise, les
 
 ### Chiffrement/Déchiffrement de fichier
 
-![img.png](images/img-1.png)
+![img.png](../images/img-1.png)
 
 Ce processus utilise également le chiffrement d'enveloppe (AES + RSA) pour garantir à la fois les performances et la sécurité.
 
@@ -369,7 +369,7 @@ Ce processus utilise également le chiffrement d'enveloppe (AES + RSA) pour gara
 
 ### Chiffrement/Déchiffrement de répertoire
 
-![img.png](images/workflow-directory.png)
+![img.png](../images/workflow-directory.png)
 
 Le chiffrement d'un répertoire entier est basé sur le scénario de chiffrement de fichier, avec une étape de préparation supplémentaire.
 
@@ -761,7 +761,7 @@ Vous pouvez également utiliser `ironcrypt` comme bibliothèque dans vos projets
 ironcrypt = "0.1.2" # Remplacez par la version souhaitée de crates.io
 ```
 
-Des copies exécutables sont dans [`examples/`](examples/) (`cargo run --example password`, `cargo run --example stream_aes`).
+Des copies exécutables sont dans [`examples/`](../examples/) (`cargo run --example password`, `cargo run --example stream_aes`).
 
 #### Chiffrer et vérifier un mot de passe
 ```rust
@@ -910,18 +910,18 @@ Vous obtenez :
   {
     "description": "Service lecture/écriture",
     "keyHash": "AUTRE_HASH_HEX",
-    "permissions": ["write", "read"]
+    "permissions": ["write", "read", "hmac"]
   },
   {
     "description": "Accès secrets AWS uniquement",
     "keyHash": "ENCORE_UN_HASH",
-    "permissions": ["read", "write"],
+    "permissions": ["read", "write", "hmac"],
     "allowedServices": ["aws"]
   }
 ]
 ```
 
-Permissions valides : `write`, `read`, `delete`, `update`, `full`.
+Permissions valides : `write`, `read`, `delete`, `update`, `hmac`, `full`. `full` se déploie en incluant `hmac`. `read` seul ne signe pas.
 
 **3. Requêtes authentifiées**
 
@@ -1328,4 +1328,4 @@ Les contributions sont les bienvenues ! Si vous souhaitez contribuer, veuillez s
 
 ## Licence
 
-*IronCrypt est sous licence MIT. Voir le fichier [LICENSE](LICENSE) pour plus de détails.*
+*IronCrypt est sous licence MIT. Voir le fichier [LICENSE](../LICENSE) pour plus de détails.*

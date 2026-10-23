@@ -33,6 +33,8 @@ services:
       IRONCRYPT_METRICS_BIND: "127.0.0.1"
       IRONCRYPT_METRICS_PORT: "9000"
       IRONCRYPT_API_KEYS_BACKEND: ${IRONCRYPT_API_KEYS_BACKEND:-env}
+      # Requis : le profil Payment refuse le port admin sans ce bearer.
+      IRONCRYPT_ADMIN_TOKEN: ${IRONCRYPT_ADMIN_TOKEN:?set IRONCRYPT_ADMIN_TOKEN}
       # IRONCRYPT_API_KEYS_JSON: set via secrets / env_file — never commit
       # AWS: rely on task role / IRSA (no static keys)
       # Azure: DefaultAzureCredential / Managed Identity

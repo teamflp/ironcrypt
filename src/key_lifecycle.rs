@@ -310,6 +310,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "tempfile needs mkdir; disabled under Miri isolation")]
     fn atomic_write_roundtrip() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("x.json");
@@ -325,6 +326,7 @@ mod tests {
 
     #[test]
     #[cfg(unix)]
+    #[cfg_attr(miri, ignore = "tempfile/symlink needs FS; disabled under Miri isolation")]
     fn atomic_write_refuses_symlink_destination() {
         let dir = tempdir().unwrap();
         let real = dir.path().join("real.json");

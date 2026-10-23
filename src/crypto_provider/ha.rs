@@ -86,8 +86,9 @@ impl CryptoProvider for HaCryptoProvider {
         &self,
         key_id: &str,
         plaintext_key: &[u8],
+        aad: Option<&[u8]>,
     ) -> Result<WrappedKey, IronCryptError> {
-        self.try_each("wrap_key", |p| p.wrap_key(key_id, plaintext_key))
+        self.try_each("wrap_key", |p| p.wrap_key(key_id, plaintext_key, aad))
             .await
     }
 
@@ -95,8 +96,9 @@ impl CryptoProvider for HaCryptoProvider {
         &self,
         key_id: &str,
         wrapped: &[u8],
+        aad: Option<&[u8]>,
     ) -> Result<Vec<u8>, IronCryptError> {
-        self.try_each("unwrap_key", |p| p.unwrap_key(key_id, wrapped))
+        self.try_each("unwrap_key", |p| p.unwrap_key(key_id, wrapped, aad))
             .await
     }
 
@@ -146,18 +148,20 @@ mod tests {
             &self,
             key_id: &str,
             plaintext_key: &[u8],
+            aad: Option<&[u8]>,
         ) -> Result<WrappedKey, IronCryptError> {
             if self.fail_first.fetch_sub(1, Ordering::SeqCst) > 0 {
                 return Err(IronCryptError::ProviderError("flaky".into()));
             }
-            self.inner.wrap_key(key_id, plaintext_key).await
+            self.inner.wrap_key(key_id, plaintext_key, aad).await
         }
         async fn unwrap_key(
             &self,
             key_id: &str,
             wrapped: &[u8],
+            aad: Option<&[u8]>,
         ) -> Result<Vec<u8>, IronCryptError> {
-            self.inner.unwrap_key(key_id, wrapped).await
+            self.inner.unwrap_key(key_id, wrapped, aad).await
         }
         async fn encrypt(
             &self,
@@ -197,7 +201,9 @@ mod tests {
         // standby has key_id k1 — wrap on failover after primary fails once.
         // Wait: Flaky fail_first=1 means first wrap fails, second call on same Flaky would
         // succeed — but HA moves to standby. Standby LocalKeyProvider has key_id k1.
-        let wrapped = ha.wrap_key("k1", b"0123456789abcdef0123456789abcdef").await;
+        let wrapped = ha
+            .wrap_key("k1", b"0123456789abcdef0123456789abcdef", None)
+            .await;
         assert!(wrapped.is_ok(), "{wrapped:?}");
     }
 

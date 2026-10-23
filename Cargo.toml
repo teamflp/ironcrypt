@@ -1,6 +1,8 @@
 [package]
 name = "ironcrypt"
 version = "0.1.2"
+# `cargo run` builds the CLI. The daemon stays `cargo run --bin ironcryptd --features daemon`.
+default-run = "ironcrypt"
 authors = ["Paterne G. G."]
 edition = "2021"
 # MSRV for the default (library-only) feature set. Verified in CI.
@@ -12,7 +14,7 @@ documentation = "https://docs.rs/ironcrypt"
 homepage = "https://github.com/teamflp/ironcrypt"
 repository = "https://github.com/teamflp/ironcrypt"
 license = "MIT"
-readme = "README.md"
+readme = "docs/README.md"
 keywords = ["cryptography", "argon2", "aes-gcm", "kms", "security"]
 categories = ["cryptography", "authentication"]
 # Keep the crates.io tarball lean: no README assets, Docker/lab stack,
@@ -123,7 +125,7 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 
 [dev-dependencies]
 assert_cmd = "2.0"
-# Compiles/runs ```rust``` fences from README.md via `cargo test --doc`.
+# Compiles/runs ```rust``` fences from docs/README.md via `cargo test --doc`.
 doc-comment = "0.3"
 mockall = "0.12"
 predicates = "3.1"

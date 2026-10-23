@@ -43,8 +43,9 @@ pub fn hash_password_with_config(
 
 /// Verifies a password against an Argon2 PHC hash string (login / auth — not recoverable).
 ///
-/// Rejects PHC parameters above [`crate::limits::MAX_ARGON2_*`] to prevent
-/// memory/CPU DoS from attacker-controlled hashes (e.g. FFI).
+/// Rejects PHC parameters above [`crate::limits::MAX_ARGON2_MEMORY_KIB`],
+/// [`crate::limits::MAX_ARGON2_TIME_COST`], and [`crate::limits::MAX_ARGON2_PARALLELISM`]
+/// to prevent memory/CPU DoS from attacker-controlled hashes (e.g. FFI).
 pub fn verify_password(password: &str, phc_hash: &str) -> Result<bool, String> {
     let parsed = PasswordHash::new(phc_hash).map_err(|e| format!("invalid PHC hash: {e}"))?;
     let mem = parsed

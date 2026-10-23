@@ -58,19 +58,26 @@ pub trait CryptoProvider: Send + Sync {
     fn private_material_exportable(&self) -> bool;
 
     /// Wrap (encrypt) a data-encryption key under `key_id`.
+    ///
+    /// `aad` is the canonical [`crate::EncryptionContext`] binding. When it is
+    /// `Some` and non-empty, unwrap must present the same bytes or fail.
+    /// `None` is the legacy unbound wrap and is rejected under the Payment profile.
     async fn wrap_key(
         &self,
         key_id: &str,
         plaintext_key: &[u8],
+        aad: Option<&[u8]>,
     ) -> Result<WrappedKey, IronCryptError>;
 
     /// Unwrap (decrypt) a previously wrapped data-encryption key.
     ///
+    /// `aad` must match the value passed to [`CryptoProvider::wrap_key`].
     /// The returned plaintext should be zeroized by the caller after use.
     async fn unwrap_key(
         &self,
         key_id: &str,
         wrapped: &[u8],
+        aad: Option<&[u8]>,
     ) -> Result<Vec<u8>, IronCryptError>;
 
     /// Encrypt arbitrary bytes under `key_id`, optionally binding `aad`.

@@ -16,6 +16,8 @@ struct FlakyProvider {
     unwrap_calls: AtomicU32,
 }
 
+// Same `async_trait` / `double_must_use` interaction as in the library.
+#[allow(clippy::double_must_use)]
 #[async_trait]
 impl CryptoProvider for FlakyProvider {
     fn name(&self) -> &'static str {
@@ -30,6 +32,7 @@ impl CryptoProvider for FlakyProvider {
         &self,
         key_id: &str,
         plaintext_key: &[u8],
+        _aad: Option<&[u8]>,
     ) -> Result<WrappedKey, IronCryptError> {
         let n = self.calls.fetch_add(1, Ordering::SeqCst);
         if n < self.fail_first {
@@ -47,6 +50,7 @@ impl CryptoProvider for FlakyProvider {
         &self,
         _key_id: &str,
         wrapped: &[u8],
+        _aad: Option<&[u8]>,
     ) -> Result<Vec<u8>, IronCryptError> {
         let n = self.unwrap_calls.fetch_add(1, Ordering::SeqCst);
         if self.die_after_ok && n == 0 {
@@ -93,7 +97,7 @@ async fn wrap_retries_through_transient_kms_failures() {
     let p = provider.clone();
     let wrapped = with_retry(&policy, || {
         let p = p.clone();
-        async move { p.wrap_key("kid", &[1u8; 32]).await }
+        async move { p.wrap_key("kid", &[1u8; 32], None).await }
     })
     .await
     .expect("should succeed after retries");
@@ -110,11 +114,11 @@ async fn unwrap_mid_op_failure_opens_circuit() {
         unwrap_calls: AtomicU32::new(0),
     });
     let cb = CircuitBreaker::new(1, Duration::from_secs(60));
-    let wrapped = provider.wrap_key("kid", &[9u8; 32]).await.unwrap();
+    let wrapped = provider.wrap_key("kid", &[9u8; 32], None).await.unwrap();
 
     cb.guard().unwrap();
     let err = provider
-        .unwrap_key(&wrapped.key_id, &wrapped.ciphertext)
+        .unwrap_key(&wrapped.key_id, &wrapped.ciphertext, None)
         .await
         .unwrap_err();
     assert!(matches!(err, IronCryptError::ProviderError(_)));
