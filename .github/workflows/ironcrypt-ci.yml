@@ -128,7 +128,9 @@ jobs:
       - name: test payment lib
         run: cargo test --lib --no-default-features --features payment --locked
       - name: Payment deny (ban rsa / no RUSTSEC-2023-0071 ignore)
-        run: cargo deny --config deny.payment.toml check
+        # install-action v2.49.3 ships cargo-deny < 0.20, where --config is a check flag.
+        # cargo-deny 0.20 moved it to the root: cargo deny --config deny.payment.toml check
+        run: cargo deny check --config deny.payment.toml
 
   sbom:
     name: SBOM
@@ -145,9 +147,9 @@ jobs:
       - name: Generate CycloneDX SBOM
         run: |
           mkdir -p target/sbom
-          # cargo-cyclonedx ≥0.5 dropped --output-cdx; default output is bom.json
+          # cargo-cyclonedx ≥0.5 always inserts `.cdx` unless the name is overridden.
           cargo cyclonedx -f json
-          mv bom.json target/sbom/ironcrypt.cdx.json
+          mv bom.cdx.json target/sbom/ironcrypt.cdx.json
       - uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5.0
         with:
           name: ironcrypt-sbom

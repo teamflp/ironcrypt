@@ -865,6 +865,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "Utc::now needs the clock; disabled under Miri isolation")]
     fn siem_export_strips_error_message() {
         let mut ev = AuditEvent::new(Operation::Read);
         ev.set_failure("decrypt failed key=0123456789abcdef0123456789abcdef");

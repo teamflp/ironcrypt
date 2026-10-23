@@ -298,6 +298,7 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
+    #[cfg_attr(miri, ignore = "Utc::now needs the clock; disabled under Miri isolation")]
     fn rotate_demotes_previous_active() {
         let mut m = KeyringManifest::new("kid-1", "v1", "ecc-p256");
         m.rotate_to("v2", "ecc-p256").unwrap();

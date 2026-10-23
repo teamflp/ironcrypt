@@ -273,6 +273,7 @@ mod tests {
     use std::sync::atomic::{AtomicU32, Ordering};
 
     #[test]
+    #[cfg_attr(miri, ignore = "Instant::now needs the clock; disabled under Miri isolation")]
     fn opens_after_threshold() {
         let cb = CircuitBreaker::new(2, Duration::from_secs(60));
         assert!(cb.guard().is_ok());
@@ -285,6 +286,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg_attr(miri, ignore = "tokio::time needs the clock; disabled under Miri isolation")]
     async fn retries_transient_then_succeeds() {
         let n = AtomicU32::new(0);
         let policy = RetryPolicy {
@@ -307,6 +309,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg_attr(miri, ignore = "tokio::time needs the clock; disabled under Miri isolation")]
     async fn does_not_retry_circuit_open() {
         let n = AtomicU32::new(0);
         let policy = RetryPolicy {
@@ -327,6 +330,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "Instant::now needs the clock; disabled under Miri isolation")]
     fn one_principal_cannot_open_the_global_circuit() {
         let q = PrincipalQuarantine::new(2, Duration::from_secs(60));
         assert!(q.guard("key-a").is_ok());

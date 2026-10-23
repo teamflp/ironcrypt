@@ -20,7 +20,7 @@ Treat as **crypto-sensitive** any bump of:
    - `cargo test --features full --locked` (or targeted feature set)
    - Payment: `cargo test --lib --no-default-features --features payment --locked`
    - `cargo deny check`
-   - Payment deny: `cargo deny --config deny.payment.toml check`
+   - Payment deny: `cargo deny check --config deny.payment.toml`
    - `cargo audit`
 3. **Do not silently expand `ignore` lists** in `deny.toml` / `audit.toml`.
    New ignores need a dated reason and an owner in the PR description.

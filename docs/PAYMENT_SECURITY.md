@@ -89,7 +89,7 @@ cargo run -p ironcrypt --no-default-features --features payment-daemon --bin iro
   --tls-client-ca /path/client-ca.crt
 
 # Supply-chain check for Payment graphs (bans crate `rsa`)
-cargo deny --config deny.payment.toml check
+cargo deny check --config deny.payment.toml
 ```
 
 See [`DEPENDENCY_UPDATE.md`](./DEPENDENCY_UPDATE.md) and [`SECURITY.md`](./SECURITY.md).
