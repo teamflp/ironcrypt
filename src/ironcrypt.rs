@@ -210,6 +210,10 @@ impl IronCrypt {
             config.asymmetric_algorithm = params.asymmetric_algorithm;
             config.rsa_key_size = params.rsa_key_size;
         }
+        // The default algorithm is RSA. Payment builds do not link `rsa`, so
+        // key generation must be forced onto P-256 before `ensure_keys_exist`.
+        #[cfg(feature = "payment")]
+        PaymentSecurityProfile::apply(&mut config);
 
         let secret_store = if let Some(secrets_config) = &config.secrets {
             match secrets_config.provider.as_str() {

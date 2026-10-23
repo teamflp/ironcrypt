@@ -125,41 +125,51 @@ make lab    # Vault -dev + lab token (never for production)
 ### 5. Rust library (AES streaming)
 
 ```rust
-use ironcrypt::{
-    algorithms::SymmetricAlgorithm,
-    decrypt_stream, encrypt_stream, generate_rsa_keys,
-    keys::{PrivateKey, PublicKey},
-    Argon2Config, PasswordCriteria,
-};
-use std::io::Cursor;
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let (sk, pk) = generate_rsa_keys(2048)?;
-    let public_key = PublicKey::Rsa(pk);
-    let private_key = PrivateKey::Rsa(sk);
+    // Payment builds do not link RSA. This sample still compiles there;
+    // the RSA path runs with the rsa-algo feature.
+    #[cfg(not(feature = "rsa-algo"))]
+    {
+        let _ = "rsa-algo feature required for this example";
+        return Ok(());
+    }
+    #[cfg(feature = "rsa-algo")]
+    {
+        use ironcrypt::{
+            algorithms::SymmetricAlgorithm,
+            decrypt_stream, encrypt_stream, generate_rsa_keys,
+            keys::{PrivateKey, PublicKey},
+            Argon2Config, PasswordCriteria,
+        };
+        use std::io::Cursor;
 
-    let original = b"secret streamed message";
-    let mut src = Cursor::new(original.as_slice());
-    let mut enc = Cursor::new(Vec::new());
-    let mut password = String::new();
+        let (sk, pk) = generate_rsa_keys(2048)?;
+        let public_key = PublicKey::Rsa(pk);
+        let private_key = PrivateKey::Rsa(sk);
 
-    encrypt_stream(
-        &mut src,
-        &mut enc,
-        &mut password,
-        [(&public_key, "v1")],
-        None, // no signature → real AES streaming
-        &PasswordCriteria::default(),
-        Argon2Config::default(),
-        false,
-        SymmetricAlgorithm::Aes256Gcm,
-    )?;
+        let original = b"secret streamed message";
+        let mut src = Cursor::new(original.as_slice());
+        let mut enc = Cursor::new(Vec::new());
+        let mut password = String::new();
 
-    enc.set_position(0);
-    let mut out = Cursor::new(Vec::new());
-    decrypt_stream(&mut enc, &mut out, &private_key, "v1", "", None)?;
-    assert_eq!(out.into_inner(), original);
-    Ok(())
+        encrypt_stream(
+            &mut src,
+            &mut enc,
+            &mut password,
+            [(&public_key, "v1")],
+            None, // no signature → real AES streaming
+            &PasswordCriteria::default(),
+            Argon2Config::default(),
+            false,
+            SymmetricAlgorithm::Aes256Gcm,
+        )?;
+
+        enc.set_position(0);
+        let mut out = Cursor::new(Vec::new());
+        decrypt_stream(&mut enc, &mut out, &private_key, "v1", "", None)?;
+        assert_eq!(out.into_inner(), original);
+        Ok(())
+    }
 }
 ```
 
@@ -786,14 +796,23 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // 3. Initialize IronCrypt.
     let crypt = IronCrypt::new(config, DataType::Generic).await?;
 
-    // 4. Encrypt a password.
+    // 4. Store and verify a password.
+    // Payment keeps login passwords as Argon2 hashes. Other profiles wrap them.
     let password = "MySecurePassword123!";
-    let encrypted_json = crypt.encrypt_password(password)?;
-    println!("Encrypted password: {}", encrypted_json);
-
-    // 5. Verify the password.
-    let is_valid = crypt.verify_password(&encrypted_json, password)?;
-    assert!(is_valid);
+    #[cfg(feature = "payment")]
+    {
+        let phc = crypt.hash_login_password(password)?;
+        println!("Password hash: {}", phc);
+        let is_valid = crypt.verify_login_password(password, &phc)?;
+        assert!(is_valid);
+    }
+    #[cfg(not(feature = "payment"))]
+    {
+        let encrypted_json = crypt.encrypt_password(password)?;
+        println!("Encrypted password: {}", encrypted_json);
+        let is_valid = crypt.verify_password(&encrypted_json, password)?;
+        assert!(is_valid);
+    }
     println!("Password verification successful!");
 
     Ok(())
@@ -802,49 +821,59 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
 #### Encrypting and Decrypting a File (Streaming)
 ```rust
-use ironcrypt::{
-    algorithms::SymmetricAlgorithm,
-    decrypt_stream, encrypt_stream, generate_rsa_keys,
-    keys::{PrivateKey, PublicKey},
-    Argon2Config, PasswordCriteria,
-};
-use std::io::Cursor;
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let (sk, pk) = generate_rsa_keys(2048)?;
-    let public_key = PublicKey::Rsa(pk);
-    let private_key = PrivateKey::Rsa(sk);
+    // Payment builds do not link RSA. This sample still compiles there;
+    // the RSA path runs with the rsa-algo feature.
+    #[cfg(not(feature = "rsa-algo"))]
+    {
+        let _ = "rsa-algo feature required for this example";
+        return Ok(());
+    }
+    #[cfg(feature = "rsa-algo")]
+    {
+        use ironcrypt::{
+            algorithms::SymmetricAlgorithm,
+            decrypt_stream, encrypt_stream, generate_rsa_keys,
+            keys::{PrivateKey, PublicKey},
+            Argon2Config, PasswordCriteria,
+        };
+        use std::io::Cursor;
 
-    let original_data = "This is a secret message that will be streamed for encryption.";
-    let mut source = Cursor::new(original_data.as_bytes());
-    let mut encrypted_dest = Cursor::new(Vec::new());
-    let mut password = String::new();
+        let (sk, pk) = generate_rsa_keys(2048)?;
+        let public_key = PublicKey::Rsa(pk);
+        let private_key = PrivateKey::Rsa(sk);
 
-    encrypt_stream(
-        &mut source,
-        &mut encrypted_dest,
-        &mut password,
-        [(&public_key, "v1")],
-        None, // no signature → real AES streaming
-        &PasswordCriteria::default(),
-        Argon2Config::default(),
-        false,
-        SymmetricAlgorithm::Aes256Gcm,
-    )?;
+        let original_data = "This is a secret message that will be streamed for encryption.";
+        let mut source = Cursor::new(original_data.as_bytes());
+        let mut encrypted_dest = Cursor::new(Vec::new());
+        let mut password = String::new();
 
-    encrypted_dest.set_position(0);
-    let mut decrypted_dest = Cursor::new(Vec::new());
-    decrypt_stream(
-        &mut encrypted_dest,
-        &mut decrypted_dest,
-        &private_key,
-        "v1",
-        "",
-        None,
-    )?;
+        encrypt_stream(
+            &mut source,
+            &mut encrypted_dest,
+            &mut password,
+            [(&public_key, "v1")],
+            None, // no signature → real AES streaming
+            &PasswordCriteria::default(),
+            Argon2Config::default(),
+            false,
+            SymmetricAlgorithm::Aes256Gcm,
+        )?;
 
-    assert_eq!(original_data, String::from_utf8(decrypted_dest.into_inner())?);
-    Ok(())
+        encrypted_dest.set_position(0);
+        let mut decrypted_dest = Cursor::new(Vec::new());
+        decrypt_stream(
+            &mut encrypted_dest,
+            &mut decrypted_dest,
+            &private_key,
+            "v1",
+            "",
+            None,
+        )?;
+
+        assert_eq!(original_data, String::from_utf8(decrypted_dest.into_inner())?);
+        Ok(())
+    }
 }
 ```
 

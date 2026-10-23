@@ -51,14 +51,23 @@
 //!     // 3. Initialize IronCrypt.
 //!     let crypt = IronCrypt::new(config, DataType::Generic).await?;
 //!
-//!     // 4. Encrypt a password.
+//!     // 4. Store and verify a password.
+//!     // Payment keeps login passwords as Argon2 hashes. Other profiles wrap them.
 //!     let password = "MySecurePassword123!";
-//!     let encrypted_json = crypt.encrypt_password(password)?;
-//!     println!("Encrypted password: {}", encrypted_json);
-//!
-//!     // 5. Verify the password.
-//!     let is_valid = crypt.verify_password(&encrypted_json, password)?;
-//!     assert!(is_valid);
+//!     #[cfg(feature = "payment")]
+//!     {
+//!         let phc = crypt.hash_login_password(password)?;
+//!         println!("Password hash: {}", phc);
+//!         let is_valid = crypt.verify_login_password(password, &phc)?;
+//!         assert!(is_valid);
+//!     }
+//!     #[cfg(not(feature = "payment"))]
+//!     {
+//!         let encrypted_json = crypt.encrypt_password(password)?;
+//!         println!("Encrypted password: {}", encrypted_json);
+//!         let is_valid = crypt.verify_password(&encrypted_json, password)?;
+//!         assert!(is_valid);
+//!     }
 //!     println!("Password verification successful!");
 //!
 //!     Ok(())
@@ -71,10 +80,19 @@
 //! but it works the same way with a `File`).
 //!
 //! ```rust
-//! use ironcrypt::{encrypt_stream, decrypt_stream, generate_rsa_keys, PasswordCriteria, Argon2Config, PublicKey, PrivateKey, algorithms::SymmetricAlgorithm};
-//! use std::io::Cursor;
-//!
 //! fn main() -> Result<(), Box<dyn std::error::Error>> {
+//!     // Payment builds do not link RSA. The streaming example still runs there
+//!     // as a no-op so `cargo test` stays green; the RSA path runs with rsa-algo.
+//!     #[cfg(not(feature = "rsa-algo"))]
+//!     {
+//!         let _ = "rsa-algo feature required for this example";
+//!         return Ok(());
+//!     }
+//!     #[cfg(feature = "rsa-algo")]
+//!     {
+//!     use ironcrypt::{encrypt_stream, decrypt_stream, generate_rsa_keys, PasswordCriteria, Argon2Config, PublicKey, PrivateKey, algorithms::SymmetricAlgorithm};
+//!     use std::io::Cursor;
+//!
 //!     // 1. Generate an RSA key pair (in a real application, load them from a file).
 //!     let (private_key, public_key) = generate_rsa_keys(2048)?;
 //!
@@ -119,6 +137,7 @@
 //!     println!("Stream encryption and decryption successful!");
 //!
 //!     Ok(())
+//!     }
 //! }
 //! ```
 //!

@@ -26,10 +26,26 @@ async fn test_nist_standard_applies_correct_params() {
 
     let crypt = IronCrypt::new(config, DataType::Generic).await.unwrap();
 
-    let expected_params = CryptoStandard::Nist.get_params().unwrap();
-    assert_eq!(crypt.config.symmetric_algorithm, expected_params.symmetric_algorithm);
-    assert_eq!(crypt.config.asymmetric_algorithm, expected_params.asymmetric_algorithm);
-    assert_eq!(crypt.config.rsa_key_size, expected_params.rsa_key_size);
+    #[cfg(not(feature = "payment"))]
+    {
+        let expected_params = CryptoStandard::Nist.get_params().unwrap();
+        assert_eq!(crypt.config.symmetric_algorithm, expected_params.symmetric_algorithm);
+        assert_eq!(crypt.config.asymmetric_algorithm, expected_params.asymmetric_algorithm);
+        assert_eq!(crypt.config.rsa_key_size, expected_params.rsa_key_size);
+    }
+    #[cfg(feature = "payment")]
+    {
+        assert_eq!(crypt.config.standard, CryptoStandard::PaymentCompatible);
+        assert_eq!(
+            crypt.config.symmetric_algorithm,
+            ironcrypt::algorithms::SymmetricAlgorithm::Aes256Gcm
+        );
+        assert_eq!(
+            crypt.config.asymmetric_algorithm,
+            ironcrypt::algorithms::AsymmetricAlgorithm::Ecc
+        );
+        assert!(crypt.config.rsa_key_size >= 3072);
+    }
 }
 
 #[tokio::test]
@@ -54,10 +70,26 @@ async fn test_fips_compatible_profile_applies_correct_params() {
 
     let crypt = IronCrypt::new(config, DataType::Generic).await.unwrap();
 
-    let expected_params = CryptoStandard::FipsCompatibleProfile.get_params().unwrap();
-    assert_eq!(crypt.config.symmetric_algorithm, expected_params.symmetric_algorithm);
-    assert_eq!(crypt.config.asymmetric_algorithm, expected_params.asymmetric_algorithm);
-    assert_eq!(crypt.config.rsa_key_size, expected_params.rsa_key_size);
+    #[cfg(not(feature = "payment"))]
+    {
+        let expected_params = CryptoStandard::FipsCompatibleProfile.get_params().unwrap();
+        assert_eq!(crypt.config.symmetric_algorithm, expected_params.symmetric_algorithm);
+        assert_eq!(crypt.config.asymmetric_algorithm, expected_params.asymmetric_algorithm);
+        assert_eq!(crypt.config.rsa_key_size, expected_params.rsa_key_size);
+    }
+    #[cfg(feature = "payment")]
+    {
+        assert_eq!(crypt.config.standard, CryptoStandard::PaymentCompatible);
+        assert_eq!(
+            crypt.config.symmetric_algorithm,
+            ironcrypt::algorithms::SymmetricAlgorithm::Aes256Gcm
+        );
+        assert_eq!(
+            crypt.config.asymmetric_algorithm,
+            ironcrypt::algorithms::AsymmetricAlgorithm::Ecc
+        );
+        assert!(crypt.config.rsa_key_size >= 3072);
+    }
 }
 
 #[tokio::test]
@@ -85,10 +117,26 @@ async fn test_custom_standard_retains_user_params() {
 
     let crypt = IronCrypt::new(config.clone(), DataType::Generic).await.unwrap();
 
-    assert_eq!(crypt.config.standard, CryptoStandard::Custom);
-    assert_eq!(crypt.config.symmetric_algorithm, config.symmetric_algorithm);
-    assert_eq!(crypt.config.asymmetric_algorithm, config.asymmetric_algorithm);
-    assert_eq!(crypt.config.rsa_key_size, config.rsa_key_size);
+    #[cfg(not(feature = "payment"))]
+    {
+        assert_eq!(crypt.config.standard, CryptoStandard::Custom);
+        assert_eq!(crypt.config.symmetric_algorithm, config.symmetric_algorithm);
+        assert_eq!(crypt.config.asymmetric_algorithm, config.asymmetric_algorithm);
+        assert_eq!(crypt.config.rsa_key_size, config.rsa_key_size);
+    }
+    #[cfg(feature = "payment")]
+    {
+        assert_eq!(crypt.config.standard, CryptoStandard::PaymentCompatible);
+        assert_eq!(
+            crypt.config.symmetric_algorithm,
+            ironcrypt::algorithms::SymmetricAlgorithm::Aes256Gcm
+        );
+        assert_eq!(
+            crypt.config.asymmetric_algorithm,
+            ironcrypt::algorithms::AsymmetricAlgorithm::Ecc
+        );
+        assert_eq!(crypt.config.rsa_key_size, 4096);
+    }
 }
 
 #[tokio::test]

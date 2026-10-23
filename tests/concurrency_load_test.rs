@@ -4,7 +4,7 @@
 use ironcrypt::algorithms::SymmetricAlgorithm;
 use ironcrypt::crypto_provider::{CryptoProvider, LocalKeyProvider};
 use ironcrypt::ecc_utils;
-use ironcrypt::encrypt_stream;
+use ironcrypt::{encrypt_stream_with_context, EncryptionContext};
 use ironcrypt::keys::{PrivateKey, PublicKey};
 use ironcrypt::limits::DEFAULT_CRYPTO_CONCURRENCY;
 use ironcrypt::resilience::CircuitBreaker;
@@ -67,7 +67,8 @@ async fn parallel_encrypt_decrypt_streams() {
             let mut source = Cursor::new(payload.clone());
             let mut encrypted = Cursor::new(Vec::new());
             let mut password = String::new();
-            encrypt_stream(
+            let ctx = EncryptionContext::new("load", "stream", format!("n{n}"));
+            encrypt_stream_with_context(
                 &mut source,
                 &mut encrypted,
                 &mut password,
@@ -77,6 +78,7 @@ async fn parallel_encrypt_decrypt_streams() {
                 Argon2Config::default(),
                 false,
                 SymmetricAlgorithm::Aes256Gcm,
+                Some(&ctx),
             )
             .expect("encrypt");
             encrypted.set_position(0);

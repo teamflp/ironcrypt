@@ -182,12 +182,17 @@ required-features = ["cli"]
 [[test]]
 name = "integration_test"
 path = "tests/integration_test.rs"
-required-features = ["cli"]
+required-features = ["cli", "rsa-algo"]
 
 [[test]]
 name = "secrets_integration_test"
 path = "tests/secrets_integration_test.rs"
 required-features = ["aws", "azure"]
+
+# The streaming example hard-codes RSA recipients.
+[[example]]
+name = "stream_aes"
+required-features = ["rsa-algo"]
 
 # ---------------------------------------------------------------------------
 # Features
