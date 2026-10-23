@@ -1,6 +1,6 @@
 # cargo-deny for Payment feature graphs (no rsa / no RUSTSEC-2023-0071 ignore).
 #
-# CI: cargo deny check --config deny.payment.toml
+# CI: cargo deny --config deny.payment.toml check
 # Graph: --no-default-features --features payment-daemon (no rsa-algo).
 
 [graph]

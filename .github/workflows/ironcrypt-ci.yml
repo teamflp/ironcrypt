@@ -93,10 +93,11 @@ jobs:
           toolchain: stable
       - uses: Swatinem/rust-cache@f0deed1e0edfc6a9be95417288c0e1099b1eeec3 # v2.7.7
       - name: Install cargo-audit and cargo-deny
-        uses: taiki-e/install-action@7ea888af71a31437ad4e71c62d021b3bb2728ea9 # v2.49.3
+        uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
         with:
-          # 0.22+ required to parse CVSS:4.0 vectors in advisory-db
-          tool: cargo-audit@0.22.2,cargo-deny
+          # cargo-audit 0.22+ parses CVSS:4.0. cargo-deny 0.18 (install-action v2.49)
+          # cannot read current `cargo metadata`; 0.20.2 can. Its --config flag is global.
+          tool: cargo-audit@0.22.2,cargo-deny@0.20.2
       - name: cargo audit
         run: cargo audit
       - name: cargo deny (default graph)
@@ -120,17 +121,15 @@ jobs:
         with:
           key: payment
       - name: Install cargo-deny
-        uses: taiki-e/install-action@7ea888af71a31437ad4e71c62d021b3bb2728ea9 # v2.49.3
+        uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
         with:
-          tool: cargo-deny
+          tool: cargo-deny@0.20.2
       - name: clippy payment-daemon (no rsa)
         run: cargo clippy --lib --bins --no-default-features --features payment-daemon -- -D warnings
       - name: test payment lib
         run: cargo test --lib --no-default-features --features payment --locked
       - name: Payment deny (ban rsa / no RUSTSEC-2023-0071 ignore)
-        # install-action v2.49.3 ships cargo-deny < 0.20, where --config is a check flag.
-        # cargo-deny 0.20 moved it to the root: cargo deny --config deny.payment.toml check
-        run: cargo deny check --config deny.payment.toml
+        run: cargo deny --config deny.payment.toml check
 
   sbom:
     name: SBOM
@@ -147,9 +146,9 @@ jobs:
       - name: Generate CycloneDX SBOM
         run: |
           mkdir -p target/sbom
-          # cargo-cyclonedx ≥0.5 always inserts `.cdx` unless the name is overridden.
+          # cargo-cyclonedx 0.5 names the file after the package: <name>.cdx.json
           cargo cyclonedx -f json
-          mv bom.cdx.json target/sbom/ironcrypt.cdx.json
+          mv ironcrypt.cdx.json target/sbom/ironcrypt.cdx.json
       - uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5.0
         with:
           name: ironcrypt-sbom
